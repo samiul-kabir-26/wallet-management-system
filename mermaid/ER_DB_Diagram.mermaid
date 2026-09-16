@@ -1,0 +1,124 @@
+erDiagram
+    USERS ||--o{ USER_ROLES : "has"
+    USERS ||--o{ AUTH_PROVIDERS : "has"
+    USERS ||--o{ CAPS : "has"
+    USERS ||--o{ AGENT_INFO : "has"
+    USERS ||--|| WALLETS : "has"
+    USERS ||--o{ TRANSACTIONS : "initiates_as"
+    USERS o|--o{ TRANSACTIONS : "as_user"
+    USERS o|--o{ TRANSACTIONS : "as_agent"
+    USERS o|--o{ TRANSACTIONS : "as_sender"
+    USERS o|--o{ TRANSACTIONS : "as_recipient"
+    USERS ||--o{ SYSTEM_SETTINGS : "updates"
+    USERS ||--o{ USER_ROLES : "assigns"
+    ROLES ||--o{ USER_ROLES : "assigned_in"
+
+    ROLES {
+        int id PK
+        string name "SUPER_ADMIN|ADMIN|MODERATOR|AGENT|USER"
+        string description
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    USERS {
+        bigint id PK
+        string name "required"
+        string email "unique, required"
+        string phone_number
+        string password "hashed"
+        string image
+        text address
+        boolean is_deleted "default: false"
+        enum is_active "ACTIVE|INACTIVE"
+        boolean is_verified
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    USER_ROLES {
+        bigint id PK
+        bigint user_id FK "required"
+        int role_id FK "required"
+        timestamp assigned_at
+        bigint assigned_by FK "user who assigned"
+    }
+
+    AUTH_PROVIDERS {
+        bigint id PK
+        bigint user_id FK "required"
+        string provider
+        string provider_id "unique per provider"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    CAPS {
+        bigint id PK
+        bigint user_id FK "unique"
+        decimal daily_cap "default: 10000"
+        decimal monthly_cap "default: 50000"
+        decimal daily_used "default: 0"
+        decimal monthly_used "default: 0"
+        timestamp last_reset_date
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    AGENT_INFO {
+        bigint id PK
+        bigint user_id FK "unique"
+        decimal commission_rate "default: 0.01"
+        boolean is_approved "default: false"
+        decimal total_commission "default: 0"
+        timestamp approved_at
+        bigint approved_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    WALLETS {
+        bigint id PK
+        bigint user_id FK "unique, required"
+        decimal balance "default: 50.00"
+        string currency "default: BDT"
+        boolean is_blocked "default: false"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    TRANSACTIONS {
+        bigint id PK
+        bigint user_id FK
+        bigint agent_id FK
+        bigint sender_id FK
+        bigint recipient_id FK
+        bigint initiated_by FK "required"
+        enum type "DEPOSIT|WITHDRAWAL|TRANSFER|COMMISSION_PAYOUT"
+        decimal amount "required"
+        decimal total_amount "required"
+        decimal commission_rate
+        decimal commission_amount "default: 0"
+        decimal fee_rate "default: 0"
+        decimal fee_amount "default: 0"
+        string currency "default: BDT"
+        text description
+        enum status "COMPLETED|PENDING|FAILED"
+        decimal user_wallet_balance_after
+        decimal agent_wallet_balance_after
+        decimal sender_wallet_balance_after
+        decimal recipient_wallet_balance_after
+        json meta
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    SYSTEM_SETTINGS {
+        bigint id PK
+        string key "unique: SYSTEM_SETTINGS"
+        decimal transaction_fee "default: 0.02"
+        decimal agent_commission "default: 0.01"
+        bigint updated_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
