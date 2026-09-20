@@ -2,9 +2,18 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+#[Fillable([
+    'user_id',
+    'sender_id',
+    'recipient_id',
+    'agent_id',
+    'initiated_by',
+    // other fields appropriate for creation
+])]
 class Transaction extends Model
 {
     public function user():BelongsTo {

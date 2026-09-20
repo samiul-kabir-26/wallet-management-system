@@ -1,8 +1,13 @@
 # Task 2: Project Setup & Database Schema
 
+> ⚠️ **Partially superseded — 2026-09-20.** This document records the original Task 2 plan and is kept for history. Two things have changed since:
+>
+> 1. **`user_type` is being dropped.** The auth model was revised to three login routes with multi-role users; a single-valued track column cannot represent an admin who also holds a PIN. `CLAUDE.md` §9 is authoritative. Ignore every mention of `user_type` / `ADMIN_TRACK` / `USER_TRACK` below.
+> 2. **Several migrations and models need correcting.** See `TODO/22-TASK-2-REVIEW.md` for the 19 findings and the fix order.
+
 **Objective:** Set up the Laravel project structure and create all necessary database migrations.
 
-**Status:** Ready to start
+**Status:** Complete, pending the fixes in `TODO/22-TASK-2-REVIEW.md`
 **Estimated Duration:** 2-3 hours
 
 ---

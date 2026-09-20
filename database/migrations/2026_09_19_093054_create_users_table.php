@@ -18,7 +18,6 @@ return new class extends Migration
             $table->string('phone_number')->nullable()->unique();
             $table->string('password')->nullable();
             $table->string('pin')->nullable();
-            $table->enum('user_type',['ADMIN_TRACK', 'USER_TRACK'])->default('USER_TRACK');
             $table->string('image')->nullable();
             $table->text('address')->nullable();
             $table->enum('is_active', ['ACTIVE', 'INACTIVE'])->default('ACTIVE');

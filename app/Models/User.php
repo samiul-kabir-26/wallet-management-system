@@ -24,8 +24,16 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token'])]
+#[Fillable([
+    'name',
+    'email',
+    'password',
+    'phone_number',
+    'pin',
+    'image',
+    'address',
+])]
+#[Hidden(['password', 'pin'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -39,7 +47,6 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
     }

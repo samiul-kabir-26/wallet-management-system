@@ -22,7 +22,6 @@ class SuperAdminSeeder extends Seeder
             'name'=>'SUPER ADMIN',
             'email'=> config('admin.email'),
             'password'=>Hash::make(config('admin.password')),
-            'user_type' => 'ADMIN_TRACK',
             'is_verified' => true,
             'is_active' => 'ACTIVE',
             

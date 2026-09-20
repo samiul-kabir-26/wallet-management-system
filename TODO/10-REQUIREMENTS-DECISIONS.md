@@ -263,10 +263,13 @@ audit_logs:
 ## Additional Clarifications (From Architecture Analysis)
 
 ### Authentication Strategy
+
+> ⚠️ **Superseded 2026-09-20.** The auth model was revised to three login routes with scoped tokens, multi-role users, and staff-initiated PIN reset. **`CLAUDE.md` §9 is authoritative.** The two lines struck through below are no longer correct; the rest still holds.
+
 - **Users/Agents:** Phone number + 5-10 digit PIN (numeric only)
-- **Admins/Super Admins:** Email + password + 6-digit OTP (5-min validity, single-use, rate-limited)
-- **PIN Recovery:** SMS OTP
-- **PIN Usage:** Same PIN for login AND wallet transaction verification
+- ~~**Admins/Super Admins:** Email + password + 6-digit OTP~~ → identifier may now be email **or** phone number. OTP unchanged (5-min validity, single-use, rate-limited)
+- ~~**PIN Recovery:** SMS OTP~~ → **no self-service recovery.** Customer care verifies identity out of band, attaches an email, and sends a one-time signed link through which the user sets their own PIN
+- **PIN Usage:** Same PIN for login AND wallet transaction verification — this is precisely why staff must never choose a PIN value
 
 ### Authorization Rules
 - **SUPER_ADMIN:** Can register users, agents, and admins. Full system access.

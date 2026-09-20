@@ -91,7 +91,6 @@ Users must be:
       "name": "John Doe",
       "email": "john@example.com",
       "phone_number": "01712345678",
-      "user_type": "USER_TRACK",
       "roles": ["USER"]
     }
   }
@@ -107,11 +106,10 @@ Users must be:
 2. Validate input using Form Request
 3. Check role being assigned:
    - If ADMIN: only SUPER_ADMIN can assign (authorize again)
-4. Create User record:
-   - Determine user_type based on role:
-     - ADMIN/MODERATOR → ADMIN_TRACK
-     - AGENT/USER → USER_TRACK
-   - Hash password if provided
+4. Create User record. **There is no `user_type` column** (see `CLAUDE.md` §9) — the credential you set *is* the track:
+   - ADMIN / MODERATOR → set `password`, leave `pin` NULL
+   - AGENT / USER → set `pin`, leave `password` NULL
+   - Hash whichever one applies
 5. Create Wallet (auto or explicit)
 6. Create Cap record
 7. If AGENT: Create AgentInfo (PENDING status)
@@ -127,17 +125,20 @@ Users must be:
 
 **RegisterUserRequest Validation:**
 - `name`: required, string, min 2, max 255
-- `email`: required, email, unique (only for ADMIN_TRACK)
-- `password`: required if email, min 8
-- `phone_number`: unique (only for USER_TRACK)
+- `email`: required + unique when role is ADMIN or MODERATOR
+- `password`: required with email, min 8
+- `phone_number`: required + unique when role is AGENT or USER
+- `pin`: required with phone_number, numeric only, 5–10 digits
 - `role`: required, in ['USER', 'AGENT', 'ADMIN', 'MODERATOR']
 - `address`: optional, string
 
 **What You Should Understand:**
 - Form Request authorization checks
-- Conditional validation based on role
-- Determining user_type from role
+- Conditional validation driven by role (`required_if`, `Rule::requiredIf`)
+- Why credential presence replaces a stored track column
 - Conditional field requirements
+
+**Note on adding a second track later:** this endpoint creates an account on **one** track. Giving an existing user credentials for the other track is a separate, deliberately-gated flow — `set-pin` and the signed-invite path in Task 3, Step 3B. Do not let this endpoint set both `password` and `pin` in one call; that would bypass the re-authentication those flows require.
 
 ---
 
@@ -331,6 +332,35 @@ Users must be:
 5. Return updated agent info
 
 **Note:** What about pending transactions? Should they be paused? For now: just update status, don't process pending txns.
+
+---
+
+## Step 4B: Staff-Initiated Credential Actions
+
+Two endpoints live in this module but belong to flows specified in Task 3. Build them here; the flow logic is in `TODO/13-TASK-3-AUTHENTICATION.md` Step 3B.
+
+| Endpoint | Flow | Who |
+|---|---|---|
+| `PATCH /api/v1/users/:id/grant-admin-access` | Case B — user gains admin access | SUPER_ADMIN only |
+| `PATCH /api/v1/users/:id/initiate-pin-reset` | Case C — PIN reset | **open question, see below** |
+
+**The rule that governs both:** staff initiate a credential change, but never choose the credential value. `grant-admin-access` sets a temporary password the user must replace; `initiate-pin-reset` sends a link through which the user sets their own PIN.
+
+This is not ceremony. The same PIN authorizes login and transactions, so a staff member who knew a user's PIN could spend that user's balance with the audit trail pointing at the victim.
+
+### Open question — which role is "customer care"?
+
+Your five roles are SUPER_ADMIN, ADMIN, MODERATOR, AGENT, USER. Nothing maps cleanly to a support agent who verifies identity over the phone and initiates a PIN reset.
+
+MODERATOR is described in `CLAUDE.md` §4 as a configurable subset of ADMIN permissions, and the capability table currently gives it read-only access. Initiating a PIN reset is a write action that begins a credential change.
+
+Three options:
+
+1. **Extend MODERATOR** to include it. Fits the "configurable subset" description, but MODERATOR stops being read-only, which weakens a currently simple mental model.
+2. **Restrict to ADMIN and above.** Simplest, no schema change. Whether it matches how support actually staffs is your call.
+3. **Add a CUSTOMER_CARE role.** Cleanest separation, one more row in `roles`, and a capability table to extend.
+
+Decide before writing `UserPolicy`, and update the §4 capability table in `CLAUDE.md` with the answer.
 
 ---
 

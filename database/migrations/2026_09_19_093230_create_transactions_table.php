@@ -21,10 +21,10 @@ return new class extends Migration
             $table->unsignedBigInteger('initiated_by');
             $table->enum('type',['TOP_UP', 'CASH_IN', 'CASH_OUT', 'TRANSFER', 'AGENT_WITHDRAWAL', 'COMMISSION_PAYOUT']);
             $table->decimal('amount', 19, 2);
-            $table->decimal('system_fee_amount', 19, 2)->default(0.00);
-            $table->decimal('system_fee_rate', 5, 2)->default(0.00);
+            $table->decimal('system_fee_amount', 19, 2);
+            $table->decimal('system_fee_rate', 6, 4)->default(0.0000);
             $table->decimal('agent_commission_amount', 19, 2)->default(0.00);
-            $table->decimal('agent_commission_rate', 5, 2)->default(0.00);
+            $table->decimal('agent_commission_rate', 6, 4)->default(0.0000);
             $table->string('currency')->default('BDT');
             $table->text('description')->nullable();
             $table->enum('status',['COMPLETED', 'FAILED'])->default('COMPLETED');
