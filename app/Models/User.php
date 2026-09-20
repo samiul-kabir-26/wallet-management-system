@@ -7,6 +7,9 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -40,4 +43,57 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function roles():HasMany {
+        return $this->hasMany(UserRole::class);
+    }
+
+    public function wallet():HasOne {
+        return $this->hasOne(Wallet::class);
+    }
+
+    public function cap():HasOne {
+        return $this->hasOne(Cap::class);
+    }
+
+    public function agentInfo():HasOne {
+        return $this->hasOne(AgentInfo::class);
+    }
+
+    public function transactions():HasMany {
+        return $this->hasMany(Transaction::class);
+    }
+
+    public function sentTransactions():HasMany {
+        return $this->hasMany(Transaction::class, 'sender_id');
+    }
+
+    public function receivedTransactions():HasMany {
+        return $this->hasMany(Transaction::class, 'recipient_id');
+    }
+
+    public function agentTransactions():HasMany {
+        return $this->hasMany(Transaction::class, 'agent_id');
+    }
+
+    public function initiatedTransactions():HasMany {
+        return $this->hasMany(Transaction::class, 'initiated_by');
+    }
+
+    public function assignedRoles():HasMany {
+        return $this->hasMany(UserRole::class, 'assigned_by');
+    }
+
+    public function updatedSettings():HasMany {
+        return $this->hasMany(SystemSetting::class, 'updated_by');
+    }
+
+    public function createdOtps():HasMany {
+        return $this->hasMany(OtpToken::class);
+    }
+
+    public function authProviders():HasMany {
+        return $this->hasMany(AuthProvider::class);
+    }
 }
+
