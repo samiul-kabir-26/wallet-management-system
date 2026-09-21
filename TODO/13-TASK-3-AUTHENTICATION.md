@@ -469,13 +469,20 @@ Add **middleware** that rejects any request from a user whose `password_changed_
 
 **There is no self-service PIN recovery.** A user who cannot log in contacts customer care, who verifies identity out of band — a human process outside this system.
 
-**Step 1 — `PATCH /api/v1/users/:id/initiate-pin-reset`** (staff only)
+**Step 1 — `POST /api/v1/auth/pin-reset/initiate`** (MODERATOR and above)
 
-1. Authorize — see the open question below on which role this is
-2. Attach the supplied email address to the user's phone-based account
-3. Handle the uniqueness collision: `users.email` is unique, so that address may already belong to someone else. Reject clearly rather than letting the constraint throw
-4. Generate a signed URL via `URL::temporarySignedRoute()` with a short expiry
-5. Send the link to that address; record who initiated the reset, for which user, and when
+**Body:** `{ "phone_number": "01712345678", "email": "user@example.com" }`
+
+Two inputs doing two different jobs: the **phone number** says *whose* PIN is being reset, the **email** says *where the link goes*. They are independent — nothing requires the email to already be associated with that account.
+
+1. Authorize: MODERATOR, ADMIN, or SUPER_ADMIN
+2. Find the user by `phone_number`. Not found → return a clear error. This is authenticated staff tooling, so enumeration concerns do not apply; customer care needs to know the number is wrong
+3. Confirm the account actually has a PIN to reset — an admin-only account with no PIN is not a valid target
+4. Attach the email to the account
+5. Handle the uniqueness collision: `users.email` is unique, so that address may already belong to someone else. Reject with a clear message rather than letting the constraint throw
+6. Generate a signed URL via `URL::temporarySignedRoute()` with a short expiry
+7. Send the link to that address
+8. Record the initiator, the target user, the email attached, and the timestamp
 
 **Step 2 — `POST /api/v1/auth/reset-pin`** (consumes the link)
 
@@ -498,11 +505,13 @@ What the system must do is make it **visible**: record the initiator, the target
 
 Note that attaching an email grants no admin access by itself — route 1 also requires a password and an admin role, neither of which this flow provides.
 
-### Open question for Task 4
+### Customer care = MODERATOR
 
-**Which role is "customer care"?** Your five roles are SUPER_ADMIN, ADMIN, MODERATOR, AGENT, USER. MODERATOR is described as a configurable subset of ADMIN permissions, and the §4 capability table currently gives it read-only access. Initiating a PIN reset is a write action with real consequence.
+Decided. `CLAUDE.md` §4 has been updated: MODERATOR gains "Can Initiate PIN Reset" and is otherwise read-only.
 
-Decide before building the endpoint: extend MODERATOR, restrict to ADMIN and above, or introduce a dedicated role. Record the answer in `CLAUDE.md` §4.
+This is its **only** write capability, which is what makes extending the role acceptable. The action starts a credential change but never sets a credential value — the worst a compromised MODERATOR account can do here is cause a reset link to be emailed somewhere. Contrast with letting MODERATOR set a PIN directly, which would hand it spending authority over every wallet.
+
+When you write `UserPolicy`, resist the temptation to fold this into a general `isStaff()` check. MODERATOR can do this one thing and no other write; a broad helper will quietly grant it more the moment someone adds another staff action.
 
 ---
 

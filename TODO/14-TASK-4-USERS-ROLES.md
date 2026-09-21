@@ -342,25 +342,21 @@ Two endpoints live in this module but belong to flows specified in Task 3. Build
 | Endpoint | Flow | Who |
 |---|---|---|
 | `PATCH /api/v1/users/:id/grant-admin-access` | Case B — user gains admin access | SUPER_ADMIN only |
-| `PATCH /api/v1/users/:id/initiate-pin-reset` | Case C — PIN reset | **open question, see below** |
+| `POST /api/v1/auth/pin-reset/initiate` | Case C — PIN reset | MODERATOR and above |
+
+Note the second identifies the account by **phone number in the body**, not by an ID in the path — customer care has the caller quoting their number, and a lookup step first buys nothing. It lives under `/auth` rather than `/users` for that reason.
 
 **The rule that governs both:** staff initiate a credential change, but never choose the credential value. `grant-admin-access` sets a temporary password the user must replace; `initiate-pin-reset` sends a link through which the user sets their own PIN.
 
 This is not ceremony. The same PIN authorizes login and transactions, so a staff member who knew a user's PIN could spend that user's balance with the audit trail pointing at the victim.
 
-### Open question — which role is "customer care"?
+### Customer care = MODERATOR — decided
 
-Your five roles are SUPER_ADMIN, ADMIN, MODERATOR, AGENT, USER. Nothing maps cleanly to a support agent who verifies identity over the phone and initiates a PIN reset.
+`CLAUDE.md` §4 now grants MODERATOR "Can Initiate PIN Reset". It remains read-only for everything else.
 
-MODERATOR is described in `CLAUDE.md` §4 as a configurable subset of ADMIN permissions, and the capability table currently gives it read-only access. Initiating a PIN reset is a write action that begins a credential change.
+**Policy implication:** this is MODERATOR's single write capability. When writing `UserPolicy`, give it its own method rather than folding it into a general `isStaff()` or `canManageUsers()` helper — a broad predicate will silently widen MODERATOR's reach the next time someone adds a staff action behind the same check.
 
-Three options:
-
-1. **Extend MODERATOR** to include it. Fits the "configurable subset" description, but MODERATOR stops being read-only, which weakens a currently simple mental model.
-2. **Restrict to ADMIN and above.** Simplest, no schema change. Whether it matches how support actually staffs is your call.
-3. **Add a CUSTOMER_CARE role.** Cleanest separation, one more row in `roles`, and a capability table to extend.
-
-Decide before writing `UserPolicy`, and update the §4 capability table in `CLAUDE.md` with the answer.
+Your test suite should assert the boundary explicitly: a MODERATOR can initiate a PIN reset, and cannot register a user, approve an agent, block a wallet, or change settings.
 
 ---
 
