@@ -18,7 +18,7 @@ class SuperAdminSeeder extends Seeder
 
         $role = Role::where('name', 'SUPER_ADMIN')->firstOrFail();
 
-        $user = User::create([
+        $user = User::forceCreate([
             'name'=>'SUPER ADMIN',
             'email'=> config('admin.email'),
             'password'=>Hash::make(config('admin.password')),

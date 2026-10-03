@@ -21,9 +21,17 @@ class UserFactory extends Factory
             'phone_number' => fake()->unique()->numerify('01#########'),
             'password' => static::$password ??= Hash::make('password'),
             'pin' => Hash::make('12345'),
-            'is_active' => true,
+            'is_active' => 'ACTIVE',
             'is_verified' => true,
+            'password_changed_at'=> now()
         ];
+    }
+
+    public function pendingPasswordChange(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'password_changed_at' => null,
+        ]);
     }
 
     public function unverified(): static

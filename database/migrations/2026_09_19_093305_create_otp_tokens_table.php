@@ -16,7 +16,7 @@ return new class extends Migration
          
             $table->unsignedBigInteger('user_id');
             $table->string('otp_code');
-            $table->enum('purpose',['LOGIN', 'PASSWORD_RESET']);
+            $table->enum('purpose',['LOGIN', 'PASSWORD_RESET', 'SET_PIN']);
             $table->timestamp('used_at')->nullable();
             $table->integer('attempt_count')->default(0);
             $table->integer('max_attempts')->default(5);

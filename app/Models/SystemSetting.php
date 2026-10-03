@@ -7,9 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'system_fee_rate',
-    'agent_commission_rate',
-    // other settings that should be assignable
+    'key',
+    'value',
+    'description'
 ])]
 class SystemSetting extends Model
 {

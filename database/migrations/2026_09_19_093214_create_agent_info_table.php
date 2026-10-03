@@ -16,7 +16,7 @@ return new class extends Migration
 
             $table->unsignedBigInteger('user_id')->unique();
             $table->enum('status',['PENDING', 'APPROVED', 'SUSPENDED', 'DELETED'])->default('PENDING');
-            $table->decimal('commission_rate', 6, 4)->default(0.0001);
+            $table->decimal('commission_rate', 6, 4)->default(0.0100);
             $table->decimal('total_commission', 19, 2)->default(0.00);
             $table->timestamp('approved_at')->nullable();
             $table->unsignedBigInteger('approved_by')->nullable();

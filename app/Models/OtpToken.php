@@ -8,11 +8,21 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'user_id',
-    'token',
+    'otp_code',
+    'purpose',
     'expires_at',
 ])]
 class OtpToken extends Model
 {
+
+    protected function casts(): array
+    {
+        return [
+            'expires_at' => 'datetime',
+            'used_at' => 'datetime',
+        ];
+    }
+
     public function user():BelongsTo {
         return $this->belongsTo(User::class);
     }

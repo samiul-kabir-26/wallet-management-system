@@ -48,11 +48,19 @@ class User extends Authenticatable
     {
         return [
             'password' => 'hashed',
+            'pin' => 'hashed',
+            'password_changed_at' => 'datetime',
         ];
     }
 
-    public function roles():HasMany {
+    public function roleAssignments():HasMany {
         return $this->hasMany(UserRole::class);
+    }
+
+    public function roles():BelongsToMany {
+        return $this->belongsToMany(Role::class, 'user_roles')
+        ->withPivot('assigned_at', 'assigned_by')
+        ->withTimestamps();
     }
 
     public function wallet():HasOne {

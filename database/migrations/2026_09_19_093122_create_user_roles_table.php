@@ -23,6 +23,7 @@ return new class extends Migration
             // FK constraints
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
             $table->foreign('role_id')->references('id')->on('roles')->onDelete('cascade');
+            $table->unique(['user_id', 'role_id']);
             $table->foreign('assigned_by')->references('id')->on('users')->onDelete('set null');
 
         });

@@ -106,13 +106,10 @@ Auth Flow:
    - **For this project: Sanctum** — not merely because it is simpler, but because its **token abilities** solve the scoping requirement natively. `createToken($name, ['admin'])` stamps the ability onto the token; `$user->tokenCan('admin')` checks it. Without a feature like this you would be hand-rolling scope claims and their verification, which is exactly the kind of security-critical wheel not to reinvent.
    - Read the "Token Abilities" section of the Sanctum docs before writing the first login endpoint.
 
-3. **JWT Token Structure**
-   ```
-   Header.Payload.Signature
-   ```
-   - Header: Token type, hashing algorithm
-   - Payload: Claims (user_id, roles, expiry)
-   - Signature: Cryptographic signature
+3. **Sanctum Token Structure**
+   - Not JWT. A Sanctum personal access token is a random plaintext string returned once at creation; only its **SHA-256 hash** is stored in the `personal_access_tokens` table, alongside `name`, `abilities` (JSON array), `tokenable_id`/`tokenable_type`, and `last_used_at`.
+   - There is nothing to "decode" — the server looks up the hash on every request. No header/payload/signature, no client-side claims.
+   - This is why revocation is trivial: `delete()` the row and the token is dead immediately, unlike a self-contained JWT which stays valid until it expires unless you maintain a separate blacklist.
 
 4. **Password Hashing**
    - Use bcrypt (Laravel's default)
@@ -126,10 +123,9 @@ Auth Flow:
 ### Before You Code
 
 Research:
-- What is JWT?
-- How does token refresh work?
+- How do Sanctum token abilities work — `createToken($name, $abilities)` and `tokenCan()`?
 - What is OTP and how is it used?
-- What does "stateless authentication" mean?
+- What does "stateless authentication" mean, and how does Sanctum achieve it for an SPA/mobile client without sessions?
 
 ---
 
@@ -177,7 +173,7 @@ Resist the temptation to collapse them into a single endpoint with a `panel` par
       "is_verified": false,
       "is_active": "ACTIVE"
     },
-    "token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+    "token": "1|p7X9...plaintext-once...",
     "token_type": "Bearer",
     "abilities": ["user"]
   }
@@ -193,7 +189,7 @@ Resist the temptation to collapse them into a single endpoint with a `panel` par
 6. Create Cap record
 7. If AGENT: Create AgentInfo (PENDING status)
 8. Assign role via UserRole
-9. Generate JWT token
+9. Generate Sanctum token with the `user` (or `agent`) ability
 10. Return user + token
 
 **What to Create:**
@@ -217,9 +213,9 @@ Resist the temptation to collapse them into a single endpoint with a `panel` par
 
 ---
 
-### Endpoint 2: User Login
+### Endpoint 2 & 3: Agent Login and User Login
 
-**Route:** `POST /api/v1/auth/login`
+**Routes:** `POST /api/v1/auth/agent/login`, `POST /api/v1/auth/user/login` — two routes, same request/response shape, different role gate and token ability.
 
 **Request Body:**
 ```json
@@ -240,34 +236,39 @@ Resist the temptation to collapse them into a single endpoint with a `panel` par
       "name": "John Doe",
       "phone_number": "01712345678"
     },
-    "token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "token_type": "Bearer"
+    "token": "1|p7X9...plaintext-once...",
+    "token_type": "Bearer",
+    "abilities": ["user"]
   }
 }
 ```
 
-**Business Logic:**
+The `token` value is a one-time plaintext string Sanctum generates at `createToken()` — it is never recoverable again after this response, only its hash persists server-side.
+
+**Business Logic (shared, in `PinAuthService`):**
 1. Validate input using Form Request
-2. Find user by phone_number
+2. Find user by `phone_number`
 3. If not found: return 401 Unauthorized
-4. Verify PIN using `Hash::check()`
+4. Verify PIN using `Hash::check()` — never fall back to `password`
 5. If PIN incorrect: return 401 Unauthorized
 6. Check if user is active (`is_active == 'ACTIVE'`)
-7. Generate JWT token
-8. Return user + token
+
+**Then, per route, not shared:**
+- Agent route: confirm the user holds AGENT **and** `agent_info.status == 'APPROVED'`; if not, 403. Issue `createToken('agent-login', ['agent'])`.
+- User route: confirm the user holds USER; if not, 403. Issue `createToken('user-login', ['user'])`.
 
 **What to Create:**
-- `app/Http/Requests/Auth/LoginRequest.php` — Validation
-- Add login method to `UserAuthService`
-- Add login endpoint to `AuthController`
+- `app/Http/Requests/Auth/PinLoginRequest.php` — shared validation
+- `PinAuthService` with the shared credential-check method; each controller action layers its own role gate and token ability on top
+- Two controller actions (or two controllers) — resist collapsing into one with a `panel` parameter, per the note at the top of Step 2
 
-**Validation Rules (LoginRequest):**
+**Validation Rules (PinLoginRequest):**
 - `phone_number`: required, phone format
 - `pin`: required, digits only
 
 **What You Should Understand:**
 - How to verify hashed data
-- Token generation
+- `createToken($name, array $abilities)` and what gets stored vs. what gets returned
 - Error handling and status codes
 
 ---
@@ -360,8 +361,9 @@ Do not write `where('email', $id)->orWhere('phone_number', $id)`. It works, but 
       "name": "Admin User",
       "email": "admin@example.com"
     },
-    "token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "token_type": "Bearer"
+    "token": "2|q8Y0...plaintext-once...",
+    "token_type": "Bearer",
+    "abilities": ["admin"]
   }
 }
 ```
@@ -381,7 +383,7 @@ Do not write `where('email', $id)->orWhere('phone_number', $id)`. It works, but 
    - Return 401 with reason
 6. If valid:
    - Mark OTP as used (`used_at = now()`)
-   - Generate JWT token
+   - Generate Sanctum token with the `admin` ability
    - Return user + token
 
 **What to Create:**
@@ -517,16 +519,13 @@ When you write `UserPolicy`, resist the temptation to fold this into a general `
 
 ## Step 4: Token Refresh & Logout
 
+Sanctum has no distinct "refresh token" concept — there's one token type, and revocation is just deleting the database row. The endpoints below map onto that, not onto the JWT access/refresh-pair pattern.
+
 ### Endpoint 1: Refresh Token
 
 **Route:** `POST /api/v1/auth/refresh-token`
 
-**Request Body:**
-```json
-{
-  "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGc..."
-}
-```
+**Request:** no body needed — this acts on the **currently authenticated token**, sent as the usual `Authorization: Bearer {token}` header.
 
 **Response (200):**
 ```json
@@ -534,23 +533,25 @@ When you write `UserPolicy`, resist the temptation to fold this into a general `
   "success": true,
   "message": "Token refreshed",
   "data": {
-    "token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "token_type": "Bearer"
+    "token": "3|r1Z2...plaintext-once...",
+    "token_type": "Bearer",
+    "abilities": ["user"]
   }
 }
 ```
 
 **Business Logic:**
-1. Validate refresh_token format
-2. Decode refresh token
-3. Check if token is blacklisted
-4. Generate new access token
-5. Return new token
+1. Read the currently authenticated token: `$request->user()->currentAccessToken()`
+2. Capture its `name` and `abilities` — the new token must carry the **same** ability, never escalate it
+3. Delete the current token row (`->delete()`), revoking it immediately
+4. Issue a new token with `createToken($name, $abilities)`
+5. Return the new plaintext token
+
+**Why this needs its own route at all, if the client could just keep using the old token:** rotating the token value periodically limits the blast radius of a leaked token — an intercepted token stops working once the legitimate client rotates it. This is a convenience/security endpoint, not a mechanism Sanctum requires you to have.
 
 **What You Should Understand:**
-- Refresh token strategy
-- Token blacklisting/revocation
-- Access token expiry (shorter) vs. refresh token expiry (longer)
+- Sanctum tokens don't expire by default (`sanctum.expiration` config, null unless you set it) — rotation here is a deliberate choice, not compensating for built-in expiry
+- `currentAccessToken()` vs. issuing a brand new, unrelated token — the ability must carry over exactly
 
 ---
 
@@ -569,16 +570,12 @@ When you write `UserPolicy`, resist the temptation to fold this into a general `
 ```
 
 **Business Logic:**
-1. Extract token from header
-2. Blacklist the token (prevent further use)
-3. Return success
+1. Delete the current token: `$request->user()->currentAccessToken()->delete()`
+2. Return success
 
-**Options for Blacklisting:**
-- Option A: Store blacklisted tokens in `token_blacklist` table
-- Option B: Store in Redis with expiry
-- Option C: Just invalidate on the frontend (simpler for MVP)
+**No blacklist table, no Redis, no frontend-only invalidation.** This is the one place the old JWT-shaped options in this doc were actively wrong for Sanctum — deleting the token row **is** the revocation. It takes effect immediately on the next request, since every request looks the row up by hash. There is no equivalent gap to fill.
 
-**For now:** Implement Option C (frontend invalidates)
+**Worth deciding:** should logout revoke only the current token, or every token the user holds (`$request->user()->tokens()->delete()`)? Given a user may hold an `admin` token and a `user` token simultaneously from two different panels, revoking "logout from everywhere" by default would silently kill a session on another route the person didn't ask to log out of. Default to revoking only the current token; a separate "logout everywhere" action is a deliberate, different endpoint if you ever need it.
 
 ---
 
@@ -643,24 +640,30 @@ When you write `UserPolicy`, resist the temptation to fold this into a general `
 
 ## Step 6: Authentication Middleware
 
-### Create Custom Middleware
+**Do not write a custom token-decoding middleware.** Sanctum already ships `auth:sanctum` — it hashes the bearer token, looks up the matching row, and sets `$request->user()`. That's the entire mechanism this project needs; a hand-rolled `Authenticate.php` that decodes anything would be solving a problem Sanctum doesn't have.
 
-**File:** `app/Http/Middleware/Authenticate.php`
+What you actually need to write, on top of the built-in guard:
 
-**Responsibilities:**
-1. Extract token from `Authorization: Bearer {token}` header
-2. Decode and validate JWT token
-3. Check token expiry
-4. Extract user from token
-5. Inject user into request (`$request->user()`)
-6. Allow request to continue
-7. If invalid: return 401 Unauthorized
+### 1. Role + ability gates on every protected route
+
+Every protected route needs **two** checks, per `CLAUDE.md` §9/§16 — not one:
+
+```php
+Route::middleware(['auth:sanctum', 'ability:admin'])->group(function () {
+    // role check happens inside the controller/policy, or via a second middleware
+});
+```
+
+`ability:admin` is Sanctum's built-in middleware — it calls `tokenCan('admin')` for you. The **role** check (does this user actually hold ADMIN/SUPER_ADMIN/MODERATOR) is a separate concern — decide whether that belongs in a Policy, a Gate, or a small custom middleware when we get to Task 4. Don't conflate "has the ability" with "has the role"; both must pass independently, and mixing them into one check is how someone eventually forgets the second half.
+
+### 2. `EnsurePasswordChanged` middleware (custom, genuinely needed)
+
+This one you do write — see Case B above. It checks `password_changed_at` on the authenticated user and blocks every route except `change-password` while it's NULL. This is project-specific business logic, not something Sanctum provides.
 
 **What You Should Understand:**
-- Middleware lifecycle
-- Request/response cycle
-- Token validation
-- Guard system
+- `auth:sanctum` guard — what it does on every request, and that there's no token "validation" step for you to write, only a hash lookup
+- The difference between Sanctum's `ability:` middleware (checks the token) and a role check (checks the user) — both required, neither substitutes for the other
+- Middleware pipeline ordering — `EnsurePasswordChanged` must run after `auth:sanctum` (it needs `$request->user()`) and before route-specific logic
 
 ---
 
@@ -681,10 +684,12 @@ When you write `UserPolicy`, resist the temptation to fold this into a general `
     "user": {...},
     "token": "...",
     "token_type": "Bearer",
-    "expires_in": 3600
+    "abilities": ["..."]
   }
 }
 ```
+
+No `expires_in` — Sanctum tokens don't expire by default (see Step 1). Omit the field rather than hardcoding a number that isn't true yet; if you later configure `sanctum.expiration`, add it back then.
 
 **User Resource:**
 - Include: id, name, email (if admin), phone_number (if user), roles
@@ -791,7 +796,7 @@ Test:
 - `app/Services/Otp/OtpService.php`
 
 ### Middleware
-- `app/Http/Middleware/Authenticate.php` (custom, if needed)
+- No custom token-decoding middleware — `auth:sanctum` and Sanctum's built-in `ability:` middleware cover that
 - `app/Http/Middleware/EnsurePasswordChanged.php` — blocks every route but change-password while `password_changed_at` is NULL
 - Route-level ability gates via Sanctum's `abilities` / `ability` middleware
 
@@ -883,8 +888,8 @@ Before moving to Task 4, verify:
 
 After completing this task, you should understand:
 
-✅ How Laravel Sanctum works  
-✅ JWT token structure  
+✅ How Laravel Sanctum works, and why it was chosen over JWT for this project  
+✅ Sanctum token abilities and `tokenCan()` for scoping  
 ✅ Form Requests for validation  
 ✅ Service classes for business logic  
 ✅ OTP generation and validation  

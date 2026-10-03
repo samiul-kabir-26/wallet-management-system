@@ -17,6 +17,14 @@ class AgentInfo extends Model
     protected $table = 'agent_info';
 
 
+    protected function casts(): array
+    {
+        return [
+            'commission_rate' => 'decimal:4',
+            'total_commission' => 'decimal:2',
+        ];
+    }
+
     public function user():BelongsTo {
         return $this->belongsTo(User::class);
     }

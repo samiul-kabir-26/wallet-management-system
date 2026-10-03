@@ -23,10 +23,11 @@ return new class extends Migration
             $table->enum('is_active', ['ACTIVE', 'INACTIVE'])->default('ACTIVE');
             $table->boolean('is_verified')->default(false);
             $table->boolean('is_deleted')->default(false);
+            $table->timestamp('password_changed_at')->nullable();
             $table->timestamps();
         });
     }
-
+    
     /**
      * Reverse the migrations.
      */

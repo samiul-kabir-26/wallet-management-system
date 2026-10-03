@@ -1,10 +1,23 @@
 # Task 2 Review — Issues Found Before Starting Task 3
 
 **Reviewed:** 2026-09-20
+**Re-verified:** 2026-10-03
 **Scope:** 10 migrations, 10 models, 3 seeders, `config/admin.php`
 **Verdict:** Schema design is sound. Execution has **5 blockers** that will break Task 3 on the first endpoint you write, plus 6 important issues and 6 minor ones.
 
 All findings below were verified against the live database and the running application, not just read from the source.
+
+## Status as of 2026-10-03
+
+All 5 blockers and all items in the Suggested Fix Order's Round 1–3 lists are resolved and re-verified against a live `migrate:fresh --seed`, **except**:
+
+- **#11 (super admin has no wallet/cap)** — still open, confirmed `wallets`/`caps` both empty. Not a Task 3 blocker (auth doesn't touch wallets); revisit in Task 4/5.
+- **#13 (`RoleSeeder` not idempotent) / #14 (`SystemSetting.value` has no cast)** — still open, cosmetic/deferred, not blocking.
+- **#17 (missing indexes)** — intentionally not added yet; add during Task 3/Task 6 when the real queries exist, per the original guidance below.
+
+**#12 (`User::roles()` relation type) — closed 2026-10-03.** `roles()` now `belongsToMany(Role::class, 'user_roles')` with `withPivot('assigned_at', 'assigned_by')->withTimestamps()`; the old `hasMany(UserRole::class)` kept as `roleAssignments()`. Verified live: `$su->roles` returns a real `Role` model, pivot columns reachable via `->pivot->assigned_by`.
+
+Everything else — table naming, all models' `$fillable`/`$casts`, `User` hidden fields, `UserFactory`, `user_type` drop, `password_changed_at`, `otp_tokens.purpose`, all unique constraints — is confirmed fixed and verified live.
 
 ---
 
@@ -385,39 +398,33 @@ Roughly 60–90 minutes, and it clears the path for all of Task 3.
 | # | Item | Issue | Status |
 |---|---|---|---|
 | 1 | `agent_info`, `caps`, `wallets`: column-level `unique()` on `user_id` | #6 | ✅ done |
-| 2 | `user_roles`: composite unique on `(user_id, role_id)` | #7 | ❌ not started |
+| 2 | `user_roles`: composite unique on `(user_id, role_id)` | #7 | ✅ done (2026-10-03) |
 | 3 | `agent_info.commission_rate` default -> `0.01` | #8 | ✅ done |
-| 4 | **Rate** columns -> `DECIMAL(6,4)` on `transactions` and `agent_info` | #9 | ❌ inverted — see below |
+| 4 | **Rate** columns -> `DECIMAL(6,4)` on `transactions` and `agent_info` | #9 | ✅ done (2026-10-03) |
 | 5 | `roles.description` -> nullable | #16 | ✅ done |
-| 6 | `users`: drop `user_type` | #18 | ❌ not started |
-| 7 | `users`: add nullable `password_changed_at` | #19 | ❌ not started |
-| 8 | `otp_tokens.purpose`: add `SET_PIN` to the enum | #20 | ❌ not started |
+| 6 | `users`: drop `user_type` | #18 | ✅ done (2026-10-03) |
+| 7 | `users`: add nullable `password_changed_at` | #19 | ✅ done (2026-10-03) |
+| 8 | `otp_tokens.purpose`: add `SET_PIN` to the enum | #20 | ✅ done (2026-10-03) |
 
-**On item 4 — the fix was applied to the wrong columns.** `transactions.amount` and `transactions.system_fee_amount` were widened from `19,2` to `19,4`; the three *rate* columns were left at `5,2`.
-
-An **amount** is a quantity of money. BDT subdivides into 100 poisha, so `19,2` is the currency's actual granularity, not a limitation. A **rate** is a multiplier — `0.025` means 2.5% — and never touches a wallet directly.
-
-Widening amounts is actively harmful: `wallets.balance` remains `decimal(19,2)`, so a `decimal(19,4)` transaction amount can record a value the wallet cannot hold. The invariant *sum of transaction amounts equals change in balance* then stops holding, and every rounding at the wallet boundary loses fractions that never reconcile.
-
-Revert `amount` and `system_fee_amount` to `19,2`. Change `transactions.system_fee_rate`, `transactions.agent_commission_rate`, and `agent_info.commission_rate` to `6,4` — two digits before the point, four after, max `99.9999`, stores `0.0250` exactly. Leave every other `19,2` column alone.
+Item 4 was corrected to the right columns: `amount`/`system_fee_amount` stayed `19,2` (matching `wallets.balance`), `system_fee_rate`/`agent_commission_rate`/`agent_info.commission_rate` widened to `6,4`. Verified live.
 
 **Round 2 — models**
-1. `AgentInfo`: declare the table name (#1)
-2. All models: `$fillable`, excluding money and state columns (#2)
-3. `User`: add `phone_number`, `pin`, `image`, `address` to fillable — **not** `user_type` (dropped) and **not** `password_changed_at` (#3, #18, #19)
-4. `User`: add `pin` to hidden, drop `remember_token`; remove the `email_verified_at` cast and the stale docblock (#4, #5)
-5. All models: `$casts` — add `password_changed_at => 'datetime'` on `User` (#10, #19)
-6. `User`: add `belongsToMany` roles, rename the `hasMany` to `roleAssignments()` (#12)
+1. `AgentInfo`: declare the table name (#1) — ✅ done
+2. All models: `$fillable`, excluding money and state columns (#2) — ✅ done, verified live for `User`, `AgentInfo`, `Transaction`, `OtpToken`, `SystemSetting`, `Wallet`, `Cap`, `Role`, `UserRole`, `AuthProvider`
+3. `User`: add `phone_number`, `pin`, `image`, `address` to fillable — **not** `user_type` (dropped) and **not** `password_changed_at` (#3, #18, #19) — ✅ done
+4. `User`: add `pin` to hidden, drop `remember_token`; remove the `email_verified_at` cast and the stale docblock (#4, #5) — ✅ done
+5. All models: `$casts` — add `password_changed_at => 'datetime'` on `User` (#10, #19) — ✅ done (2026-10-03) for `User`, `AgentInfo`, `Transaction`, `OtpToken`
+6. `User`: add `belongsToMany` roles, rename the `hasMany` to `roleAssignments()` (#12) — ✅ done (2026-10-03)
 
 **Round 3 — factories and seeders**
-7. Rewrite `UserFactory` for your real schema, add states — remove `user_type` (#5, #18)
-8. Decide the admin-wallet question, record it in `CLAUDE.md`, update `SuperAdminSeeder`, wrap in `DB::transaction()` (#11)
-9. `SuperAdminSeeder`: set `password_changed_at` — the seeded super admin is not a pending invite (#19)
-10. Make all three seeders idempotent with `firstOrCreate` (#13)
+7. Rewrite `UserFactory` for your real schema, add states — remove `user_type` (#5, #18) — ✅ done (2026-10-03)
+8. Decide the admin-wallet question, record it in `CLAUDE.md`, update `SuperAdminSeeder`, wrap in `DB::transaction()` (#11) — ❌ still open, deferred to Task 4/5 (not a Task 3 dependency)
+9. `SuperAdminSeeder`: set `password_changed_at` (#19) — **decided differently**: left `NULL` deliberately, treating the seeded super admin as a pending-invite-style account subject to the same forced-change gate as Case B. Valid alternative to the original suggestion.
+10. Make all three seeders idempotent with `firstOrCreate` (#13) — ❌ still open, cosmetic
 
 **Round 4 — verify**
-15. Re-run the verification block below and confirm every line
-16. `migrate:fresh --seed` from clean, twice in a row — the second run must succeed, which proves idempotency
+15. Re-run the verification block below and confirm every line — ✅ done (2026-10-03), including `is_verified`/`is_active`/role assignment/settings spot-checked live
+16. `migrate:fresh --seed` from clean, twice in a row — not yet confirmed twice; seeders aren't idempotent yet (#13), so a second run will currently fail on duplicate roles/settings
 
 ---
 

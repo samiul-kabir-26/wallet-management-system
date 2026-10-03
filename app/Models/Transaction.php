@@ -16,6 +16,22 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class Transaction extends Model
 {
+
+    protected function casts(): array
+    {
+        return [
+            'amount' => 'decimal:2',
+            'system_fee_amount' => 'decimal:2',
+            'system_fee_rate' => 'decimal:4',
+            'agent_commission_amount' => 'decimal:2',
+            'agent_commission_rate' => 'decimal:4',
+            'sender_wallet_balance_after' => 'decimal:2',
+            'recipient_wallet_balance_after' => 'decimal:2',
+            'agent_wallet_balance_after' => 'decimal:2',
+            'meta' => 'array',
+        ];
+    }
+    
     public function user():BelongsTo {
         return $this->belongsTo(User::class, 'user_id');
     }
