@@ -18,12 +18,12 @@ class UserFactory extends Factory
         return [
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
-            'phone_number' => fake()->unique()->numerify('01#########'),
+            'phone_number' => fake()->unique()->numerify('01'.fake()->numberBetween(3, 9).'########'),
             'password' => static::$password ??= Hash::make('password'),
             'pin' => Hash::make('12345'),
             'is_active' => 'ACTIVE',
             'is_verified' => true,
-            'password_changed_at'=> now()
+            'password_changed_at' => now(),
         ];
     }
 

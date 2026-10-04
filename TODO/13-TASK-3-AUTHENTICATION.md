@@ -155,9 +155,12 @@ Resist the temptation to collapse them into a single endpoint with a `panel` par
   "name": "John Doe",
   "phone_number": "01712345678",
   "pin": "123456",
+  "pin_confirmation": "123456",
   "role": "USER"  // or "AGENT"
 }
 ```
+
+**`pin_confirmation` added beyond the original spec** — the PIN is the sole credential for both login and transaction authorization (§10), and there's no self-service recovery if mistyped at registration (§9 Case C requires staff intervention). Laravel's `confirmed` validation rule enforces this; `pin_confirmation` is never persisted, only compared.
 
 **Response (201):**
 ```json
@@ -180,7 +183,7 @@ Resist the temptation to collapse them into a single endpoint with a `panel` par
 }
 ```
 
-**Business Logic:**
+**Business Logic (wrap steps 2–9 in a single `DB::transaction()` — a failure partway through must not leave a half-registered user, per CLAUDE.md §7/§18):**
 1. Validate input using Form Request
 2. Check if phone already registered (unique constraint)
 3. Hash PIN using `Hash::make()`
@@ -192,17 +195,19 @@ Resist the temptation to collapse them into a single endpoint with a `panel` par
 9. Generate Sanctum token with the `user` (or `agent`) ability
 10. Return user + token
 
-**What to Create:**
-- `app/Http/Requests/Auth/RegisterRequest.php` — Form request with validation rules
-- `app/Services/Auth/UserAuthService.php` — Service class with registration logic
-- `app/Http/Controllers/Auth/AuthController.php` — Controller endpoint
-- `app/Http/Resources/AuthResource.php` — Format auth responses
-- Route in `routes/api.php`
+**Architectural note — module boundary seam, deliberately deferred:** steps 5–7 (`Wallet`, `Cap`, `AgentInfo` creation) are arguably not Authentication's responsibility — they belong to future `Wallets`/`Agents` modules. Written **inline in the Authentication registration service for now**, since those modules don't exist yet and building empty module shells prematurely isn't justified (§30). Revisit later: the clean seam is a `UserRegistered` event that a future `Wallets`/`Agents` module listens for, decoupling registration from what happens as a side effect of it. Not a blocker for this task — just don't be surprised this service does more than "authentication" strictly implies.
+
+**What to Create (paths under `Modules/Authentication/`, not `app/` — see architecture note at top of this doc):**
+- `Modules/Authentication/Http/Requests/RegisterRequest.php` — Form request with validation rules
+- `Modules/Authentication/Services/RegistrationService.php` — service class with registration logic (name your call; this is the suggested one)
+- `Modules/Authentication/Http/Controllers/AuthController.php` — new action on the existing controller
+- `Modules/Authentication/Resources/AuthResource.php` — already exists, reused as-is
+- Route in `Modules/Authentication/routes.php`
 
 **Validation Rules (RegisterRequest):**
 - `name`: required, string, min 2, max 255
-- `phone_number`: required, phone format, unique in users table
-- `pin`: required, regex (digits only), length 5-10
+- `phone_number`: required, string, BD mobile format `/^01[3-9]\d{8}$/`, unique in users table
+- `pin`: required, `digits_between:5,10`, `confirmed` (requires sibling `pin_confirmation`)
 - `role`: required, in ['USER', 'AGENT']
 
 **What You Should Understand:**
@@ -245,26 +250,38 @@ Resist the temptation to collapse them into a single endpoint with a `panel` par
 
 The `token` value is a one-time plaintext string Sanctum generates at `createToken()` — it is never recoverable again after this response, only its hash persists server-side.
 
-**Business Logic (shared, in `PinAuthService`):**
+**Business Logic (shared, in `PinAuthService::attempt(string $phoneNumber, string $pin): User`):**
 1. Validate input using Form Request
 2. Find user by `phone_number`
-3. If not found: return 401 Unauthorized
+3. If not found: run a dummy `Hash::check()` against a throwaway hash anyway (see "Enumeration & timing" below), then throw `InvalidCredentialsException`
 4. Verify PIN using `Hash::check()` — never fall back to `password`
-5. If PIN incorrect: return 401 Unauthorized
-6. Check if user is active (`is_active == 'ACTIVE'`)
+5. If PIN incorrect: throw `InvalidCredentialsException` — same exception, same message as step 3
+6. Check if user is active (`is_active == 'ACTIVE'`); if not, throw `AccountInactiveException`
 
 **Then, per route, not shared:**
 - Agent route: confirm the user holds AGENT **and** `agent_info.status == 'APPROVED'`; if not, 403. Issue `createToken('agent-login', ['agent'])`.
 - User route: confirm the user holds USER; if not, 403. Issue `createToken('user-login', ['user'])`.
 
+**Enumeration & timing — why steps 3 and 5 must be indistinguishable:**
+"No such phone number" and "wrong PIN" must produce the *identical* exception type and message. If they differ, an attacker can confirm which phone numbers are registered without ever guessing a PIN. `InvalidCredentialsException` covers both branches — the distinction never crosses out of the service.
+
+This also has a timing dimension: "not found" returns after one fast failed query, while "wrong PIN" costs a full bcrypt `Hash::check()`. Even with identical messages, response-time alone can leak which case occurred. Mitigate by running a dummy `Hash::check()` against a throwaway hash in the not-found branch too, so both paths cost roughly the same.
+
+`is_active` is a different risk category — reaching that check already proves the attacker knows the correct phone+PIN, so there's nothing left to protect by disguising it. `AccountInactiveException` is allowed to be distinct.
+
+Let each exception `render()` itself (Laravel lets an exception class define `render(Request $request): Response`) rather than having the controller catch and branch — keeps the controller to the success path only.
+
 **What to Create:**
 - `app/Http/Requests/Auth/PinLoginRequest.php` — shared validation
 - `PinAuthService` with the shared credential-check method; each controller action layers its own role gate and token ability on top
+- `Modules/Authentication/Exceptions/InvalidCredentialsException.php` and `AccountInactiveException.php`, each with their own `render()`
 - Two controller actions (or two controllers) — resist collapsing into one with a `panel` parameter, per the note at the top of Step 2
 
 **Validation Rules (PinLoginRequest):**
-- `phone_number`: required, phone format
-- `pin`: required, digits only
+- `phone_number`: required, string, BD mobile format `/^01[3-9]\d{8}$/` (11 digits, starts `01`, operator prefix `3`–`9`)
+- `pin`: required, `digits_between:5,10`
+
+**Deferred:** phone number normalization (e.g. accepting `+8801...` and stripping to `01...` via `prepareForValidation()`) is explicitly deferred, not handled in `PinLoginRequest` yet. Revisit when registration or a real client integration forces the decision — until then, only the exact `01XXXXXXXXX` shape is accepted.
 
 **What You Should Understand:**
 - How to verify hashed data
@@ -800,6 +817,11 @@ Test:
 - `app/Http/Middleware/EnsurePasswordChanged.php` — blocks every route but change-password while `password_changed_at` is NULL
 - Route-level ability gates via Sanctum's `abilities` / `ability` middleware
 
+### Exceptions
+- `app/Exceptions/ApiException.php` — shared abstract base, NOT module-specific. Defines `protected int $status`, `protected array $errors = []`, and `render(Request $request): JsonResponse` returning the project-wide `{"success": false, "message": ..., "errors": [...]}` envelope. Lives in `app/Exceptions/` rather than `Modules/Authentication/` because response-shaping is a cross-cutting HTTP concern other modules (Wallets, Transactions, ...) will need too — establishing this convention here so later modules extend it instead of re-deriving their own shape.
+- `Modules/Authentication/Exceptions/InvalidCredentialsException.php extends ApiException` — status 401, fixed message `"Invalid phone number or PIN."`, thrown identically for "phone not found" and "PIN incorrect" (see enumeration note under Endpoint 2 & 3 above)
+- `Modules/Authentication/Exceptions/AccountInactiveException.php extends ApiException` — thrown after credentials check out but `is_active != 'ACTIVE'`
+
 ### Resources
 - `app/Http/Resources/AuthResource.php`
 
@@ -847,13 +869,13 @@ Before moving to Task 4, verify:
 - [ ] `TODO/22-TASK-2-REVIEW.md` Rounds 1–4 complete — this module will not work otherwise
 
 **Routes**
-- [ ] Registration works (phone + PIN)
-- [ ] User login works and returns a `user`-ability token
-- [ ] Agent login works and returns an `agent`-ability token
-- [ ] Agent login rejected when `agent_info.status` is not APPROVED
+- [x] Registration works (phone + PIN) — `tests/Feature/Auth/RegisterTest.php`, verifies User/Wallet/Cap/role/token creation end-to-end, plus `AgentInfo` only for AGENT registrations
+- [x] User login works and returns a `user`-ability token — `tests/Feature/Auth/PinLoginTest.php`
+- [x] Agent login works and returns an `agent`-ability token — `tests/Feature/Auth/PinLoginTest.php`
+- [x] Agent login rejected when `agent_info.status` is not APPROVED — covers both "no `agent_info` row" and "row exists but `PENDING`"
 - [ ] Admin login works with email **and** with phone number
 - [ ] Admin OTP verification returns an `admin`-ability token
-- [ ] Authenticating correctly but lacking the route's role returns 403
+- [x] Authenticating correctly but lacking the route's role returns 403 — `InsufficientRoleException`, tested
 
 **Token scoping**
 - [ ] Tokens carry exactly one ability, matching their issuing route
@@ -876,11 +898,11 @@ Before moving to Task 4, verify:
 
 **General**
 - [ ] Expired tokens are rejected
-- [ ] Invalid credentials return 401
+- [x] Invalid credentials return 401 — not-found and wrong-PIN verified byte-identical (anti-enumeration), `tests/Feature/Auth/PinLoginTest.php`
 - [ ] OTP expires after 5 minutes and is single-use
-- [ ] Rate limiting is active on all three login routes
-- [ ] No passwords or PINs in any API response — check the login response body specifically
-- [ ] All tests pass
+- [ ] Rate limiting is active on all three login routes — **deliberately deferred**, revisit once all auth routes exist so one limiter policy can be applied consistently
+- [x] No passwords or PINs in any API response — `AuthResource` whitelists fields explicitly (`id`/`name`/`phone_number`/`email`/`roles`), never serializes the model directly
+- [ ] All tests pass — Step 2 complete: PIN-login (7/7) + registration (7/7), 16/16 passing; admin flows (Step 3) not yet written
 
 ---
 
