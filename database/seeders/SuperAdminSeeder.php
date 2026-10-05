@@ -15,7 +15,6 @@ class SuperAdminSeeder extends Seeder
      */
     public function run(): void
     {
-
         $role = Role::where('name', 'SUPER_ADMIN')->firstOrFail();
 
         $user = User::forceCreate([
@@ -24,7 +23,7 @@ class SuperAdminSeeder extends Seeder
             'password' => Hash::make(config('admin.password')),
             'is_verified' => true,
             'is_active' => 'ACTIVE',
-
+            'password_changed_at' => now(),
         ]);
 
         UserRole::create([

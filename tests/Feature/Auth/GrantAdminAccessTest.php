@@ -122,3 +122,23 @@ test('super admin can grant admin access to phone-verified user', function () {
     expect($pivot->assigned_by)->toBe($superAdmin->id);
     expect($pivot->assigned_at)->not->toBeNull();
 });
+
+test('super admin with pending password change is blocked from granting admin access with 403', function () {
+    $superAdmin = User::factory()->pendingPasswordChange()->create();
+    $superAdmin->roles()->attach(Role::where('name', 'SUPER_ADMIN')->first()->id, ['assigned_at' => now()]);
+
+    $target = User::factory()->create(['is_verified' => true]);
+
+    Sanctum::actingAs($superAdmin, ['admin']);
+
+    $response = $this->patchJson("/api/v1/users/{$target->id}/grant-admin-access", [
+        'email' => 'newadmin@example.com',
+    ]);
+
+    $response->assertStatus(403)
+        ->assertExactJson([
+            'success' => false,
+            'message' => 'You must change your password before proceeding.',
+            'errors' => [],
+        ]);
+});

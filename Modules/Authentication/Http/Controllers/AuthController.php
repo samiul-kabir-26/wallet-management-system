@@ -17,10 +17,12 @@ use Modules\Authentication\Exceptions\UserNotFoundException;
 use Modules\Authentication\Http\Requests\AcceptInviteRequest;
 use Modules\Authentication\Http\Requests\AdminLoginRequest;
 use Modules\Authentication\Http\Requests\ChangePasswordRequest;
+use Modules\Authentication\Http\Requests\ForgotPasswordRequest;
 use Modules\Authentication\Http\Requests\GrantAdminAccessRequest;
 use Modules\Authentication\Http\Requests\InitiatePinResetRequest;
 use Modules\Authentication\Http\Requests\PinLoginRequest;
 use Modules\Authentication\Http\Requests\RegisterRequest;
+use Modules\Authentication\Http\Requests\ResetPasswordRequest;
 use Modules\Authentication\Http\Requests\ResetPinRequest;
 use Modules\Authentication\Http\Requests\SetPinRequest;
 use Modules\Authentication\Http\Requests\VerifyOtpRequest;
@@ -42,6 +44,40 @@ class AuthController extends Controller
         private AccountInviteService $accountInviteService,
         private PinResetService $pinResetService,
     ) {}
+
+    /**
+     * Request a password reset OTP.
+     */
+    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
+    {
+        $this->adminAuthService->forgotPassword($request->email);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'If that email address is in our system, we have sent a password reset OTP.',
+        ]);
+    }
+
+    /**
+     * Reset password using OTP and set new password.
+     *
+     * @throws InvalidOtpException
+     * @throws AccountInactiveException
+     * @throws InsufficientRoleException
+     */
+    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    {
+        $this->adminAuthService->resetPassword(
+            email: $request->email,
+            otpCode: $request->otp_code,
+            newPassword: $request->new_password,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password reset successfully. Please log in with your new password.',
+        ]);
+    }
 
     /**
      * Refresh the current access token, preserving exact name and abilities.

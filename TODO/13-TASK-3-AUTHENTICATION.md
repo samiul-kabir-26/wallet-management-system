@@ -698,7 +698,7 @@ This one you do write — see Case B above. It checks `password_changed_at` on t
 
 ### Create Response Resources
 
-**File:** `app/Http/Resources/AuthResource.php`
+**File:** `Modules/Authentication/Resources/AuthResource.php` (not `app/Http/Resources/` — see architecture note at top of this doc). Built once, reused across every endpoint that issues a token: register, PIN login (agent/user), admin verify-otp, accept-invite, change-password, refresh-token.
 
 **Purpose:** Format authentication responses consistently
 
@@ -728,20 +728,15 @@ No `expires_in` — Sanctum tokens don't expire by default (see Step 1). Omit th
 
 ### Unit Tests
 
-**File:** `tests/Unit/Services/Auth/UserAuthServiceTest.php`
+**File:** `tests/Unit/Services/Auth/PinAuthServiceTest.php` (not `UserAuthServiceTest` — renamed to match the actual service class)
 
-Test:
-- PIN hashing works
-- PIN verification works
-- User creation with wallet + caps
-- Role assignment
+**Built, deliberately narrow scope** — the doc's original suggested list (PIN hashing, PIN verification, user creation with wallet+caps, role assignment) is already proven at the feature level by `RegisterTest`/`PinLoginTest`; re-testing it here in isolation wouldn't catch anything those don't. What's actually worth isolating at the unit level: `PinAuthService::attempt()` throws the identical `InvalidCredentialsException` class and message for both "phone not found" and "wrong PIN" — the anti-enumeration guarantee, proven directly on the service with no HTTP layer involved.
 
 **File:** `tests/Unit/Services/Otp/OtpServiceTest.php`
 
-Test:
-- OTP generation (6 digits)
-- OTP saving with expiry
-- OTP validation (not expired, not used, attempt limiting)
+**Built, same narrow-scope reasoning** — OTP saving/expiry/attempt-limiting are already proven at the feature level (`VerifyOtpTest`, `SetPinTest`, `ResetPasswordTest`). The one thing worth a pure unit test: `generateOtp()` always produces a 6-digit, zero-padded numeric string — looped 100 times, since a single call wouldn't reliably catch a missing `str_pad` (most `random_int` draws don't land on a short/leading-zero edge case).
+
+**Note:** both files initially landed in `tests/Feature/Auth/` instead of `tests/Unit/...` — `tests/Pest.php` binds `TestCase`+`RefreshDatabase` directory-wide to everything under `Feature`, so `PinAuthServiceTest.php`'s own explicit `uses(TestCase::class, RefreshDatabase::class)` call collided with that and broke the *entire* suite's bootstrap, not just these two files. Fixed by moving both to their correct `tests/Unit/...` paths.
 
 ### Feature Tests
 
@@ -876,7 +871,7 @@ The third case is the whole point. If it passes only because the user lacks the 
 Before moving to Task 4, verify:
 
 **Blockers cleared**
-- [ ] `TODO/22-TASK-2-REVIEW.md` Rounds 1–4 complete — this module will not work otherwise
+- [x] `TODO/22-TASK-2-REVIEW.md` Rounds 1–4 complete — all 5 blockers and Rounds 1–3 resolved and re-verified live (2026-10-03). Three non-blocking items remain deliberately open and deferred to Task 4+: #11 (super admin has no wallet/cap — auth doesn't touch wallets), #13 (`RoleSeeder` not idempotent), #14 (`SystemSetting.value` has no cast), #17 (missing indexes, add when real queries exist)
 
 **Routes**
 - [x] Registration works (phone + PIN) — `tests/Feature/Auth/RegisterTest.php`, verifies User/Wallet/Cap/role/token creation end-to-end, plus `AgentInfo` only for AGENT registrations
@@ -888,16 +883,16 @@ Before moving to Task 4, verify:
 - [x] Authenticating correctly but lacking the route's role returns 403 — `InsufficientRoleException`, tested
 
 **Token scoping**
-- [ ] Tokens carry exactly one ability, matching their issuing route
-- [ ] A PIN-issued token is refused by admin endpoints even when the user holds ADMIN
-- [ ] Every protected route checks ability **and** role, not just role
+- [x] Tokens carry exactly one ability, matching their issuing route — every `createToken()` call across `AuthController` passes a single-element abilities array; confirmed by grep, not just by reading one call site
+- [x] A PIN-issued token is refused by admin endpoints even when the user holds ADMIN — `tests/Feature/Auth/TokenAbilityTest.php`, "PIN-issued user token is rejected by admin-only endpoint even though user holds ADMIN role," fixture deliberately holds both roles so the test is meaningful
+- [x] Every protected route checks ability **and** role, not just role — proven throughout (`InsufficientRoleException` tests on every login route + `ability:` middleware tests), and end-to-end in `TokenAbilityTest`
 
 **Cross-track**
 - [x] `set-pin` requires a valid `SET_PIN` OTP, not just a valid token — `tests/Feature/Auth/SetPinTest.php`; also proves `auth:sanctum`+`ability:admin` rejects no-token (401) and wrong-ability (403) requests, a first partial instance of the Step 8 token-scoping proof
 - [x] The set-pin OTP goes to the **registered** email, never a caller-supplied address — structurally guaranteed: the route is authenticated-only, the email comes from `$request->user()`, never request input
 - [x] Granting admin access leaves `password_changed_at` NULL — `tests/Feature/Auth/GrantAdminAccessTest.php`
 - [x] The signed invite link expires, and fails once the password has been changed — `tests/Feature/Auth/AcceptInviteTest.php`; single-use enforced via `password_changed_at !== null` check in `AccountInviteService::acceptInvite()`
-- [ ] While `password_changed_at` is NULL, every route except change-password is blocked — **not yet implemented**: `EnsurePasswordChanged` middleware (Step 6) doesn't exist yet. Currently nothing stops a `password-change`-ability token from being rejected correctly (ability middleware alone handles that), but a full `admin`-ability token belonging to a user who never completed Case B could still hit other routes today, since nothing checks `password_changed_at` directly. Revisit when Step 6 is built.
+- [x] While `password_changed_at` is NULL, every route except change-password is blocked — `app/Http/Middleware/EnsurePasswordChanged.php` (Step 6), aliased as `password.changed`, applied to `set-pin/*`, `pin-reset/initiate`, and `grant-admin-access`. **Caveat:** this is currently a per-route opt-in, not a blanket guarantee — it was initially missing from `grant-admin-access` (a real gap: a mid-Case-B admin could log in via the normal password+OTP route with their temp password, bypass the forced-change flow entirely, and still grant admin access to others) before being added and regression-tested (`GrantAdminAccessTest`, "super admin with pending password change is blocked from granting admin access with 403"). Any new `ability:admin`-gated route added in Task 4+ must remember to add `password.changed` too — it is not automatic.
 
 **Case B full-flow proof:** `tests/Feature/Auth/CaseBFullFlowTest.php` walks the entire journey end-to-end over real HTTP — grant → capture real signed URL/temp password via log interception → accept-invite → verify restricted token rejected by `ability:admin` routes → change-password → verify old token revoked (401) → verify new `admin` token works on a real `ability:admin` route → verify final DB state (email, password hash, `password_changed_at`, role). Required `Auth::forgetGuards()` between same-test authenticated requests — see note below.
 
@@ -914,12 +909,13 @@ Before moving to Task 4, verify:
 - [x] TOCTOU gap closed: `resetPin()` re-checks `pin !== null` at click-time, not just at `initiate()`-time — state could otherwise change in the window between staff sending the link and the user consuming it; regression-tested ("reset-pin fails with 422 if account PIN was cleared before consuming the link")
 
 **General**
-- [ ] Expired tokens are rejected
+- [ ] Expired tokens are rejected — **not applicable yet**: Sanctum tokens don't expire by default and `sanctum.expiration` is still unconfigured (null). Nothing to test until that config decision is made; revisit if/when token expiry is actually turned on.
 - [x] Invalid credentials return 401 — not-found and wrong-PIN verified byte-identical (anti-enumeration), `tests/Feature/Auth/PinLoginTest.php`
-- [ ] OTP expires after 5 minutes and is single-use
-- [ ] Rate limiting is active on all three login routes — **deliberately deferred**, revisit once all auth routes exist so one limiter policy can be applied consistently
+- [x] OTP expires after 5 minutes and is single-use — expiry tested in `VerifyOtpTest`, `SetPinTest`, and `ResetPasswordTest` ("expired OTP returns 401 expired message"); single-use (`used_at`) and lockout (`attempt_count >= max_attempts`) tested in the same files, including the exceeding-5-attempts lockout case
+- [x] Rate limiting is active on all three login routes — `RateLimiter::for('login', ...)` in `AppServiceProvider`, keyed by identifier+IP (`Str::transliterate(Str::lower($identifier).'|'.$request->ip())`), 5/min, applied to `agent/login`, `user/login`, `admin/login`, and extended to `admin/verify-otp` + `reset-password` since both are OTP-code-guessing targets with the same risk shape. Separate looser IP-only limiters for `forgot-password` and `register` (no secret being guessed, just spam/enumeration-probing prevention). Tested in `tests/Feature/Auth/RateLimiterTest.php`, including a dedicated test proving different identifiers on the same IP don't share a bucket.
 - [x] No passwords or PINs in any API response — `AuthResource` whitelists fields explicitly (`id`/`name`/`phone_number`/`email`/`roles`), never serializes the model directly
-- [x] All tests pass — 70/70 passing as of Case C completion (PIN-login, registration, admin login/OTP, set-pin, grant/accept-invite/change-password, full Case B end-to-end flow, PIN reset initiate/consume)
+- [x] All tests pass — 108/108 passing (PIN-login, registration, admin login/OTP, set-pin, grant/accept-invite/change-password, full Case B end-to-end flow, PIN reset initiate/consume, refresh-token/logout, forgot/reset-password, EnsurePasswordChanged, full TokenAbilityTest suite, rate limiting, unit tests for `PinAuthService`/`OtpService`)
+- [x] `SuperAdminSeeder` sets `password_changed_at` at creation — seeded account owns its password from the start, unlike a Case B invitee; verified via `migrate:fresh --seed` + tinker, not just by reading the code
 
 ---
 

@@ -25,6 +25,59 @@ class AdminAuthService
     ) {}
 
     /**
+     * Request an OTP to reset password (anti-enumeration: silently returns if not found or unauthorized).
+     */
+    public function forgotPassword(string $email): void
+    {
+        $user = User::where('email', $email)->first();
+
+        if (! $user || $user->is_active !== 'ACTIVE' || ! $user->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+            return;
+        }
+
+        $otp = $this->otpService->createOtp($user->id, 'PASSWORD_RESET');
+
+        Log::info("Admin password reset OTP for [{$user->email}]: {$otp->otp_code}");
+    }
+
+    /**
+     * Reset an admin user's password using a verified OTP.
+     *
+     * @throws InvalidOtpException
+     * @throws AccountInactiveException
+     * @throws InsufficientRoleException
+     */
+    public function resetPassword(string $email, string $otpCode, string $newPassword): void
+    {
+        $user = User::where('email', $email)->first();
+
+        // 1. If email not found, reuse generic message to prevent email enumeration
+        if (! $user) {
+            throw new InvalidOtpException('Invalid or expired OTP.');
+        }
+
+        // 2. Secret proof first: verify active token existence, lockout, expiry, and code
+        $this->otpService->verify($user->id, 'PASSWORD_RESET', $otpCode);
+
+        // 3. Post-proof freshness checks (only evaluated after secret has been proven)
+        if ($user->is_active !== 'ACTIVE') {
+            throw new AccountInactiveException;
+        }
+
+        if (! $user->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+            throw new InsufficientRoleException;
+        }
+
+        $user->forceFill([
+            'password' => Hash::make($newPassword),
+            'password_changed_at' => now(),
+        ])->save();
+
+        // Revoke all existing tokens/sessions on password reset
+        $user->tokens()->delete();
+    }
+
+    /**
      * Attempt the first phase of admin authentication (credentials -> OTP).
      *
      * @throws InvalidCredentialsException
