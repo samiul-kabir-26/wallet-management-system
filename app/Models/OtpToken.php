@@ -16,7 +16,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class OtpToken extends Model
 {
-
     protected function casts(): array
     {
         return [
@@ -25,7 +24,8 @@ class OtpToken extends Model
         ];
     }
 
-    public function user():BelongsTo {
+    public function user(): BelongsTo
+    {
         return $this->belongsTo(User::class);
     }
 }

@@ -16,7 +16,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class Transaction extends Model
 {
-
     protected function casts(): array
     {
         return [
@@ -31,24 +30,29 @@ class Transaction extends Model
             'meta' => 'array',
         ];
     }
-    
-    public function user():BelongsTo {
+
+    public function user(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function sender():BelongsTo {
+    public function sender(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'sender_id');
     }
 
-    public function recipient():BelongsTo {
+    public function recipient(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'recipient_id');
     }
 
-    public function agent():BelongsTo {
+    public function agent(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'agent_id');
     }
 
-    public function initiatedBy():BelongsTo {
+    public function initiatedBy(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'initiated_by');
     }
 }

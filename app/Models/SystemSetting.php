@@ -9,11 +9,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'key',
     'value',
-    'description'
+    'description',
 ])]
 class SystemSetting extends Model
 {
-    public function updatedByUser():BelongsTo {
+    public function updatedByUser(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'updated_by');
     }
 }

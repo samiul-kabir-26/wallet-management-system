@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('system_settings', function (Blueprint $table) {
             $table->id();
-            
+
             $table->string('key')->unique();
             $table->json('value');
             $table->text('description')->nullable();
@@ -25,6 +25,7 @@ return new class extends Migration
 
         });
     }
+
     /**
      * Reverse the migrations.
      */

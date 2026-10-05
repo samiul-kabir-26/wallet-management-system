@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('caps', function (Blueprint $table) {
             $table->id();
-            
+
             $table->unsignedBigInteger('user_id')->unique();
             $table->decimal('daily_cap', 19, 2)->default(10000.00);
             $table->decimal('monthly_cap', 19, 2)->default(50000.00);

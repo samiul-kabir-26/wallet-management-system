@@ -13,13 +13,13 @@ return new class extends Migration
     {
         Schema::create('transactions', function (Blueprint $table) {
             $table->id();
-            
+
             $table->unsignedBigInteger('user_id')->nullable();
             $table->unsignedBigInteger('agent_id')->nullable();
             $table->unsignedBigInteger('sender_id')->nullable();
             $table->unsignedBigInteger('recipient_id')->nullable();
             $table->unsignedBigInteger('initiated_by');
-            $table->enum('type',['TOP_UP', 'CASH_IN', 'CASH_OUT', 'TRANSFER', 'AGENT_WITHDRAWAL', 'COMMISSION_PAYOUT']);
+            $table->enum('type', ['TOP_UP', 'CASH_IN', 'CASH_OUT', 'TRANSFER', 'AGENT_WITHDRAWAL', 'COMMISSION_PAYOUT']);
             $table->decimal('amount', 19, 2);
             $table->decimal('system_fee_amount', 19, 2);
             $table->decimal('system_fee_rate', 6, 4)->default(0.0000);
@@ -27,7 +27,7 @@ return new class extends Migration
             $table->decimal('agent_commission_rate', 6, 4)->default(0.0000);
             $table->string('currency')->default('BDT');
             $table->text('description')->nullable();
-            $table->enum('status',['COMPLETED', 'FAILED'])->default('COMPLETED');
+            $table->enum('status', ['COMPLETED', 'FAILED'])->default('COMPLETED');
             $table->string('idempotency_key')->nullable()->unique();
             $table->decimal('sender_wallet_balance_after', 19, 2)->nullable();
             $table->decimal('recipient_wallet_balance_after', 19, 2)->nullable();
@@ -44,6 +44,7 @@ return new class extends Migration
 
         });
     }
+
     /**
      * Reverse the migrations.
      */

@@ -329,7 +329,7 @@ Do not write `where('email', $id)->orWhere('phone_number', $id)`. It works, but 
 
 **Added beyond the original spec:** an `is_active` check (step 4 in the implementation, between password verification and the role check), throwing `AccountInactiveException` — same reasoning as the PIN-login flow: an inactive account shouldn't be able to request a login OTP regardless of which track it authenticates through. The doc's original numbered list above didn't include this step; the implementation does, deliberately.
 
-**Security note on the stub OTP delivery (step 9 below):** the current implementation logs the OTP code via `Log::info()` as a stand-in for real email delivery. This is acceptable for local development only — it must never ship to a shared, staging, or production log stream, since a logged OTP is a credential sitting outside the `otp_tokens` table's access controls. Replace with real mail dispatch before any non-local deployment.
+**Security note on the stub OTP delivery (step 9 below):** the current implementation logs the OTP code via `Log::info()` as a stand-in for real email delivery — in both `AdminAuthService::attempt()` (purpose `LOGIN`) and `SetPinService::requestOtp()` (purpose `SET_PIN`). This is acceptable for local development only — it must never ship to a shared, staging, or production log stream, since a logged OTP is a credential sitting outside the `otp_tokens` table's access controls. Replace with real mail dispatch before any non-local deployment.
 
 7. Generate 6-digit OTP code
 8. Save OTP to `otp_tokens` table with:
@@ -893,18 +893,25 @@ Before moving to Task 4, verify:
 - [ ] Every protected route checks ability **and** role, not just role
 
 **Cross-track**
-- [ ] `set-pin` requires a valid `SET_PIN` OTP, not just a valid token
-- [ ] The set-pin OTP goes to the **registered** email, never a caller-supplied address
-- [ ] Granting admin access leaves `password_changed_at` NULL
-- [ ] The signed invite link expires, and fails once the password has been changed
-- [ ] While `password_changed_at` is NULL, every route except change-password is blocked
+- [x] `set-pin` requires a valid `SET_PIN` OTP, not just a valid token — `tests/Feature/Auth/SetPinTest.php`; also proves `auth:sanctum`+`ability:admin` rejects no-token (401) and wrong-ability (403) requests, a first partial instance of the Step 8 token-scoping proof
+- [x] The set-pin OTP goes to the **registered** email, never a caller-supplied address — structurally guaranteed: the route is authenticated-only, the email comes from `$request->user()`, never request input
+- [x] Granting admin access leaves `password_changed_at` NULL — `tests/Feature/Auth/GrantAdminAccessTest.php`
+- [x] The signed invite link expires, and fails once the password has been changed — `tests/Feature/Auth/AcceptInviteTest.php`; single-use enforced via `password_changed_at !== null` check in `AccountInviteService::acceptInvite()`
+- [ ] While `password_changed_at` is NULL, every route except change-password is blocked — **not yet implemented**: `EnsurePasswordChanged` middleware (Step 6) doesn't exist yet. Currently nothing stops a `password-change`-ability token from being rejected correctly (ability middleware alone handles that), but a full `admin`-ability token belonging to a user who never completed Case B could still hit other routes today, since nothing checks `password_changed_at` directly. Revisit when Step 6 is built.
+
+**Case B full-flow proof:** `tests/Feature/Auth/CaseBFullFlowTest.php` walks the entire journey end-to-end over real HTTP — grant → capture real signed URL/temp password via log interception → accept-invite → verify restricted token rejected by `ability:admin` routes → change-password → verify old token revoked (401) → verify new `admin` token works on a real `ability:admin` route → verify final DB state (email, password hash, `password_changed_at`, role). Required `Auth::forgetGuards()` between same-test authenticated requests — see note below.
+
+**Case C audit trail — the `AuditLog` table:** built generic and reusable (option b, not PIN-reset-specific), per CLAUDE.md §19 naming multiple other future audit needs with the identical shape (actor, target, action, timestamp, metadata). `app/Models/AuditLog.php` + `database/migrations/2026_10_05_075313_create_audit_logs_table.php` — immutable (`UPDATED_AT = null`, no `updated_at` column), `actor_id` nullable + `nullOnDelete()` so audit history survives even if the actor account is later deleted, polymorphic `auditable` so it can target any model later, not just `User`. Verified via tinker (relations, casts, immutability) before `PinResetService::initiate()` was wired to write to it.
+
+**Testing gotcha worth remembering:** any test making 2+ authenticated requests in one test method, expecting different auth outcomes (revoked token, different user, different ability), needs `Auth::forgetGuards()` between them. `RequestGuard::user()` caches the resolved user for the lifetime of the guard instance, which persists across multiple `postJson()` calls within a single Pest test — the guard does not re-validate on each call. This bit both `CaseBFullFlowTest` (mixing `Sanctum::actingAs()` with `withToken()`) and `ChangePasswordTest`'s token-revocation test (two plain `withToken()` calls, no `actingAs` involved at all) — so it's not just an `actingAs`-specific issue.
 
 **PIN reset (Case C)**
-- [ ] No self-service PIN reset endpoint exists — confirm by trying to find one
-- [ ] `initiate-pin-reset` rejects an email already belonging to another user
-- [ ] The reset link is single-purpose: it sets a PIN and issues no general token
-- [ ] Staff never submit a PIN value anywhere in this flow
-- [ ] Initiator, target, attached address, and timestamp are all recorded
+- [x] No self-service PIN reset endpoint exists — the only routes are `pin-reset/initiate` (staff, `auth:sanctum`+`ability:admin`) and `reset-pin/{user}` (`signed` only, no auth guard, consumes the link)
+- [x] `initiate-pin-reset` rejects an email already belonging to another user — `Rule::unique('users', 'email')` in `InitiatePinResetRequest`, tested in `tests/Feature/Auth/PinResetTest.php`
+- [x] The reset link is single-purpose: it sets a PIN and issues no general token — `PinResetService::resetPin()` only hashes and saves, no `createToken()` call
+- [x] Staff never submit a PIN value anywhere in this flow — `InitiatePinResetRequest` has no `pin` field; the PIN is only ever supplied by whoever holds the signed link, via `ResetPinRequest`
+- [x] Initiator, target, attached address, and timestamp are all recorded — `AuditLog` row (`actor_id`, `auditable_id`, `metadata.attached_email`, `created_at`) written atomically with the email attach inside `DB::transaction()`, verified via tinker and `tests/Feature/Auth/PinResetTest.php`
+- [x] TOCTOU gap closed: `resetPin()` re-checks `pin !== null` at click-time, not just at `initiate()`-time — state could otherwise change in the window between staff sending the link and the user consuming it; regression-tested ("reset-pin fails with 422 if account PIN was cleared before consuming the link")
 
 **General**
 - [ ] Expired tokens are rejected
@@ -912,7 +919,7 @@ Before moving to Task 4, verify:
 - [ ] OTP expires after 5 minutes and is single-use
 - [ ] Rate limiting is active on all three login routes — **deliberately deferred**, revisit once all auth routes exist so one limiter policy can be applied consistently
 - [x] No passwords or PINs in any API response — `AuthResource` whitelists fields explicitly (`id`/`name`/`phone_number`/`email`/`roles`), never serializes the model directly
-- [ ] All tests pass — Step 2 complete: PIN-login (7/7) + registration (7/7), 16/16 passing; admin flows (Step 3) not yet written
+- [x] All tests pass — 70/70 passing as of Case C completion (PIN-login, registration, admin login/OTP, set-pin, grant/accept-invite/change-password, full Case B end-to-end flow, PIN reset initiate/consume)
 
 ---
 
