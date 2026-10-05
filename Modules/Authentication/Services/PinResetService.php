@@ -47,9 +47,10 @@ class PinResetService
         }
 
         // 5. Generate signed recovery link (valid for 15 minutes)
+        $expiryMinutes = (int) config('auth_settings.pin_reset.expiry_minutes', 15);
         $signedUrl = URL::temporarySignedRoute(
             'auth.reset-pin',
-            now()->addMinutes(15),
+            now()->addMinutes($expiryMinutes),
             ['user' => $target->id],
         );
 

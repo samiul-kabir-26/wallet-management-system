@@ -1,6 +1,6 @@
 # Task 3: Module 1 — Authentication Implementation
 
-**Status:** Ready to start  
+**Status:** Complete — 108/108 tests passing, checklist fully verified (2026-10-05)  
 **Estimated Duration:** 4-5 hours  
 **Difficulty:** Medium
 
@@ -916,6 +916,7 @@ Before moving to Task 4, verify:
 - [x] No passwords or PINs in any API response — `AuthResource` whitelists fields explicitly (`id`/`name`/`phone_number`/`email`/`roles`), never serializes the model directly
 - [x] All tests pass — 108/108 passing (PIN-login, registration, admin login/OTP, set-pin, grant/accept-invite/change-password, full Case B end-to-end flow, PIN reset initiate/consume, refresh-token/logout, forgot/reset-password, EnsurePasswordChanged, full TokenAbilityTest suite, rate limiting, unit tests for `PinAuthService`/`OtpService`)
 - [x] `SuperAdminSeeder` sets `password_changed_at` at creation — seeded account owns its password from the start, unlike a Case B invitee; verified via `migrate:fresh --seed` + tinker, not just by reading the code
+- [x] Hardcoded auth constants moved to config — `config/auth_settings.php`, reading `env()` only inside the config file (not in services), so `config:cache` stays safe. Covers OTP length/expiry/max-attempts, invite expiry + temp-password length, PIN-reset link expiry, and the three rate-limit thresholds. `config/sanctum.php`'s `expiration` now reads `SANCTUM_EXPIRATION` too — closes the "Expired tokens: not applicable yet" note above once that env var is actually set. **Gap:** `.env` has all 10 new keys but `.env.example` does not yet — still needs those entries added so a fresh clone isn't silently relying on undocumented defaults. 108/108 tests still pass.
 
 ---
 

@@ -66,8 +66,9 @@ class AppServiceProvider extends ServiceProvider
                 ?? '';
 
             $key = Str::transliterate(Str::lower($identifier).'|'.$request->ip());
+            $limit = (int) config('auth_settings.rate_limits.login', 5);
 
-            return Limit::perMinute(5)
+            return Limit::perMinute($limit)
                 ->by($key)
                 ->response(function (Request $request, array $headers) {
                     return response()->json([
@@ -79,7 +80,9 @@ class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('forgot-password', function (Request $request) {
-            return Limit::perMinute(5)
+            $limit = (int) config('auth_settings.rate_limits.forgot_password', 5);
+
+            return Limit::perMinute($limit)
                 ->by($request->ip())
                 ->response(function (Request $request, array $headers) {
                     return response()->json([
@@ -91,7 +94,9 @@ class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('register', function (Request $request) {
-            return Limit::perMinute(5)
+            $limit = (int) config('auth_settings.rate_limits.register', 5);
+
+            return Limit::perMinute($limit)
                 ->by($request->ip())
                 ->response(function (Request $request, array $headers) {
                     return response()->json([

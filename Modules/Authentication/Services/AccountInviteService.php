@@ -61,7 +61,8 @@ class AccountInviteService
             throw new UnverifiedAccountException;
         }
 
-        $password = $tempPassword ?? Str::password(16);
+        $passwordLength = (int) config('auth_settings.invites.temp_password_length', 16);
+        $password = $tempPassword ?? Str::password($passwordLength);
 
         // 3. Atomically update credentials, clear password_changed_at, and attach ADMIN role
         DB::transaction(function () use ($caller, $target, $email, $password): void {
@@ -82,9 +83,10 @@ class AccountInviteService
         });
 
         // 4. Generate signed invitation URL (expires in 24 hours)
+        $expiryHours = (int) config('auth_settings.invites.expiry_hours', 24);
         $signedUrl = URL::temporarySignedRoute(
             'auth.accept-invite',
-            now()->addHours(24),
+            now()->addHours($expiryHours),
             ['user' => $target->id],
         );
 

@@ -1,6 +1,9 @@
 <?php
 
 use Modules\Authentication\Services\OtpService;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 test('generateOtp always returns a 6-character numeric string with leading zeros preserved', function () {
     $service = new OtpService;

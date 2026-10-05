@@ -21,8 +21,9 @@ class OtpService
     /**
      * Generate a cryptographically secure numeric OTP code.
      */
-    public function generateOtp(int $length = 6): string
+    public function generateOtp(?int $length = null): string
     {
+        $length ??= (int) config('auth_settings.otp.length', 6);
         $min = 0;
         $max = (10 ** $length) - 1;
 
@@ -49,13 +50,18 @@ class OtpService
         int $userId,
         string $code,
         string $purpose,
-        int $validForMinutes = self::DEFAULT_EXPIRY_MINUTES,
+        ?int $validForMinutes = null,
+        ?int $maxAttempts = null,
     ): OtpToken {
+        $validForMinutes ??= (int) config('auth_settings.otp.expiry_minutes', self::DEFAULT_EXPIRY_MINUTES);
+        $maxAttempts ??= (int) config('auth_settings.otp.max_attempts', 5);
+
         return OtpToken::create([
             'user_id' => $userId,
             'otp_code' => $code,
             'purpose' => $purpose,
             'expires_at' => Carbon::now()->addMinutes($validForMinutes),
+            'max_attempts' => $maxAttempts,
         ]);
     }
 
@@ -65,13 +71,14 @@ class OtpService
     public function createOtp(
         int $userId,
         string $purpose,
-        int $validForMinutes = self::DEFAULT_EXPIRY_MINUTES,
+        ?int $validForMinutes = null,
+        ?int $maxAttempts = null,
     ): OtpToken {
         $this->invalidateActiveOtps($userId, $purpose);
 
         $code = $this->generateOtp();
 
-        return $this->saveOtp($userId, $code, $purpose, $validForMinutes);
+        return $this->saveOtp($userId, $code, $purpose, $validForMinutes, $maxAttempts);
     }
 
     /**
