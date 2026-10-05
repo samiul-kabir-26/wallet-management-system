@@ -26,3 +26,8 @@ Route::middleware(['auth:sanctum', 'ability:admin'])->group(function (): void {
     Route::post('/set-pin', [AuthController::class, 'setPin']);
     Route::post('/pin-reset/initiate', [AuthController::class, 'initiatePinReset']);
 });
+
+Route::middleware(['auth:sanctum'])->group(function (): void {
+    Route::post('/refresh-token', [AuthController::class, 'refreshToken']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+});

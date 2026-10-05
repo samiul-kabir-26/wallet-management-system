@@ -44,6 +44,45 @@ class AuthController extends Controller
     ) {}
 
     /**
+     * Refresh the current access token, preserving exact name and abilities.
+     */
+    public function refreshToken(Request $request): AuthResource
+    {
+        $user = $request->user();
+        $currentToken = $user->currentAccessToken();
+
+        $name = $currentToken?->name ?? 'token';
+        $abilities = $currentToken?->abilities ?? [];
+
+        // Revoke the current token (safe for PersonalAccessToken and test TransientToken)
+        if ($currentToken && method_exists($currentToken, 'delete')) {
+            $currentToken->delete();
+        }
+
+        // Reissue a new token copying the exact same name and abilities
+        $token = $user->createToken($name, $abilities)->plainTextToken;
+
+        return new AuthResource($user, $token, $abilities, 'Token refreshed');
+    }
+
+    /**
+     * Revoke the current access token.
+     */
+    public function logout(Request $request): JsonResponse
+    {
+        $currentToken = $request->user()->currentAccessToken();
+
+        if ($currentToken && method_exists($currentToken, 'delete')) {
+            $currentToken->delete();
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Logged out successfully.',
+        ]);
+    }
+
+    /**
      * Initiate a customer PIN reset by authorized staff.
      *
      * @throws InsufficientRoleException
