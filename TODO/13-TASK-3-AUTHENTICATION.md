@@ -326,6 +326,11 @@ Do not write `where('email', $id)->orWhere('phone_number', $id)`. It works, but 
 4. Verify **`password`** using `Hash::check()` — never fall back to `pin`
 5. If password incorrect: return 401 Unauthorized
 6. Check the user holds SUPER_ADMIN, ADMIN, or MODERATOR. If not: 403. (There is no `user_type` column — capability comes from credentials, permission comes from roles.)
+
+**Added beyond the original spec:** an `is_active` check (step 4 in the implementation, between password verification and the role check), throwing `AccountInactiveException` — same reasoning as the PIN-login flow: an inactive account shouldn't be able to request a login OTP regardless of which track it authenticates through. The doc's original numbered list above didn't include this step; the implementation does, deliberately.
+
+**Security note on the stub OTP delivery (step 9 below):** the current implementation logs the OTP code via `Log::info()` as a stand-in for real email delivery. This is acceptable for local development only — it must never ship to a shared, staging, or production log stream, since a logged OTP is a credential sitting outside the `otp_tokens` table's access controls. Replace with real mail dispatch before any non-local deployment.
+
 7. Generate 6-digit OTP code
 8. Save OTP to `otp_tokens` table with:
    - `otp_code`: generated code
@@ -335,17 +340,20 @@ Do not write `where('email', $id)->orWhere('phone_number', $id)`. It works, but 
 9. Send OTP via email (stub for now)
 10. Return success message
 
-**What to Create:**
-- `app/Http/Requests/Auth/AdminLoginRequest.php`
-- `app/Services/Auth/AdminAuthService.php`
-- `app/Services/Otp/OtpService.php` — OTP generation and validation
-- Add admin login endpoint to `AuthController`
+**What to Create (paths under `Modules/Authentication/`, not `app/`):**
+- `Modules/Authentication/Http/Requests/AdminLoginRequest.php`
+- `Modules/Authentication/Services/AdminAuthService.php`
+- `Modules/Authentication/Services/OtpService.php` — OTP generation and validation, shared across LOGIN/SET_PIN/PASSWORD_RESET purposes
+- New action on the existing `AuthController`, response is a plain `response()->json([...])` — no token issued at this stage, not worth a dedicated Resource class for a single two-field payload
 
 **OtpService Responsibilities:**
-- `generateOtp()` — Generate 6-digit random code
+- `generateOtp()` — Generate 6-digit random code (`random_int`, not `rand`/`mt_rand`)
 - `saveOtp($user_id, $code, $purpose)` — Save to DB with expiry
 - `validateOtp($email, $otp_code)` — Check if valid, not expired, not used, attempt count < max
 - `markOtpAsUsed($otp_token)` — Set used_at timestamp
+- `incrementAttempts($otp_token)` — atomic DB-level increment, not read-modify-write
+
+**Decision — multiple live OTPs per user:** requesting a new OTP **invalidates** any previous unused OTP of the same `purpose` for that user (mark `used_at = now()` before creating the new one), rather than allowing several simultaneously-valid codes. Keeps `verify-otp`'s lookup unambiguous ("the one active OTP") and is better hygiene than leaving stale codes live.
 
 **What You Should Understand:**
 - OTP generation logic
@@ -403,7 +411,9 @@ Do not write `where('email', $id)->orWhere('phone_number', $id)`. It works, but 
    - Generate Sanctum token with the `admin` ability
    - Return user + token
 
-**What to Create:**
+**Critical ordering requirement, found via testing, not design review:** re-verifying `is_active`/role at this step (state can change between requesting an OTP and verifying it) is correct and worth doing — but it must happen **after** `OtpService::verify()` succeeds, never before. Checking account/role state before proving OTP possession turns `is_active` and role membership into an oracle: anyone who knows an admin's email, with no OTP and no password, could distinguish "no such email" / "account inactive" / "insufficient role" from the generic OTP failure, without ever proving they hold a valid code. `AdminAuthService::verifyOtp()` must call `$this->otpService->verify(...)` first; only on success does it re-check `is_active`/role. Regression-tested in `tests/Feature/Auth/VerifyOtpTest.php` (inactive account + no OTP issued → generic message, not account-status-revealing one).
+
+**What to Create (paths under `Modules/Authentication/`, not `app/`):**
 - `app/Http/Requests/Auth/VerifyOtpRequest.php`
 - Add verify endpoint to `AuthController`
 - Add verification logic to `OtpService`
@@ -873,8 +883,8 @@ Before moving to Task 4, verify:
 - [x] User login works and returns a `user`-ability token — `tests/Feature/Auth/PinLoginTest.php`
 - [x] Agent login works and returns an `agent`-ability token — `tests/Feature/Auth/PinLoginTest.php`
 - [x] Agent login rejected when `agent_info.status` is not APPROVED — covers both "no `agent_info` row" and "row exists but `PENDING`"
-- [ ] Admin login works with email **and** with phone number
-- [ ] Admin OTP verification returns an `admin`-ability token
+- [x] Admin login works with email **and** with phone number — `tests/Feature/Auth/AdminLoginTest.php`, both identifier types tested explicitly
+- [x] Admin OTP verification returns an `admin`-ability token — `tests/Feature/Auth/VerifyOtpTest.php`; required fixing a real pre-proof information leak (see note below)
 - [x] Authenticating correctly but lacking the route's role returns 403 — `InsufficientRoleException`, tested
 
 **Token scoping**

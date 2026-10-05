@@ -5,7 +5,7 @@ namespace Modules\Authentication\Exceptions;
 use App\Exceptions\ApiException;
 use Throwable;
 
-class InvalidCredentialsException extends ApiException
+class InvalidOtpException extends ApiException
 {
     /**
      * The HTTP status code.
@@ -13,10 +13,10 @@ class InvalidCredentialsException extends ApiException
     protected int $status = 401;
 
     /**
-     * Create a new invalid credentials exception instance.
+     * Create a new invalid OTP exception instance.
      */
     public function __construct(
-        string $message = 'Invalid phone number or PIN.',
+        string $message = 'Invalid or expired OTP.',
         ?Throwable $previous = null,
     ) {
         parent::__construct(

@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'otp_code',
     'purpose',
     'expires_at',
+    'used_at',
+    'attempt_count',
 ])]
 class OtpToken extends Model
 {

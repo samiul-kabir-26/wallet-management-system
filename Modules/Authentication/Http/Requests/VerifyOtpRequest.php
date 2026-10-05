@@ -4,7 +4,7 @@ namespace Modules\Authentication\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class AdminLoginRequest extends FormRequest
+class VerifyOtpRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -22,8 +22,8 @@ class AdminLoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'identifier' => ['required', 'string'],
-            'password' => ['required', 'string'],
+            'email' => ['required', 'email'],
+            'otp_code' => ['required', 'digits:6'],
         ];
     }
 
@@ -35,8 +35,10 @@ class AdminLoginRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'identifier.required' => 'An email or phone number is required.',
-            'password.required' => 'A password is required.',
+            'email.required' => 'An email address is required.',
+            'email.email' => 'A valid email address is required.',
+            'otp_code.required' => 'The OTP code is required.',
+            'otp_code.digits' => 'The OTP code must be exactly 6 digits.',
         ];
     }
 }
