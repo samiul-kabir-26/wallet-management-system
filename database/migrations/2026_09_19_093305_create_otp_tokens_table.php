@@ -13,10 +13,10 @@ return new class extends Migration
     {
         Schema::create('otp_tokens', function (Blueprint $table) {
             $table->id();
-         
+
             $table->unsignedBigInteger('user_id');
             $table->string('otp_code');
-            $table->enum('purpose',['LOGIN', 'PASSWORD_RESET']);
+            $table->enum('purpose', ['LOGIN', 'PASSWORD_RESET', 'SET_PIN']);
             $table->timestamp('used_at')->nullable();
             $table->integer('attempt_count')->default(0);
             $table->integer('max_attempts')->default(5);
@@ -28,6 +28,7 @@ return new class extends Migration
 
         });
     }
+
     /**
      * Reverse the migrations.
      */

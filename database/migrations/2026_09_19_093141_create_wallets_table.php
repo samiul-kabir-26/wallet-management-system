@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('wallets', function (Blueprint $table) {
             $table->id();
 
-            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('user_id')->unique();
             $table->decimal('balance', 19, 2)->default(50.00);
             $table->string('currency')->default('BDT');
             $table->boolean('is_blocked')->default(false);

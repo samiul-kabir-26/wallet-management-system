@@ -47,7 +47,7 @@ Before coding, understand:
 - OTP generation and verification
 - Rate limiting
 
-### Step 2: Implement User Authentication (USER_TRACK)
+### Step 2: Implement PIN Authentication (agent + user routes)
 
 **What to build:**
 - `POST /api/v1/auth/register` — Phone + PIN registration
@@ -74,7 +74,7 @@ Before coding, understand:
 - JWT token generation
 - Hashing and verification
 
-### Step 3: Implement Admin Authentication (ADMIN_TRACK)
+### Step 3: Implement Admin Authentication (admin route)
 
 **What to build:**
 - `POST /api/v1/auth/admin/login` — Email + Password + OTP

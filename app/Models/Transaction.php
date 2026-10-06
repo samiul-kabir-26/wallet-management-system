@@ -2,28 +2,57 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+#[Fillable([
+    'user_id',
+    'sender_id',
+    'recipient_id',
+    'agent_id',
+    'initiated_by',
+    // other fields appropriate for creation
+])]
 class Transaction extends Model
 {
-    public function user():BelongsTo {
+    protected function casts(): array
+    {
+        return [
+            'amount' => 'decimal:2',
+            'system_fee_amount' => 'decimal:2',
+            'system_fee_rate' => 'decimal:4',
+            'agent_commission_amount' => 'decimal:2',
+            'agent_commission_rate' => 'decimal:4',
+            'sender_wallet_balance_after' => 'decimal:2',
+            'recipient_wallet_balance_after' => 'decimal:2',
+            'agent_wallet_balance_after' => 'decimal:2',
+            'meta' => 'array',
+        ];
+    }
+
+    public function user(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function sender():BelongsTo {
+    public function sender(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'sender_id');
     }
 
-    public function recipient():BelongsTo {
+    public function recipient(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'recipient_id');
     }
 
-    public function agent():BelongsTo {
+    public function agent(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'agent_id');
     }
 
-    public function initiatedBy():BelongsTo {
+    public function initiatedBy(): BelongsTo
+    {
         return $this->belongsTo(User::class, 'initiated_by');
     }
 }

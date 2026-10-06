@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('auth_providers', function (Blueprint $table) {
             $table->id();
-          
+
             $table->unsignedBigInteger('user_id');
             $table->string('provider');
             $table->string('provider_id')->unique();
@@ -24,11 +24,12 @@ return new class extends Migration
 
         });
     }
+
     /**
      * Reverse the migrations.
      */
     public function down(): void
     {
-         Schema::dropIfExists('auth_providers');
+        Schema::dropIfExists('auth_providers');
     }
 };
