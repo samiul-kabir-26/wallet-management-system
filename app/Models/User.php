@@ -141,4 +141,20 @@ class User extends Authenticatable
 
         return $this->roles()->whereIn('name', $roles)->exists();
     }
+
+    /**
+     * Determine if the user holds an administrative role (ADMIN or SUPER_ADMIN).
+     */
+    public function isAdmin(): bool
+    {
+        return $this->hasRole(['ADMIN', 'SUPER_ADMIN']);
+    }
+
+    /**
+     * Determine if the user holds the SUPER_ADMIN role.
+     */
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole('SUPER_ADMIN');
+    }
 }
