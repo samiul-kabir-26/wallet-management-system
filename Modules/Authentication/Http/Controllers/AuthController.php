@@ -97,6 +97,7 @@ class AuthController extends Controller
 
         // Reissue a new token copying the exact same name and abilities
         $token = $user->createToken($name, $abilities)->plainTextToken;
+        $user->load('roles');
 
         return new AuthResource($user, $token, $abilities, 'Token refreshed');
     }
@@ -182,6 +183,7 @@ class AuthController extends Controller
 
         // Issue a full admin token
         $token = $user->createToken('admin-login', ['admin'])->plainTextToken;
+        $user->load('roles');
 
         return new AuthResource($user, $token, ['admin'], 'Password changed successfully.');
     }
@@ -197,6 +199,7 @@ class AuthController extends Controller
         $user = $this->accountInviteService->acceptInvite($user, $request->password);
 
         $token = $user->createToken('accept-invite', ['password-change'])->plainTextToken;
+        $user->load('roles');
 
         return new AuthResource($user, $token, ['password-change'], 'Please change your password to continue.');
     }
@@ -294,6 +297,7 @@ class AuthController extends Controller
         }
 
         $token = $user->createToken('agent-login', ['agent'])->plainTextToken;
+        $user->load('roles');
 
         return new AuthResource($user, $token, ['agent'], 'Login successful');
     }
@@ -314,6 +318,7 @@ class AuthController extends Controller
         }
 
         $token = $user->createToken('user-login', ['user'])->plainTextToken;
+        $user->load('roles');
 
         return new AuthResource($user, $token, ['user'], 'Login successful');
     }
@@ -350,6 +355,7 @@ class AuthController extends Controller
         $user = $this->adminAuthService->verifyOtp($request->email, $request->otp_code);
 
         $token = $user->createToken('admin-login', ['admin'])->plainTextToken;
+        $user->load('roles');
 
         return new AuthResource($user, $token, ['admin'], 'Login successful');
     }

@@ -296,6 +296,23 @@ audit_logs:
 
 ---
 
+## 11. Frontend Architecture: Inertia vs. Standalone SPA
+
+**Decided 2026-10-07**, ahead of Task 10.
+
+`TODO/20-TASK-10-FRONTEND.md` was written assuming a fully decoupled Vue SPA (separate `frontend/` Vite project, Vue Router, Pinia, Axios with a Bearer token in `localStorage`) talking only to `/api/v1`, mirroring how the future Flutter app will consume the API. By the time Task 10 started, the repo already had the Laravel + Inertia + Vue starter kit installed (`inertiajs/inertia-laravel`, `@inertiajs/vue3`, Wayfinder) with only the stock `Welcome.vue` scaffolded — a server-driven Inertia app, not the standalone SPA the task doc describes.
+
+**Decision:** Use Inertia strictly for routing and mounting the Vue app shell (`Inertia::render()` from `routes/web.php`, navigation via Inertia's router). All actual data fetching and mutations — login, wallet balance, transactions, admin actions — go through the existing `/api/v1` endpoints via Axios with the Bearer token, exactly as Flutter will consume them.
+
+**Why:**
+- Avoids building a second, session-based authorization model to sit alongside the token-ability system already hardened across Tasks 6-9. There is exactly one source of truth for "can this caller do this": the Sanctum token ability + role check on the API.
+- Keeps CLAUDE.md §3's instruction intact — business logic stays out of the frontend layer entirely, web and future Flutter consume the same contract.
+- Still gets Inertia's benefit (no separate frontend build/deploy, Wayfinder's typed route helpers for web routing) without entangling it with API authorization.
+
+**Implication:** `routes/web.php` Inertia routes are not gated by Laravel's own auth/session middleware — they just render the page shell. Access control for what a visitor actually *sees and can do* is enforced client-side (redirect if no valid token/role) and, authoritatively, by the API itself on every request. The web routes being unprotected is intentional, not an oversight — there's nothing sensitive being rendered server-side to protect.
+
+---
+
 ## Next Steps
 
 1. ✅ Requirements decisions finalized

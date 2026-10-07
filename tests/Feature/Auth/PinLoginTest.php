@@ -139,6 +139,7 @@ test('valid user credentials return 200 with scoped user token', function () {
         ->assertJsonPath('data.user.id', $user->id)
         ->assertJsonPath('data.user.name', $user->name)
         ->assertJsonPath('data.user.phone_number', $user->phone_number)
+        ->assertJsonPath('data.user.roles', ['USER'])
         ->assertJsonPath('data.token_type', 'Bearer')
         ->assertJsonPath('data.abilities', ['user']);
 
@@ -165,6 +166,7 @@ test('valid approved agent credentials return 200 with scoped agent token', func
         ->assertJsonPath('data.user.id', $agent->id)
         ->assertJsonPath('data.user.name', $agent->name)
         ->assertJsonPath('data.user.phone_number', $agent->phone_number)
+        ->assertJsonPath('data.user.roles', ['AGENT'])
         ->assertJsonPath('data.token_type', 'Bearer')
         ->assertJsonPath('data.abilities', ['agent']);
 

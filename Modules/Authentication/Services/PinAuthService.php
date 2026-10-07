@@ -24,7 +24,7 @@ class PinAuthService
      */
     public function attempt(string $phoneNumber, string $pin): User
     {
-        $user = User::where('phone_number', $phoneNumber)->first();
+        $user = User::with('roles')->where('phone_number', $phoneNumber)->first();
 
         // 1. Missing user or user has no PIN (e.g. admin-only account)
         // Run dummy Hash::check() to consume equivalent bcrypt cycles before throwing.
