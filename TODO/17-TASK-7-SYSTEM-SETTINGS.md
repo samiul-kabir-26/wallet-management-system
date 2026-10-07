@@ -134,9 +134,9 @@ public function updateSetting($key, $value) {
 
 ## Checklist
 
-- [ ] Any user can view settings
-- [ ] Only ADMIN can update settings
-- [ ] Settings cached for performance
-- [ ] Updated settings used in transaction calculations
-- [ ] Audit trail recorded (updated_by, updated_at)
-- [ ] All tests pass
+- [x] Any user can view settings
+- [x] Only ADMIN can update settings
+- [x] Settings cached for performance
+- [x] Updated settings used in transaction calculations (system_fee_rate affects cash-out fee; agent_commission_rate acts as default at agent approval)
+- [x] Audit trail recorded (updated_by, updated_at)
+- [x] All tests pass
