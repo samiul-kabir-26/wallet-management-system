@@ -1,7 +1,10 @@
 <?php
 
+use App\Exceptions\ApiException;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\HandleInertiaRequests;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -9,6 +12,8 @@ use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -33,4 +38,58 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        $exceptions->render(function (AuthenticationException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated.',
+                    'errors' => [],
+                ], 401);
+            }
+        });
+
+        $exceptions->render(function (NotFoundHttpException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Resource not found.',
+                    'errors' => [],
+                ], 404);
+            }
+        });
+
+        $exceptions->render(function (AccessDeniedHttpException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage() ?: 'This action is unauthorized.',
+                    'errors' => [],
+                ], 403);
+            }
+        });
+
+        $exceptions->render(function (AuthorizationException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage() ?: 'This action is unauthorized.',
+                    'errors' => [],
+                ], 403);
+            }
+        });
+
+        $exceptions->render(function (Throwable $e, Request $request) {
+            if ($e instanceof ApiException) {
+                return $e->render($request);
+            }
+
+            if (($request->is('api/*') || $request->expectsJson()) && app()->isProduction()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'An error occurred.',
+                    'errors' => [],
+                ], 500);
+            }
+        });
     })->create();

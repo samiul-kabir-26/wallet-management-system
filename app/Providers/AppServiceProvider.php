@@ -2,11 +2,15 @@
 
 namespace App\Providers;
 
+use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
@@ -29,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureRateLimiting();
+        $this->configureAuthorizationLogging();
     }
 
     /**
@@ -105,6 +110,30 @@ class AppServiceProvider extends ServiceProvider
                         'errors' => [],
                     ], 429, $headers);
                 });
+        });
+    }
+
+    /**
+     * Log authorization denials evaluated by Gates or Policies.
+     */
+    protected function configureAuthorizationLogging(): void
+    {
+        Gate::after(function (?User $user, string $ability, bool|Response $result, array $arguments): void {
+            $allowed = $result instanceof Response ? $result->allowed() : (bool) $result;
+
+            if (! $allowed) {
+                $resourceId = null;
+                if (! empty($arguments)) {
+                    $first = reset($arguments);
+                    $resourceId = is_object($first) && isset($first->id) ? $first->id : (is_scalar($first) ? $first : null);
+                }
+
+                Log::warning('Authorization denied', [
+                    'user_id' => $user?->id,
+                    'action' => $ability,
+                    'resource_id' => $resourceId,
+                ]);
+            }
         });
     }
 }
