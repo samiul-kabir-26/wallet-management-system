@@ -4,6 +4,7 @@ namespace Modules\Authentication\Services;
 
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Modules\Authentication\Exceptions\AccountInactiveException;
 use Modules\Authentication\Exceptions\InvalidCredentialsException;
 
@@ -30,11 +31,23 @@ class PinAuthService
         if (! $user || ! $user->pin) {
             Hash::check($pin, self::DUMMY_HASH);
 
+            Log::warning('Failed login attempt', [
+                'phone_number' => $phoneNumber,
+                'ip' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+            ]);
+
             throw new InvalidCredentialsException;
         }
 
         // 2. Incorrect PIN check
         if (! Hash::check($pin, $user->pin)) {
+            Log::warning('Failed login attempt', [
+                'phone_number' => $phoneNumber,
+                'ip' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+            ]);
+
             throw new InvalidCredentialsException;
         }
 

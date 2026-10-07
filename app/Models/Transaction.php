@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Log;
 
 #[Fillable([
     'user_id',
@@ -29,6 +30,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class Transaction extends Model
 {
+    protected static function booted(): void
+    {
+        static::created(function (Transaction $transaction): void {
+            Log::info('Transaction created', [
+                'transaction_id' => $transaction->id,
+                'type' => $transaction->type,
+                'amount' => $transaction->amount,
+                'user_id' => $transaction->user_id,
+            ]);
+        });
+    }
+
     protected function casts(): array
     {
         return [

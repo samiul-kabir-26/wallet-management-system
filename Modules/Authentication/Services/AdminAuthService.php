@@ -92,10 +92,22 @@ class AdminAuthService
         if (! $user || ! $user->password) {
             Hash::check($password, self::DUMMY_HASH);
 
+            Log::warning('Failed login attempt', [
+                'identifier' => $identifier,
+                'ip' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+            ]);
+
             throw new InvalidCredentialsException(self::INVALID_CREDENTIALS_MESSAGE);
         }
 
         if (! Hash::check($password, $user->password)) {
+            Log::warning('Failed login attempt', [
+                'identifier' => $identifier,
+                'ip' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+            ]);
+
             throw new InvalidCredentialsException(self::INVALID_CREDENTIALS_MESSAGE);
         }
 
