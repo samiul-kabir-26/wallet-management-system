@@ -7,6 +7,7 @@ use App\Models\SystemSetting;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Modules\SystemSettings\Http\Requests\UpdateSystemSettingsRequest;
+use Modules\SystemSettings\Resources\SettingsResource;
 use Modules\SystemSettings\Services\SystemSettingService;
 
 class SystemSettingController extends Controller
@@ -29,7 +30,7 @@ class SystemSettingController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'settings' => $settings,
+                'settings' => new SettingsResource($settings),
             ],
         ]);
     }
@@ -48,7 +49,7 @@ class SystemSettingController extends Controller
             'success' => true,
             'message' => 'Settings updated successfully',
             'data' => [
-                'settings' => $updatedSettings,
+                'settings' => new SettingsResource($updatedSettings),
             ],
         ]);
     }
