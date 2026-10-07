@@ -16,6 +16,7 @@ test('unauthenticated caller cannot access refresh-token route', function () {
 
 test('valid token can be refreshed, revoking the old token and issuing a new one', function () {
     $user = User::factory()->create();
+    $user->roles()->attach(Role::where('name', 'USER')->first()->id, ['assigned_at' => now()]);
     $oldToken = $user->createToken('user-login', ['user'])->plainTextToken;
 
     $response = $this->withToken($oldToken)
@@ -26,6 +27,9 @@ test('valid token can be refreshed, revoking the old token and issuing a new one
             'success' => true,
             'message' => 'Token refreshed',
             'data' => [
+                'user' => [
+                    'roles' => ['USER'],
+                ],
                 'abilities' => ['user'],
             ],
         ]);

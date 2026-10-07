@@ -252,6 +252,7 @@ test('valid OTP marks token used and returns 200 with scoped admin token', funct
         ->assertJsonPath('message', 'Login successful')
         ->assertJsonPath('data.user.id', $admin->id)
         ->assertJsonPath('data.user.email', $admin->email)
+        ->assertJsonPath('data.user.roles', ['ADMIN'])
         ->assertJsonPath('data.token_type', 'Bearer')
         ->assertJsonPath('data.abilities', ['admin']);
 

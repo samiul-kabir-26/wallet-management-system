@@ -135,7 +135,7 @@ class AdminAuthService
      */
     public function verifyOtp(string $email, string $otpCode): User
     {
-        $user = User::where('email', $email)->first();
+        $user = User::with('roles')->where('email', $email)->first();
 
         // 1. If email not found, reuse generic message to prevent email enumeration
         if (! $user) {
