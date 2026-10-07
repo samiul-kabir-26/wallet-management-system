@@ -3,7 +3,8 @@
 Version: `v1`  
 Base URL: `/api/v1`  
 Protocol: HTTP / JSON  
-Authentication: Bearer Token (Laravel Sanctum)
+Authentication: Bearer Token (Laravel Sanctum)  
+Postman Collection: [postman_collection.json](postman_collection.json)
 
 ---
 

@@ -168,6 +168,7 @@ Use OpenAPI/Swagger for interactive docs:
 - `docs/ERRORS.md` — Error codes and meanings
 - `docs/AUTHENTICATION.md` — Auth flow explanation
 - `docs/EXAMPLES.md` — Usage examples
+- `docs/postman_collection.json` — Postman Collection v2.1.0 with auto-token test scripts
 
 ---
 
