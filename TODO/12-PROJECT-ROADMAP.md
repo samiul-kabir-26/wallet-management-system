@@ -1,6 +1,6 @@
 # Project Roadmap: Complete Development Plan
 
-**Status:** Tasks 1-5 Complete ✅ | Starting Task 6
+**Status:** Tasks 1-6 Complete ✅ | Starting Task 7
 
 ---
 
@@ -13,13 +13,14 @@ This document outlines all remaining tasks to complete the wallet management sys
 - ✅ Task 3: Module 1 — Authentication Implementation
 - ✅ Task 4: Module 2 — Users & Roles Management
 - ✅ Task 5: Module 3 — Wallet Management
+- ✅ Task 6: Module 4 — Transaction Processing
 
 ### Next Steps (In Order)
-- Task 6: Module 4 — Transaction Processing
-- Task 7: Security Hardening & Testing
-- Task 8: API Resources & Response Formatting
-- Task 9: Vue Frontend Setup
-- Task 10: Production Deployment
+- Task 7: System Settings Management
+- Task 8: Security & Testing
+- Task 9: API Resources & Documentation
+- Task 10: Vue Frontend
+- Task 11: Production Preparation
 
 ---
 
@@ -737,8 +738,8 @@ tests/
 | 3 | Authentication | 4-5h | ✅ Complete |
 | 4 | Users & Roles | 3-4h | ✅ Complete |
 | 5 | Wallets | 3-4h | ✅ Complete |
-| 6 | Transactions | 6-8h | ⏳ Next |
-| 7 | Settings | 1-2h | ⏳ Pending |
+| 6 | Transactions | 6-8h | ✅ Complete |
+| 7 | Settings | 1-2h | ⏳ Next |
 | 8 | Security & Testing | 4-5h | ⏳ Pending |
 | 9 | API & Docs | 2-3h | ⏳ Pending |
 | 10 | Frontend | 8-12h | ⏳ Pending |
@@ -749,13 +750,12 @@ tests/
 
 # Next Action
 
-**Ready for Task 6: Module 4 — Transaction Processing?**
+**Ready for Task 7: System Settings Management?**
 
 I will guide you through each step without writing code for you. You'll learn:
-- Multi-wallet locking within a single DB transaction
-- Fee and commission calculation
-- Cap enforcement
-- Idempotency for financial requests
-- Transaction status/consistency guarantees
+- Dynamic, admin-editable system configuration (transaction fee, agent commission rate)
+- Auditable settings changes (who changed what, when)
+- Caching settings and invalidating on update
+- Keeping FeeCalculator/CommissionCalculator correct as the underlying values change
 
 Let me know when you're ready to start! 🚀

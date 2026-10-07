@@ -64,3 +64,20 @@ test('updating balance on nonexistent user wallet throws WalletNotFoundException
     expect(fn () => $this->service->updateBalance(99999, 10.00, 'CREDIT'))
         ->toThrow(WalletNotFoundException::class);
 });
+
+test('lockWalletsForUsers locks and returns wallets sorted deterministically by user_id', function () {
+    $user1 = User::factory()->create();
+    $user2 = User::factory()->create();
+    $wallet1 = Wallet::factory()->for($user1)->balance(100.00)->create();
+    $wallet2 = Wallet::factory()->for($user2)->balance(200.00)->create();
+
+    // Ensure order is tested regardless of input order
+    $higherId = max($user1->id, $user2->id);
+    $lowerId = min($user1->id, $user2->id);
+
+    $locked = $this->service->lockWalletsForUsers([$higherId, $lowerId]);
+
+    expect($locked)->toHaveCount(2)
+        ->and($locked->first()->user_id)->toBe($lowerId)
+        ->and($locked->last()->user_id)->toBe($higherId);
+});

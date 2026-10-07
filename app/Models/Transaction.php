@@ -12,7 +12,20 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'recipient_id',
     'agent_id',
     'initiated_by',
-    // other fields appropriate for creation
+    'type',
+    'amount',
+    'system_fee_amount',
+    'system_fee_rate',
+    'agent_commission_amount',
+    'agent_commission_rate',
+    'currency',
+    'description',
+    'status',
+    'idempotency_key',
+    'sender_wallet_balance_after',
+    'recipient_wallet_balance_after',
+    'agent_wallet_balance_after',
+    'meta',
 ])]
 class Transaction extends Model
 {
