@@ -133,6 +133,7 @@ cash-out 1000 with 2% commission
 - Enables rate auditing: "What rate applied when this transaction occurred?"
 - If rates changed, old transactions keep original rate. New transactions use new rate.
 - Fairness: agents know their exact commission when transaction completes.
+- **Default Rate Lifecycle:** The global `agent_commission_rate` setting provides the system default rate applied when an agent is approved without a custom rate specified. Individual existing agents retain their historical rate upon approval unless explicitly updated by an admin.
 
 ---
 

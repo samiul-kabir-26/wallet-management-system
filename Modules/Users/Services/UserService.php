@@ -6,12 +6,17 @@ use App\Models\AuditLog;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Modules\SystemSettings\Services\SystemSettingService;
 use Modules\Users\Exceptions\AgentNotApprovedException;
 use Modules\Users\Exceptions\AgentNotPendingException;
 use Modules\Users\Exceptions\UserNotAnAgentException;
 
 class UserService
 {
+    public function __construct(
+        protected SystemSettingService $settingService,
+    ) {}
+
     /**
      * Register a new user, admin, moderator, or agent with default wallet, caps, and assigned role.
      *
@@ -79,9 +84,11 @@ class UserService
                 throw new AgentNotPendingException;
             }
 
+            $defaultCommissionRate = (float) $this->settingService->get('agent_commission_rate', 0.0100);
+
             $agentInfo->update([
                 'status' => 'APPROVED',
-                'commission_rate' => $commissionRate ?? 0.0100,
+                'commission_rate' => $commissionRate ?? $defaultCommissionRate,
                 'approved_at' => now(),
                 'approved_by' => $actor->id,
             ]);

@@ -2,10 +2,14 @@
 
 namespace Modules\Transactions\Services;
 
-use App\Models\SystemSetting;
+use Modules\SystemSettings\Services\SystemSettingService;
 
 class FeeCalculator
 {
+    public function __construct(
+        protected SystemSettingService $settingService,
+    ) {}
+
     /**
      * Calculate the system fee for a given amount based on the system_fee_rate setting.
      *
@@ -13,7 +17,7 @@ class FeeCalculator
      */
     public function calculate(string $amount): array
     {
-        $settingValue = SystemSetting::where('key', 'system_fee_rate')->value('value');
+        $settingValue = $this->settingService->get('system_fee_rate');
         $rate = number_format((float) ($settingValue ?? '0.0500'), 4, '.', '');
         $formattedAmount = number_format((float) $amount, 2, '.', '');
 

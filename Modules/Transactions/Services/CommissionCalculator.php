@@ -3,9 +3,14 @@
 namespace Modules\Transactions\Services;
 
 use App\Models\AgentInfo;
+use Modules\SystemSettings\Services\SystemSettingService;
 
 class CommissionCalculator
 {
+    public function __construct(
+        protected SystemSettingService $settingService,
+    ) {}
+
     /**
      * Calculate agent commission for a given amount.
      *
@@ -13,7 +18,8 @@ class CommissionCalculator
      */
     public function calculate(string $amount, AgentInfo $agentInfo, ?string $maxCommission = null): array
     {
-        $rate = number_format((float) ($agentInfo->commission_rate ?? '0.0100'), 4, '.', '');
+        $defaultRate = $this->settingService->get('agent_commission_rate', '0.0100');
+        $rate = number_format((float) ($agentInfo->commission_rate ?? $defaultRate), 4, '.', '');
         $formattedAmount = number_format((float) $amount, 2, '.', '');
 
         $calculated = bcmul($formattedAmount, $rate, 4);

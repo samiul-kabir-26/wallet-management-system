@@ -2,8 +2,10 @@
 
 use App\Models\AgentInfo;
 use App\Models\Role;
+use App\Models\SystemSetting;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
@@ -75,6 +77,33 @@ test('omitting commission_rate defaults to 0.01', function () {
 
     $agentInfo = AgentInfo::where('user_id', $agent->id)->firstOrFail();
     expect((float) $agentInfo->commission_rate)->toBe(0.0100);
+});
+
+test('omitting commission_rate uses dynamic agent_commission_rate setting and freezes historical rate', function () {
+    $admin = createActorForAgentApproval('ADMIN');
+    $agent1 = createAgentWithStatus('PENDING');
+
+    SystemSetting::updateOrCreate(['key' => 'agent_commission_rate'], ['value' => 0.03]);
+    Cache::flush();
+
+    Sanctum::actingAs($admin, ['admin']);
+    $this->patchJson("/api/v1/users/{$agent1->id}/approve-agent", [])->assertOk();
+
+    $agent1Info = AgentInfo::where('user_id', $agent1->id)->firstOrFail();
+    expect((float) $agent1Info->commission_rate)->toBe(0.03);
+
+    // Update global setting to 0.05
+    SystemSetting::updateOrCreate(['key' => 'agent_commission_rate'], ['value' => 0.05]);
+    Cache::flush();
+
+    $agent2 = createAgentWithStatus('PENDING');
+    $this->patchJson("/api/v1/users/{$agent2->id}/approve-agent", [])->assertOk();
+
+    $agent1Info->refresh();
+    $agent2Info = AgentInfo::where('user_id', $agent2->id)->firstOrFail();
+
+    expect((float) $agent1Info->commission_rate)->toBe(0.03)
+        ->and((float) $agent2Info->commission_rate)->toBe(0.05);
 });
 
 test('commission_rate greater than 1 fails validation with 422', function () {
