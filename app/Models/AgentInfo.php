@@ -8,7 +8,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'user_id',
+    'status',
+    'commission_rate',
+    'total_commission',
+    'approved_at',
     'approved_by',
+    'suspended_at',
     'suspended_by',
 ])]
 class AgentInfo extends Model
@@ -20,6 +25,8 @@ class AgentInfo extends Model
         return [
             'commission_rate' => 'decimal:4',
             'total_commission' => 'decimal:2',
+            'approved_at' => 'datetime',
+            'suspended_at' => 'datetime',
         ];
     }
 
