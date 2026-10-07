@@ -157,4 +157,20 @@ class User extends Authenticatable
     {
         return $this->hasRole('SUPER_ADMIN');
     }
+
+    /**
+     * Determine if the user holds the AGENT role.
+     */
+    public function isAgent(): bool
+    {
+        return $this->hasRole('AGENT');
+    }
+
+    /**
+     * Determine if the user holds the USER role.
+     */
+    public function isUser(): bool
+    {
+        return $this->hasRole('USER');
+    }
 }
