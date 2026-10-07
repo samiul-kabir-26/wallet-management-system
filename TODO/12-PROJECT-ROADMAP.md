@@ -741,8 +741,8 @@ tests/
 | 6 | Transactions | 6-8h | ✅ Complete |
 | 7 | Settings | 1-2h | ✅ Complete |
 | 8 | Security & Testing | 4-5h | ✅ Complete |
-| 9 | API & Docs | 2-3h | ⏳ Next |
-| 10 | Frontend | 8-12h | ⏳ Pending |
+| 9 | API & Docs | 2-3h | ✅ Complete |
+| 10 | Frontend | 8-12h | ⏳ Next |
 | 11 | Production | 2-3h | ⏳ Pending |
 | **Total** | | **38-50h** | |
 
@@ -750,7 +750,7 @@ tests/
 
 # Next Action
 
-**Ready for Task 9: API Documentation?**
+**Ready for Task 10: Frontend?**
 
 I will guide you through each step without writing code for you. You'll learn:
 - Dynamic, admin-editable system configuration (transaction fee, agent commission rate)

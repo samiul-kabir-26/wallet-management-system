@@ -12,6 +12,7 @@ use Modules\Users\Http\Requests\ApproveAgentRequest;
 use Modules\Users\Http\Requests\RegisterUserRequest;
 use Modules\Users\Http\Requests\SuspendAgentRequest;
 use Modules\Users\Http\Requests\UpdateUserRequest;
+use Modules\Users\Resources\AgentResource;
 use Modules\Users\Resources\UserResource;
 use Modules\Users\Services\UserService;
 
@@ -151,13 +152,7 @@ class UserController extends Controller
             'success' => true,
             'message' => 'Agent approved successfully',
             'data' => [
-                'agent' => [
-                    'user_id' => $updatedUser->id,
-                    'status' => $agentInfo->status,
-                    'commission_rate' => (float) $agentInfo->commission_rate,
-                    'approved_at' => $agentInfo->approved_at,
-                    'approved_by' => $agentInfo->approved_by,
-                ],
+                'agent' => new AgentResource($agentInfo),
             ],
         ]);
     }
@@ -179,12 +174,7 @@ class UserController extends Controller
             'success' => true,
             'message' => 'Agent suspended successfully',
             'data' => [
-                'agent' => [
-                    'user_id' => $updatedUser->id,
-                    'status' => $agentInfo->status,
-                    'suspended_at' => $agentInfo->suspended_at,
-                    'suspended_by' => $agentInfo->suspended_by,
-                ],
+                'agent' => new AgentResource($agentInfo),
             ],
         ]);
     }

@@ -1,0 +1,1678 @@
+{
+    "info": {
+        "_postman_id": "a98317e0-4965-4f76-88a1-872fba128e67",
+        "name": "Wallet Management System API",
+        "description": "Complete Postman collection for the Wallet Management System REST API (v1).\n\nIncludes all 36 endpoints across Authentication, Users, Wallets, Transactions, and System Settings with automated token management scripts and environment variables.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:8000/api/v1",
+            "type": "string",
+            "description": "Base API URL for all requests"
+        },
+        {
+            "key": "userToken",
+            "value": "",
+            "type": "string",
+            "description": "Sanctum Bearer token for Customer (USER role)"
+        },
+        {
+            "key": "agentToken",
+            "value": "",
+            "type": "string",
+            "description": "Sanctum Bearer token for Agent (AGENT role)"
+        },
+        {
+            "key": "adminToken",
+            "value": "",
+            "type": "string",
+            "description": "Sanctum Bearer token for Administrator (ADMIN / SUPER_ADMIN role)"
+        },
+        {
+            "key": "tempToken",
+            "value": "",
+            "type": "string",
+            "description": "Restricted token with password-change ability for invited staff (Case B)"
+        },
+        {
+            "key": "userId",
+            "value": "1",
+            "type": "string",
+            "description": "Sample User ID for path variables"
+        },
+        {
+            "key": "walletId",
+            "value": "1",
+            "type": "string",
+            "description": "Sample Wallet ID for path variables"
+        },
+        {
+            "key": "transactionId",
+            "value": "1",
+            "type": "string",
+            "description": "Sample Transaction ID for path variables"
+        }
+    ],
+    "item": [
+        {
+            "name": "1. Authentication",
+            "description": "Endpoints for customer PIN auth, agent PIN auth, admin 2FA OTP, token refresh, and multi-credential transitions (Cases A, B, C).",
+            "item": [
+                {
+                    "name": "Public Customer Registration",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 201) {",
+                                    "    const json = pm.response.json();",
+                                    "    if (json.data && json.data.token) {",
+                                    "        pm.collectionVariables.set('userToken', json.data.token);",
+                                    "    }",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Alice Customer\",\n    \"phone_number\": \"01712345678\",\n    \"pin\": \"12345\",\n    \"pin_confirmation\": \"12345\",\n    \"role\": \"USER\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/register",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "register"
+                            ]
+                        },
+                        "description": "Public registration for customers. Grants 50.00 BDT bonus, sets caps, and issues user token."
+                    }
+                },
+                {
+                    "name": "Public Agent Registration",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 201) {",
+                                    "    const json = pm.response.json();",
+                                    "    if (json.data && json.data.token) {",
+                                    "        pm.collectionVariables.set('agentToken', json.data.token);",
+                                    "    }",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Bob Agent\",\n    \"phone_number\": \"01812345678\",\n    \"pin\": \"54321\",\n    \"pin_confirmation\": \"54321\",\n    \"role\": \"AGENT\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/register",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "register"
+                            ]
+                        },
+                        "description": "Public registration for agents. Sets status to PENDING until approved by admin."
+                    }
+                },
+                {
+                    "name": "Customer PIN Login",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    const json = pm.response.json();",
+                                    "    if (json.data && json.data.token) {",
+                                    "        pm.collectionVariables.set('userToken', json.data.token);",
+                                    "    }",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"phone_number\": \"01712345678\",\n    \"pin\": \"12345\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/user/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "user",
+                                "login"
+                            ]
+                        },
+                        "description": "Customer login using 5-digit PIN. Protected with anti-timing attack dummy hashing."
+                    }
+                },
+                {
+                    "name": "Agent PIN Login",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    const json = pm.response.json();",
+                                    "    if (json.data && json.data.token) {",
+                                    "        pm.collectionVariables.set('agentToken', json.data.token);",
+                                    "    }",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"phone_number\": \"01812345678\",\n    \"pin\": \"54321\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/agent/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "agent",
+                                "login"
+                            ]
+                        },
+                        "description": "Agent login using 5-digit PIN. Requires APPROVED agent status."
+                    }
+                },
+                {
+                    "name": "Admin Login (Step 1: Password & Request OTP)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"identifier\": \"admin@wallet.local\",\n    \"password\": \"Password123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/admin/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "admin",
+                                "login"
+                            ]
+                        },
+                        "description": "Step 1 of admin authentication: validates password and emails 6-digit OTP code."
+                    }
+                },
+                {
+                    "name": "Admin Verify OTP (Step 2: Token Issuance)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    const json = pm.response.json();",
+                                    "    if (json.data && json.data.token) {",
+                                    "        pm.collectionVariables.set('adminToken', json.data.token);",
+                                    "    }",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"admin@wallet.local\",\n    \"otp_code\": \"123456\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/admin/verify-otp",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "admin",
+                                "verify-otp"
+                            ]
+                        },
+                        "description": "Step 2 of admin authentication: verifies 6-digit OTP and issues admin bearer token."
+                    }
+                },
+                {
+                    "name": "Case A: Request Admin Set-PIN OTP",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/set-pin/request-otp",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "set-pin",
+                                "request-otp"
+                            ]
+                        },
+                        "description": "Case A: Admin requests an OTP sent to registered email to provision customer PIN."
+                    }
+                },
+                {
+                    "name": "Case A: Admin Set PIN with OTP",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"otp_code\": \"123456\",\n    \"pin\": \"98765\",\n    \"pin_confirmation\": \"98765\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/set-pin",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "set-pin"
+                            ]
+                        },
+                        "description": "Case A: Admin verifies OTP and sets 5-digit PIN for personal account."
+                    }
+                },
+                {
+                    "name": "Case B: Accept Staff Invitation (Signed Link)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    const json = pm.response.json();",
+                                    "    if (json.data && json.data.token) {",
+                                    "        pm.collectionVariables.set('tempToken', json.data.token);",
+                                    "    }",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"password\": \"TemporaryPassword123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/accept-invite/:user?expires=1735689600&signature=signed_hash_string",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "accept-invite",
+                                ":user"
+                            ],
+                            "query": [
+                                {
+                                    "key": "expires",
+                                    "value": "1735689600"
+                                },
+                                {
+                                    "key": "signature",
+                                    "value": "signed_hash_string"
+                                }
+                            ],
+                            "variable": [
+                                {
+                                    "key": "user",
+                                    "value": "{{userId}}",
+                                    "description": "Target User ID from invitation link"
+                                }
+                            ]
+                        },
+                        "description": "Case B: Invited user verifies temporary password via signed URL, receives temporary password-change token."
+                    }
+                },
+                {
+                    "name": "Case B: Mandatory Password Change",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    const json = pm.response.json();",
+                                    "    if (json.data && json.data.token) {",
+                                    "        pm.collectionVariables.set('adminToken', json.data.token);",
+                                    "    }",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{tempToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"current_password\": \"TemporaryPassword123!\",\n    \"new_password\": \"NewSecurePassword123!\",\n    \"new_password_confirmation\": \"NewSecurePassword123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/change-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "change-password"
+                            ]
+                        },
+                        "description": "Case B: First-login mandatory password change; upgrades temporary token to full admin token."
+                    }
+                },
+                {
+                    "name": "Case C: Staff Initiate Customer PIN Reset",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"phone_number\": \"01712345678\",\n    \"email\": \"customer@example.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/pin-reset/initiate",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "pin-reset",
+                                "initiate"
+                            ]
+                        },
+                        "description": "Case C: Support staff initiates signed PIN recovery link after manual customer identity verification."
+                    }
+                },
+                {
+                    "name": "Case C: Reset Customer PIN (Signed Link)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"pin\": \"54321\",\n    \"pin_confirmation\": \"54321\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/reset-pin/:user?expires=1735689600&signature=signed_hash_string",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "reset-pin",
+                                ":user"
+                            ],
+                            "query": [
+                                {
+                                    "key": "expires",
+                                    "value": "1735689600"
+                                },
+                                {
+                                    "key": "signature",
+                                    "value": "signed_hash_string"
+                                }
+                            ],
+                            "variable": [
+                                {
+                                    "key": "user",
+                                    "value": "{{userId}}",
+                                    "description": "Target User ID from signed recovery link"
+                                }
+                            ]
+                        },
+                        "description": "Case C: Customer sets new 5-digit PIN via secure signed recovery URL."
+                    }
+                },
+                {
+                    "name": "Forgot Admin Password (OTP Request)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"admin@wallet.local\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/forgot-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "forgot-password"
+                            ]
+                        },
+                        "description": "Dispatches 6-digit password reset OTP to admin email. Timing attack and enumeration safe."
+                    }
+                },
+                {
+                    "name": "Reset Admin Password (OTP Verify)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"admin@wallet.local\",\n    \"otp_code\": \"123456\",\n    \"new_password\": \"NewAdminPass123!\",\n    \"new_password_confirmation\": \"NewAdminPass123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/reset-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "reset-password"
+                            ]
+                        },
+                        "description": "Resets administrative password using verified OTP code."
+                    }
+                },
+                {
+                    "name": "Refresh Token",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    const json = pm.response.json();",
+                                    "    if (json.data && json.data.token) {",
+                                    "        pm.collectionVariables.set('userToken', json.data.token);",
+                                    "    }",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/refresh-token",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "refresh-token"
+                            ]
+                        },
+                        "description": "Revokes caller current token and returns a fresh replacement."
+                    }
+                },
+                {
+                    "name": "Logout",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/logout",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "logout"
+                            ]
+                        },
+                        "description": "Revokes caller current Sanctum access token."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "2. Users",
+            "description": "User management, administrative staff provisioning, agent approval/suspension, and profile updates.",
+            "item": [
+                {
+                    "name": "Admin Register User / Staff",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Charlie Staff\",\n    \"email\": \"charlie@wallet.local\",\n    \"phone_number\": \"01799887766\",\n    \"password\": \"StaffPassword123!\",\n    \"password_confirmation\": \"StaffPassword123!\",\n    \"role\": \"ADMIN\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/users/register",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                "register"
+                            ]
+                        },
+                        "description": "Direct registration of staff or users by an authorized administrator."
+                    }
+                },
+                {
+                    "name": "List All Users (Admin Audit)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/users/all-users?page=1&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                "all-users"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "description": "Paginated directory of all registered users, roles, statuses, and wallets."
+                    }
+                },
+                {
+                    "name": "Get User Profile by ID",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/users/:user",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                ":user"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "user",
+                                    "value": "{{userId}}",
+                                    "description": "Target User ID"
+                                }
+                            ]
+                        },
+                        "description": "Returns profile detail for a user. UserPolicy permits own profile or admin."
+                    }
+                },
+                {
+                    "name": "Update User Profile",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"Alice Rahman Updated\",\n    \"email\": \"alice.updated@example.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/users/:user",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                ":user"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "user",
+                                    "value": "{{userId}}",
+                                    "description": "Target User ID"
+                                }
+                            ]
+                        },
+                        "description": "Updates name or email of the specified user."
+                    }
+                },
+                {
+                    "name": "Approve Agent (Admin)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"commission_rate\": 0.015\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/users/:user/approve-agent",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                ":user",
+                                "approve-agent"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "user",
+                                    "value": "{{userId}}",
+                                    "description": "Agent User ID to approve"
+                                }
+                            ]
+                        },
+                        "description": "Approves pending agent, assigns commission rate, and unlocks transactional features."
+                    }
+                },
+                {
+                    "name": "Suspend Agent (Admin)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/users/:user/suspend-agent",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                ":user",
+                                "suspend-agent"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "user",
+                                    "value": "{{userId}}",
+                                    "description": "Agent User ID to suspend"
+                                }
+                            ]
+                        },
+                        "description": "Suspends agent and revokes cash-in/cash-out/withdrawal capabilities."
+                    }
+                },
+                {
+                    "name": "Grant Admin Access / Invite Staff (Case B)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"role\": \"ADMIN\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/users/:user/grant-admin-access",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                ":user",
+                                "grant-admin-access"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "user",
+                                    "value": "{{userId}}",
+                                    "description": "Target User ID to elevate"
+                                }
+                            ]
+                        },
+                        "description": "Super admin promotes existing user to admin and sends signed invitation link with temporary password."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "3. Wallets",
+            "description": "Wallet balance checking, administrative wallet oversight, and freeze/unfreeze controls.",
+            "item": [
+                {
+                    "name": "Get My Wallet & Caps",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/wallets/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "wallets",
+                                "me"
+                            ]
+                        },
+                        "description": "Retrieves authenticated user wallet balance, currency, status, and remaining transaction caps."
+                    }
+                },
+                {
+                    "name": "List All Wallets (Admin Audit)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/wallets/admin/all?page=1&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "wallets",
+                                "admin",
+                                "all"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "description": "Administrative overview of all wallets across the system."
+                    }
+                },
+                {
+                    "name": "Block Wallet (Admin Freeze)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"reason\": \"Suspicious transaction velocity\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/wallets/:wallet/block",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "wallets",
+                                ":wallet",
+                                "block"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "wallet",
+                                    "value": "{{walletId}}",
+                                    "description": "Target Wallet ID to freeze"
+                                }
+                            ]
+                        },
+                        "description": "Administrative freeze on a wallet, blocking all debit and credit operations."
+                    }
+                },
+                {
+                    "name": "Unblock Wallet (Admin Unfreeze)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"reason\": \"Customer KYC cleared\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/wallets/:wallet/unblock",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "wallets",
+                                ":wallet",
+                                "unblock"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "wallet",
+                                    "value": "{{walletId}}",
+                                    "description": "Target Wallet ID to unfreeze"
+                                }
+                            ]
+                        },
+                        "description": "Restores an active state to a previously blocked wallet."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "4. Transactions",
+            "description": "Financial operations (Top-Up, Transfer, Cash-In, Cash-Out, Agent Withdrawal), transaction history, and admin audit.",
+            "item": [
+                {
+                    "name": "Top-Up Wallet (Customer)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"amount\": 500\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/transactions/top-up",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "transactions",
+                                "top-up"
+                            ]
+                        },
+                        "description": "Customer simulates loading money into their personal wallet."
+                    }
+                },
+                {
+                    "name": "Send Money / Transfer (Customer to Customer)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"recipient_phone\": \"01722334455\",\n    \"amount\": 200,\n    \"pin\": \"12345\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/transactions/transfer",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "transactions",
+                                "transfer"
+                            ]
+                        },
+                        "description": "Peer-to-peer transfer between customers with PIN validation and cap checks."
+                    }
+                },
+                {
+                    "name": "Cash-In (Customer loads from Agent)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"agent_phone\": \"01812345678\",\n    \"amount\": 1000,\n    \"pin\": \"12345\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/transactions/cash-in",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "transactions",
+                                "cash-in"
+                            ]
+                        },
+                        "description": "Customer receives funds from agent wallet. Agent earns commission."
+                    }
+                },
+                {
+                    "name": "Cash-Out (Customer withdraws at Agent)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"agent_phone\": \"01812345678\",\n    \"amount\": 500,\n    \"pin\": \"12345\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/transactions/cash-out",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "transactions",
+                                "cash-out"
+                            ]
+                        },
+                        "description": "Customer withdraws physical cash from agent. System fee and agent commission are computed."
+                    }
+                },
+                {
+                    "name": "Agent Withdrawal (Agent to Bank)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{agentToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"amount\": 300,\n    \"pin\": \"54321\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/transactions/agent/withdrawal",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "transactions",
+                                "agent",
+                                "withdrawal"
+                            ]
+                        },
+                        "description": "Approved agent withdraws balance to their bank account."
+                    }
+                },
+                {
+                    "name": "My Transaction History",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/transactions/history?page=1&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "transactions",
+                                "history"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "description": "Paginated history of transactions for caller personal wallet."
+                    }
+                },
+                {
+                    "name": "All Transactions (Admin Audit)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/transactions/admin/all?page=1&per_page=15",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "transactions",
+                                "admin",
+                                "all"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15"
+                                }
+                            ]
+                        },
+                        "description": "Administrative ledger of all financial transactions across the platform."
+                    }
+                },
+                {
+                    "name": "Get Transaction by ID",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/transactions/:transaction",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "transactions",
+                                ":transaction"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "transaction",
+                                    "value": "{{transactionId}}",
+                                    "description": "Target Transaction ID"
+                                }
+                            ]
+                        },
+                        "description": "Fetches detailed record of an individual transaction."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "5. System Settings",
+            "description": "Global financial configuration for system fee rates and default agent commission rates.",
+            "item": [
+                {
+                    "name": "Get System Settings",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{userToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/system-settings",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "system-settings"
+                            ]
+                        },
+                        "description": "Returns global fee and default commission configuration values."
+                    }
+                },
+                {
+                    "name": "Update System Settings (Admin)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"transaction_fee_rate\": 0.015,\n    \"agent_commission_rate\": 0.02\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/system-settings",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "system-settings"
+                            ]
+                        },
+                        "description": "Updates global transaction fee rates and commission rates."
+                    }
+                }
+            ]
+        }
+    ]
+}
