@@ -1,6 +1,6 @@
 # Project Roadmap: Complete Development Plan
 
-**Status:** Task 2 Complete ✅ | Starting Task 3
+**Status:** Tasks 1-5 Complete ✅ | Starting Task 6
 
 ---
 
@@ -10,11 +10,11 @@ This document outlines all remaining tasks to complete the wallet management sys
 
 ### Completed
 - ✅ Task 2: Project Setup & Database Schema
+- ✅ Task 3: Module 1 — Authentication Implementation
+- ✅ Task 4: Module 2 — Users & Roles Management
+- ✅ Task 5: Module 3 — Wallet Management
 
 ### Next Steps (In Order)
-- Task 3: Module 1 — Authentication Implementation
-- Task 4: Module 2 — Users & Roles Management
-- Task 5: Module 3 — Wallet Management
 - Task 6: Module 4 — Transaction Processing
 - Task 7: Security Hardening & Testing
 - Task 8: API Resources & Response Formatting
@@ -734,10 +734,10 @@ tests/
 |------|--------|----------|--------|
 | 1 | Requirements & Architecture | 2h | ✅ Complete |
 | 2 | Database & Models | 2-3h | ✅ Complete |
-| 3 | Authentication | 4-5h | ⏳ Next |
-| 4 | Users & Roles | 3-4h | ⏳ Pending |
-| 5 | Wallets | 3-4h | ⏳ Pending |
-| 6 | Transactions | 6-8h | ⏳ Pending |
+| 3 | Authentication | 4-5h | ✅ Complete |
+| 4 | Users & Roles | 3-4h | ✅ Complete |
+| 5 | Wallets | 3-4h | ✅ Complete |
+| 6 | Transactions | 6-8h | ⏳ Next |
 | 7 | Settings | 1-2h | ⏳ Pending |
 | 8 | Security & Testing | 4-5h | ⏳ Pending |
 | 9 | API & Docs | 2-3h | ⏳ Pending |
@@ -749,14 +749,13 @@ tests/
 
 # Next Action
 
-**Ready for Task 3: Module 1 — Authentication?**
+**Ready for Task 6: Module 4 — Transaction Processing?**
 
 I will guide you through each step without writing code for you. You'll learn:
-- Laravel Sanctum
-- JWT concepts
-- OTP generation
-- Form Requests
-- Service classes
-- Middleware
+- Multi-wallet locking within a single DB transaction
+- Fee and commission calculation
+- Cap enforcement
+- Idempotency for financial requests
+- Transaction status/consistency guarantees
 
 Let me know when you're ready to start! 🚀
