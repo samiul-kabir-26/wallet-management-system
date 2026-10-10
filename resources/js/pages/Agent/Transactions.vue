@@ -2,39 +2,20 @@
 import { onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
-import { api } from '@/services/api';
+import { storeToRefs } from 'pinia';
+import { useTransactionStore } from '@/stores/transactions';
 import AgentLayout from '@/layouts/AgentLayout.vue';
 import Badge from '@/components/Badge.vue';
+import Skeleton from '@/components/Skeleton.vue';
 import Pagination from '@/components/Pagination.vue';
 import Alert from '@/components/Alert.vue';
-import type { Pagination as PaginationType, Transaction } from '@/types/models';
 
 useAuthGuard('AGENT');
 
-const transactions = ref<Transaction[]>([]);
-const pagination = ref<PaginationType | null>(null);
-const loading = ref(true);
-const error = ref<string | null>(null);
+const transactionStore = useTransactionStore();
+const { items: transactions, pagination, loading, error } = storeToRefs(transactionStore);
 
-const fetchTransactions = async (page = 1) => {
-    loading.value = true;
-    error.value = null;
-    try {
-        const res = await api.get('/transactions/history', {
-            params: {
-                page,
-                per_page: 15,
-            },
-        });
-        transactions.value = res.data.data?.items ?? [];
-        pagination.value = res.data.data?.pagination ?? null;
-    } catch (err: unknown) {
-        const apiError = err as { response?: { data?: { message?: string } } };
-        error.value = apiError.response?.data?.message || 'Failed to load transaction history.';
-    } finally {
-        loading.value = false;
-    }
-};
+const fetchTransactions = (page = 1) => transactionStore.fetchHistory(page, 15);
 
 onMounted(() => {
     fetchTransactions();
@@ -59,9 +40,7 @@ onMounted(() => {
             </div>
 
             <div class="rounded-2xl border border-zinc-200 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
-                <div v-if="loading && transactions.length === 0" class="p-12 text-center text-sm text-zinc-500">
-                    Loading records...
-                </div>
+                <div v-if="loading && transactions.length === 0" class="p-6"><Skeleton :rows="5" height="h-6" /></div>
 
                 <div v-else-if="transactions.length === 0" class="p-12 text-center text-sm text-zinc-500">
                     No transactions found.

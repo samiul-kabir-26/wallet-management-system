@@ -8,6 +8,9 @@ import Badge from '@/components/Badge.vue';
 import Modal from '@/components/Modal.vue';
 import Pagination from '@/components/Pagination.vue';
 import Alert from '@/components/Alert.vue';
+import Skeleton from '@/components/Skeleton.vue';
+import RegisterStaffForm from '@/components/Forms/RegisterStaffForm.vue';
+import { useToastStore } from '@/stores/toast';
 import type { Pagination as PaginationType, User } from '@/types/models';
 
 useAuthGuard('ADMIN');
@@ -15,17 +18,10 @@ useAuthGuard('ADMIN');
 const users = ref<User[]>([]);
 const pagination = ref<PaginationType | null>(null);
 const loading = ref(true);
-const successMessage = ref<string | null>(null);
-const errorMessage = ref<string | null>(null);
+const toast = useToastStore();
 
 // Register Staff modal
 const showRegisterModal = ref(false);
-const regName = ref('');
-const regEmail = ref('');
-const regPhone = ref('');
-const regPassword = ref('');
-const regRole = ref<'ADMIN' | 'MODERATOR' | 'USER'>('ADMIN');
-const regLoading = ref(false);
 
 // Elevate User modal
 const showElevateModal = ref(false);
@@ -36,7 +32,6 @@ const inviteUrl = ref<string | null>(null);
 
 const fetchUsers = async (page = 1) => {
     loading.value = true;
-    errorMessage.value = null;
     try {
         const res = await api.get('/users/all-users', {
             params: { page, per_page: 15 },
@@ -45,39 +40,15 @@ const fetchUsers = async (page = 1) => {
         pagination.value = res.data.data?.pagination ?? null;
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to fetch users.';
+        toast.error(apiError.response?.data?.message || 'Failed to fetch users.');
     } finally {
         loading.value = false;
     }
 };
 
-const handleRegisterStaff = async () => {
-    regLoading.value = true;
-    errorMessage.value = null;
-    successMessage.value = null;
-    try {
-        await api.post('/users/register', {
-            name: regName.value,
-            email: regEmail.value || null,
-            phone_number: regPhone.value,
-            password: regPassword.value,
-            password_confirmation: regPassword.value,
-            role: regRole.value,
-        });
-
-        successMessage.value = `Successfully registered ${regRole.value} account for ${regName.value}!`;
-        showRegisterModal.value = false;
-        regName.value = '';
-        regEmail.value = '';
-        regPhone.value = '';
-        regPassword.value = '';
-        await fetchUsers(1);
-    } catch (err: unknown) {
-        const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to register staff.';
-    } finally {
-        regLoading.value = false;
-    }
+const handleStaffRegistered = async () => {
+    showRegisterModal.value = false;
+    await fetchUsers(1);
 };
 
 const openElevateModal = (u: User) => {
@@ -89,18 +60,17 @@ const openElevateModal = (u: User) => {
 const handleElevateUser = async () => {
     if (!elevateUser.value) return;
     elevateLoading.value = true;
-    errorMessage.value = null;
     try {
         const res = await api.patch(`/users/${elevateUser.value.id}/grant-admin-access`, {
             role: elevateRole.value,
         });
 
         inviteUrl.value = res.data.data?.invitation_link ?? 'Invitation issued successfully.';
-        successMessage.value = `Admin access granted to ${elevateUser.value.name}!`;
+        toast.success(`Admin access granted to ${elevateUser.value.name}!`);
         await fetchUsers(pagination.value?.current_page ?? 1);
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to grant admin access.';
+        toast.error(apiError.response?.data?.message || 'Failed to grant admin access.');
     } finally {
         elevateLoading.value = false;
     }
@@ -133,18 +103,9 @@ onMounted(() => {
                 </button>
             </div>
 
-            <div v-if="successMessage" class="mb-4">
-                <Alert type="success" :message="successMessage" dismissible @close="successMessage = null" />
-            </div>
-            <div v-if="errorMessage" class="mb-4">
-                <Alert type="error" :message="errorMessage" dismissible @close="errorMessage = null" />
-            </div>
-
             <!-- Table Card -->
             <div class="rounded-2xl border border-zinc-200 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
-                <div v-if="loading && users.length === 0" class="p-12 text-center text-sm text-zinc-500">
-                    Loading accounts...
-                </div>
+                <div v-if="loading && users.length === 0" class="p-6"><Skeleton :rows="6" height="h-6" /></div>
 
                 <div v-else class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
@@ -196,80 +157,7 @@ onMounted(() => {
 
             <!-- Register Staff Modal -->
             <Modal :show="showRegisterModal" title="Register New Administrative Staff" @close="showRegisterModal = false">
-                <form class="space-y-4" @submit.prevent="handleRegisterStaff">
-                    <div>
-                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Full Name</label>
-                        <input
-                            v-model="regName"
-                            type="text"
-                            required
-                            placeholder="John Administrator"
-                            class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                        />
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Email Address</label>
-                        <input
-                            v-model="regEmail"
-                            type="email"
-                            required
-                            placeholder="john@wallet.local"
-                            class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                        />
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Phone Number (BD)</label>
-                        <input
-                            v-model="regPhone"
-                            type="tel"
-                            required
-                            placeholder="01799887766"
-                            class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                        />
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Password</label>
-                        <input
-                            v-model="regPassword"
-                            type="password"
-                            required
-                            placeholder="••••••••"
-                            class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                        />
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Role</label>
-                        <select
-                            v-model="regRole"
-                            class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                        >
-                            <option value="ADMIN">ADMIN</option>
-                            <option value="MODERATOR">MODERATOR</option>
-                            <option value="USER">USER</option>
-                        </select>
-                    </div>
-
-                    <div class="flex justify-end gap-2 pt-2">
-                        <button
-                            type="button"
-                            class="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                            @click="showRegisterModal = false"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            :disabled="regLoading"
-                            class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
-                        >
-                            {{ regLoading ? 'Registering...' : 'Create Account' }}
-                        </button>
-                    </div>
-                </form>
+                <RegisterStaffForm @cancel="showRegisterModal = false" @registered="handleStaffRegistered" />
             </Modal>
 
             <!-- Elevate to Admin Modal (Case B) -->

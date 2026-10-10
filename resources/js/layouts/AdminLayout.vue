@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { useAuthStore } from '@/stores/auth';
 import Badge from '@/components/Badge.vue';
+import ToastContainer from '@/components/ToastContainer.vue';
 
 const authStore = useAuthStore();
 const sidebarOpen = ref(false);
@@ -23,6 +24,7 @@ const handleLogout = async () => {
 
 <template>
     <div class="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex">
+        <ToastContainer />
         <!-- Desktop Sidebar -->
         <aside class="hidden lg:flex lg:w-64 lg:flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
             <div class="flex h-16 items-center gap-2 px-6 border-b border-zinc-200 dark:border-zinc-800">

@@ -2,12 +2,14 @@
 import { onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
+import { required } from '@/composables/validators';
 import { api } from '@/services/api';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import Badge from '@/components/Badge.vue';
 import Modal from '@/components/Modal.vue';
 import Pagination from '@/components/Pagination.vue';
-import Alert from '@/components/Alert.vue';
+import Skeleton from '@/components/Skeleton.vue';
+import { useToastStore } from '@/stores/toast';
 import type { Pagination as PaginationType, Wallet } from '@/types/models';
 
 useAuthGuard('ADMIN');
@@ -15,8 +17,7 @@ useAuthGuard('ADMIN');
 const wallets = ref<Wallet[]>([]);
 const pagination = ref<PaginationType | null>(null);
 const loading = ref(true);
-const successMessage = ref<string | null>(null);
-const errorMessage = ref<string | null>(null);
+const toast = useToastStore();
 
 // Block/Unblock state
 const showBlockModal = ref(false);
@@ -24,10 +25,16 @@ const showUnblockModal = ref(false);
 const selectedWallet = ref<Wallet | null>(null);
 const actionReason = ref('');
 const actionLoading = ref(false);
+const reasonError = ref<string | null>(null);
+
+const validateReason = (): boolean => {
+    const result = required('Reason')(actionReason.value);
+    reasonError.value = result === true ? null : result;
+    return result === true;
+};
 
 const fetchWallets = async (page = 1) => {
     loading.value = true;
-    errorMessage.value = null;
     try {
         const res = await api.get('/wallets/admin/all', {
             params: { page, per_page: 15 },
@@ -36,7 +43,7 @@ const fetchWallets = async (page = 1) => {
         pagination.value = res.data.data?.pagination ?? null;
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to fetch wallets.';
+        toast.error(apiError.response?.data?.message || 'Failed to fetch wallets.');
     } finally {
         loading.value = false;
     }
@@ -45,48 +52,48 @@ const fetchWallets = async (page = 1) => {
 const openBlockModal = (w: Wallet) => {
     selectedWallet.value = w;
     actionReason.value = 'Suspicious velocity detected';
+    reasonError.value = null;
     showBlockModal.value = true;
 };
 
 const openUnblockModal = (w: Wallet) => {
     selectedWallet.value = w;
     actionReason.value = 'Identity verification completed';
+    reasonError.value = null;
     showUnblockModal.value = true;
 };
 
 const handleBlock = async () => {
-    if (!selectedWallet.value) return;
+    if (!selectedWallet.value || !validateReason()) return;
     actionLoading.value = true;
-    errorMessage.value = null;
     try {
         await api.patch(`/wallets/${selectedWallet.value.id}/block`, {
             reason: actionReason.value,
         });
-        successMessage.value = `Wallet #${selectedWallet.value.id} successfully blocked.`;
+        toast.success(`Wallet #${selectedWallet.value.id} successfully blocked.`);
         showBlockModal.value = false;
         await fetchWallets(pagination.value?.current_page ?? 1);
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to block wallet.';
+        toast.error(apiError.response?.data?.message || 'Failed to block wallet.');
     } finally {
         actionLoading.value = false;
     }
 };
 
 const handleUnblock = async () => {
-    if (!selectedWallet.value) return;
+    if (!selectedWallet.value || !validateReason()) return;
     actionLoading.value = true;
-    errorMessage.value = null;
     try {
         await api.patch(`/wallets/${selectedWallet.value.id}/unblock`, {
             reason: actionReason.value,
         });
-        successMessage.value = `Wallet #${selectedWallet.value.id} successfully unblocked.`;
+        toast.success(`Wallet #${selectedWallet.value.id} successfully unblocked.`);
         showUnblockModal.value = false;
         await fetchWallets(pagination.value?.current_page ?? 1);
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to unblock wallet.';
+        toast.error(apiError.response?.data?.message || 'Failed to unblock wallet.');
     } finally {
         actionLoading.value = false;
     }
@@ -110,18 +117,10 @@ onMounted(() => {
                 </p>
             </div>
 
-            <div v-if="successMessage" class="mb-4">
-                <Alert type="success" :message="successMessage" dismissible @close="successMessage = null" />
-            </div>
-            <div v-if="errorMessage" class="mb-4">
-                <Alert type="error" :message="errorMessage" dismissible @close="errorMessage = null" />
-            </div>
 
             <!-- Wallets Table -->
             <div class="rounded-2xl border border-zinc-200 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
-                <div v-if="loading && wallets.length === 0" class="p-12 text-center text-sm text-zinc-500">
-                    Loading wallets...
-                </div>
+                <div v-if="loading && wallets.length === 0" class="p-6"><Skeleton :rows="6" height="h-6" /></div>
 
                 <div v-else class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
@@ -183,7 +182,7 @@ onMounted(() => {
 
             <!-- Block Modal -->
             <Modal :show="showBlockModal" title="Security Freeze Wallet" @close="showBlockModal = false">
-                <form class="space-y-4" @submit.prevent="handleBlock">
+                <form class="space-y-4" novalidate @submit.prevent="handleBlock">
                     <p class="text-sm text-zinc-600 dark:text-zinc-400">
                         Freeze Wallet <span class="font-semibold text-zinc-900 dark:text-zinc-100">#{{ selectedWallet?.id }}</span>. All transfers, cash-ins, and cash-outs on this account will be prohibited immediately.
                     </p>
@@ -193,10 +192,10 @@ onMounted(() => {
                         <input
                             v-model="actionReason"
                             type="text"
-                            required
                             placeholder="e.g. Velocity anomaly / Chargeback risk"
                             class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                         />
+                        <p v-if="reasonError" class="mt-1 text-xs text-rose-600 dark:text-rose-400">{{ reasonError }}</p>
                     </div>
 
                     <div class="flex justify-end gap-2 pt-2">
@@ -220,7 +219,7 @@ onMounted(() => {
 
             <!-- Unblock Modal -->
             <Modal :show="showUnblockModal" title="Unfreeze Wallet" @close="showUnblockModal = false">
-                <form class="space-y-4" @submit.prevent="handleUnblock">
+                <form class="space-y-4" novalidate @submit.prevent="handleUnblock">
                     <p class="text-sm text-zinc-600 dark:text-zinc-400">
                         Restore active state for Wallet <span class="font-semibold text-zinc-900 dark:text-zinc-100">#{{ selectedWallet?.id }}</span>.
                     </p>
@@ -230,10 +229,10 @@ onMounted(() => {
                         <input
                             v-model="actionReason"
                             type="text"
-                            required
                             placeholder="e.g. Customer KYC cleared"
                             class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                         />
+                        <p v-if="reasonError" class="mt-1 text-xs text-rose-600 dark:text-rose-400">{{ reasonError }}</p>
                     </div>
 
                     <div class="flex justify-end gap-2 pt-2">

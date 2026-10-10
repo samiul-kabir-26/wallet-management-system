@@ -77,7 +77,7 @@ export interface AgentInfo {
 }
 
 export interface SystemSettings {
-    transaction_fee_rate: number;
+    system_fee_rate: number;
     agent_commission_rate: number;
 }
 

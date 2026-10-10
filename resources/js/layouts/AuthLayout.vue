@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
+import ToastContainer from '@/components/ToastContainer.vue';
 
 defineProps<{
     title?: string;
@@ -9,6 +10,7 @@ defineProps<{
 
 <template>
     <div class="flex min-h-screen flex-col justify-center bg-zinc-50 px-4 py-12 sm:px-6 lg:px-8 dark:bg-zinc-950">
+        <ToastContainer />
         <div class="sm:mx-auto sm:w-full sm:max-w-md">
             <div class="flex justify-center">
                 <Link href="/" class="flex items-center gap-2 text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
