@@ -1,62 +1,55 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
+import { useForm } from 'vee-validate';
 import { useAuthStore } from '@/stores/auth';
+import { useToastStore } from '@/stores/toast';
+import { parseApiError } from '@/composables/useApiError';
+import { phone, pin, pinConfirmation, required } from '@/composables/validators';
 import AuthLayout from '@/layouts/AuthLayout.vue';
-import Alert from '@/components/Alert.vue';
+import TextField from '@/components/Forms/TextField.vue';
 
 const authStore = useAuthStore();
-
-const name = ref('');
-const phone = ref('');
-const pin = ref('');
-const pinConfirmation = ref('');
+const toast = useToastStore();
 const role = ref<'USER' | 'AGENT'>('USER');
 
-const error = ref<string | null>(null);
-const validationErrors = ref<Record<string, string[]>>({});
+const { handleSubmit, setErrors } = useForm<{ name: string; phone: string; pin: string; pinConfirmation: string }>({
+    validationSchema: {
+        name: required('Full name'),
+        phone,
+        pin,
+        pinConfirmation: pinConfirmation('pin'),
+    },
+    initialValues: { name: '', phone: '', pin: '', pinConfirmation: '' },
+});
 
-const handleRegister = async () => {
-    error.value = null;
-    validationErrors.value = {};
-
-    if (pin.value !== pinConfirmation.value) {
-        error.value = 'Security PIN confirmation does not match.';
-        return;
-    }
-
+const handleRegister = handleSubmit(async (formValues) => {
     try {
-        const data = await authStore.register({
-            name: name.value,
-            phone_number: phone.value,
-            pin: pin.value,
-            pin_confirmation: pinConfirmation.value,
+        await authStore.register({
+            name: formValues.name,
+            phone_number: formValues.phone,
+            pin: formValues.pin,
+            pin_confirmation: formValues.pinConfirmation,
             role: role.value,
         });
-
-        if (role.value === 'USER') {
-            router.visit('/user/dashboard');
-        } else {
-            router.visit('/agent/dashboard');
-        }
+        toast.success('Account created successfully.');
+        router.visit(role.value === 'USER' ? '/user/dashboard' : '/agent/dashboard');
     } catch (err: unknown) {
-        const apiError = err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
-        error.value = apiError.response?.data?.message || 'Registration failed.';
-        if (apiError.response?.data?.errors) {
-            validationErrors.value = apiError.response.data.errors;
-        }
+        const { message, fieldErrors } = parseApiError(err, 'Registration failed.');
+        const mapped: Record<string, string> = {};
+        if (fieldErrors.name) mapped.name = fieldErrors.name;
+        if (fieldErrors.phone_number) mapped.phone = fieldErrors.phone_number;
+        if (fieldErrors.pin) mapped.pin = fieldErrors.pin;
+        setErrors(mapped);
+        toast.error(message);
     }
-};
+});
 </script>
 
 <template>
     <Head title="Create Account - WalletMS" />
     <AuthLayout title="Create an account" subtitle="Join the digital wallet network">
-        <div v-if="error" class="mb-4">
-            <Alert type="error" :message="error" dismissible @close="error = null" />
-        </div>
-
-        <form class="space-y-4" @submit.prevent="handleRegister">
+        <form class="space-y-4" novalidate @submit.prevent="handleRegister">
             <!-- Account Role Selection -->
             <div>
                 <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Register As</label>
@@ -87,64 +80,13 @@ const handleRegister = async () => {
                 </div>
             </div>
 
-            <div>
-                <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Full Name</label>
-                <div class="mt-1">
-                    <input
-                        v-model="name"
-                        type="text"
-                        required
-                        placeholder="Alice Rahman"
-                        class="block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
-                    <p v-if="validationErrors.name" class="mt-1 text-xs text-rose-600">{{ validationErrors.name[0] }}</p>
-                </div>
-            </div>
-
-            <div>
-                <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Phone Number (BD Format)</label>
-                <div class="mt-1">
-                    <input
-                        v-model="phone"
-                        type="tel"
-                        required
-                        placeholder="01712345678"
-                        class="block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
-                    <p v-if="validationErrors.phone_number" class="mt-1 text-xs text-rose-600">{{ validationErrors.phone_number[0] }}</p>
-                </div>
-            </div>
+            <TextField name="name" label="Full Name" autocomplete="name" placeholder="Alice Rahman" />
+            <TextField name="phone" label="Phone Number (BD Format)" type="tel" inputmode="tel" autocomplete="tel" placeholder="01712345678" />
 
             <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">5-Digit PIN</label>
-                    <div class="mt-1">
-                        <input
-                            v-model="pin"
-                            type="password"
-                            required
-                            maxlength="5"
-                            placeholder="•••••"
-                            class="block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm tracking-widest text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                        />
-                    </div>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Confirm PIN</label>
-                    <div class="mt-1">
-                        <input
-                            v-model="pinConfirmation"
-                            type="password"
-                            required
-                            maxlength="5"
-                            placeholder="•••••"
-                            class="block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm tracking-widest text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                        />
-                    </div>
-                </div>
+                <TextField name="pin" label="PIN (5-10 digits)" type="password" inputmode="numeric" autocomplete="new-password" placeholder="•••••" />
+                <TextField name="pinConfirmation" label="Confirm PIN" type="password" inputmode="numeric" autocomplete="new-password" placeholder="•••••" />
             </div>
-            <p v-if="validationErrors.pin" class="text-xs text-rose-600">{{ validationErrors.pin[0] }}</p>
 
             <button
                 type="submit"

@@ -2,6 +2,9 @@ import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { router } from '@inertiajs/vue3';
 import { api, setOnUnauthorizedCallback } from '@/services/api';
+import { useWalletStore } from '@/stores/wallet';
+import { useTransactionStore } from '@/stores/transactions';
+import { useUserStore } from '@/stores/user';
 import type { User } from '@/types/models';
 
 function getInitialUser(): User | null {
@@ -49,6 +52,9 @@ export const useAuthStore = defineStore('auth', () => {
     const clearAuth = (): void => {
         token.value = null;
         user.value = null;
+        useWalletStore().reset();
+        useTransactionStore().reset();
+        useUserStore().reset();
         if (typeof window !== 'undefined') {
             localStorage.removeItem('token');
             localStorage.removeItem('user');

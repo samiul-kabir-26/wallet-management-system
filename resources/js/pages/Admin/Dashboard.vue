@@ -5,6 +5,7 @@ import { useAuthGuard } from '@/composables/useAuthGuard';
 import { api } from '@/services/api';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import Alert from '@/components/Alert.vue';
+import Skeleton from '@/components/Skeleton.vue';
 
 const { authStore } = useAuthGuard('ADMIN');
 
@@ -29,7 +30,7 @@ const fetchOverview = async () => {
         totalUsers.value = usersRes.data.data?.pagination?.total ?? 0;
         totalWallets.value = walletsRes.data.data?.pagination?.total ?? 0;
         totalTransactions.value = txRes.data.data?.pagination?.total ?? 0;
-        feeRate.value = settingsRes.data.data?.settings?.transaction_fee_rate ?? 0.05;
+        feeRate.value = settingsRes.data.data?.settings?.system_fee_rate ?? 0.05;
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
         error.value = apiError.response?.data?.message || 'Failed to load system overview.';
@@ -65,7 +66,8 @@ onMounted(() => {
                 <!-- Total Users -->
                 <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
                     <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Registered Accounts</span>
-                    <div class="mt-3 flex items-baseline gap-2">
+                    <Skeleton v-if="loading" class="mt-3" height="h-9" />
+                    <div v-else class="mt-3 flex items-baseline gap-2">
                         <span class="text-3xl font-extrabold text-zinc-900 dark:text-zinc-100">
                             {{ totalUsers ?? '...' }}
                         </span>
@@ -80,7 +82,8 @@ onMounted(() => {
                 <!-- Total Wallets -->
                 <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
                     <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Platform Wallets</span>
-                    <div class="mt-3 flex items-baseline gap-2">
+                    <Skeleton v-if="loading" class="mt-3" height="h-9" />
+                    <div v-else class="mt-3 flex items-baseline gap-2">
                         <span class="text-3xl font-extrabold text-zinc-900 dark:text-zinc-100">
                             {{ totalWallets ?? '...' }}
                         </span>
@@ -95,7 +98,8 @@ onMounted(() => {
                 <!-- Total Transactions -->
                 <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
                     <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Total Transactions</span>
-                    <div class="mt-3 flex items-baseline gap-2">
+                    <Skeleton v-if="loading" class="mt-3" height="h-9" />
+                    <div v-else class="mt-3 flex items-baseline gap-2">
                         <span class="text-3xl font-extrabold text-zinc-900 dark:text-zinc-100">
                             {{ totalTransactions ?? '...' }}
                         </span>
@@ -110,7 +114,8 @@ onMounted(() => {
                 <!-- Fee Rate -->
                 <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
                     <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">System Fee Rate</span>
-                    <div class="mt-3 flex items-baseline gap-2">
+                    <Skeleton v-if="loading" class="mt-3" height="h-9" />
+                    <div v-else class="mt-3 flex items-baseline gap-2">
                         <span class="text-3xl font-extrabold text-rose-600 dark:text-rose-400">
                             {{ feeRate !== null ? (feeRate * 100).toFixed(1) + '%' : '...' }}
                         </span>

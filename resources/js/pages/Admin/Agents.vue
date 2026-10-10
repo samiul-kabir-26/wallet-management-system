@@ -2,29 +2,38 @@
 import { onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
+import { useForm } from 'vee-validate';
+import { rate } from '@/composables/validators';
 import { api } from '@/services/api';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import Badge from '@/components/Badge.vue';
 import Modal from '@/components/Modal.vue';
-import Alert from '@/components/Alert.vue';
+import TextField from '@/components/Forms/TextField.vue';
+import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
+import Skeleton from '@/components/Skeleton.vue';
+import { useToastStore } from '@/stores/toast';
 import type { User } from '@/types/models';
 
 useAuthGuard('ADMIN');
 
 const agents = ref<User[]>([]);
 const loading = ref(true);
-const successMessage = ref<string | null>(null);
-const errorMessage = ref<string | null>(null);
+const toast = useToastStore();
 
 // Approve Agent modal
 const showApproveModal = ref(false);
 const selectedAgent = ref<User | null>(null);
-const commissionRate = ref<number>(0.015); // Default 1.5%
 const approveLoading = ref(false);
+const suspendTarget = ref<User | null>(null);
+const suspendLoading = ref(false);
+
+const { handleSubmit, setValues, values } = useForm<{ commissionRate: string }>({
+    validationSchema: { commissionRate: rate('Commission rate') },
+    initialValues: { commissionRate: '0.015' },
+});
 
 const fetchAgents = async () => {
     loading.value = true;
-    errorMessage.value = null;
     try {
         const res = await api.get('/users/all-users', {
             params: { per_page: 50 },
@@ -33,7 +42,7 @@ const fetchAgents = async () => {
         agents.value = allUsers.filter((u) => u.roles.includes('AGENT'));
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to fetch agents.';
+        toast.error(apiError.response?.data?.message || 'Failed to fetch agents.');
     } finally {
         loading.value = false;
     }
@@ -41,42 +50,42 @@ const fetchAgents = async () => {
 
 const openApproveModal = (agent: User) => {
     selectedAgent.value = agent;
-    commissionRate.value = 0.015;
+    setValues({ commissionRate: '0.015' });
     showApproveModal.value = true;
 };
 
-const handleApproveAgent = async () => {
+const handleApproveAgent = handleSubmit(async (formValues) => {
     if (!selectedAgent.value) return;
     approveLoading.value = true;
-    errorMessage.value = null;
     try {
         await api.patch(`/users/${selectedAgent.value.id}/approve-agent`, {
-            commission_rate: Number(commissionRate.value),
+            commission_rate: Number(formValues.commissionRate),
         });
-        successMessage.value = `Agent ${selectedAgent.value.name} successfully approved!`;
+        toast.success(`Agent ${selectedAgent.value.name} successfully approved!`);
         showApproveModal.value = false;
         await fetchAgents();
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to approve agent.';
+        toast.error(apiError.response?.data?.message || 'Failed to approve agent.');
     } finally {
         approveLoading.value = false;
     }
-};
+});
 
-const handleSuspendAgent = async (agent: User) => {
-    if (!confirm(`Are you sure you want to suspend agent ${agent.name}?`)) return;
-    loading.value = true;
-    errorMessage.value = null;
+const handleSuspendAgent = async () => {
+    const agent = suspendTarget.value;
+    if (!agent) return;
+    suspendLoading.value = true;
     try {
         await api.patch(`/users/${agent.id}/suspend-agent`);
-        successMessage.value = `Agent ${agent.name} has been suspended.`;
+        toast.success(`Agent ${agent.name} has been suspended.`);
+        suspendTarget.value = null;
         await fetchAgents();
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to suspend agent.';
+        toast.error(apiError.response?.data?.message || 'Failed to suspend agent.');
     } finally {
-        loading.value = false;
+        suspendLoading.value = false;
     }
 };
 
@@ -98,18 +107,10 @@ onMounted(() => {
                 </p>
             </div>
 
-            <div v-if="successMessage" class="mb-4">
-                <Alert type="success" :message="successMessage" dismissible @close="successMessage = null" />
-            </div>
-            <div v-if="errorMessage" class="mb-4">
-                <Alert type="error" :message="errorMessage" dismissible @close="errorMessage = null" />
-            </div>
 
             <!-- Agents Table -->
             <div class="rounded-2xl border border-zinc-200 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
-                <div v-if="loading && agents.length === 0" class="p-12 text-center text-sm text-zinc-500">
-                    Loading agent directory...
-                </div>
+                <div v-if="loading && agents.length === 0" class="p-6"><Skeleton :rows="6" height="h-6" /></div>
 
                 <div v-else-if="agents.length === 0" class="p-12 text-center text-sm text-zinc-500">
                     No agents currently registered in the system.
@@ -159,7 +160,7 @@ onMounted(() => {
                                         v-if="a.agent_info?.status === 'APPROVED'"
                                         type="button"
                                         class="rounded-md bg-rose-50 border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-400"
-                                        @click="handleSuspendAgent(a)"
+                                        @click="suspendTarget = a"
                                     >
                                         Suspend
                                     </button>
@@ -172,25 +173,15 @@ onMounted(() => {
 
             <!-- Approve Agent Modal -->
             <Modal :show="showApproveModal" title="Approve Financial Agent" @close="showApproveModal = false">
-                <form class="space-y-4" @submit.prevent="handleApproveAgent">
+                <form class="space-y-4" novalidate @submit.prevent="handleApproveAgent">
                     <p class="text-sm text-zinc-600 dark:text-zinc-400">
                         Approve <span class="font-semibold text-zinc-900 dark:text-zinc-100">{{ selectedAgent?.name }}</span> and assign their cash-out commission rate.
                     </p>
 
                     <div>
-                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Commission Rate (Decimal format, e.g. 0.015 = 1.5%)</label>
-                        <input
-                            v-model="commissionRate"
-                            type="number"
-                            step="0.001"
-                            min="0"
-                            max="0.5"
-                            required
-                            placeholder="0.015"
-                            class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                        />
+                        <TextField name="commissionRate" label="Commission Rate (Decimal format, e.g. 0.015 = 1.5%)" type="number" step="0.001" min="0" inputmode="decimal" placeholder="0.015" />
                         <p class="mt-1 text-xs text-zinc-500">
-                            Effective rate: {{ (Number(commissionRate) * 100).toFixed(1) }}% of cash-out system fee.
+                            Effective rate: {{ (Number(values.commissionRate) * 100).toFixed(1) }}% of cash-out system fee.
                         </p>
                     </div>
 
@@ -212,6 +203,17 @@ onMounted(() => {
                     </div>
                 </form>
             </Modal>
+
+            <ConfirmModal
+                :open="!!suspendTarget"
+                title="Suspend Agent"
+                confirm-label="Suspend"
+                :loading="suspendLoading"
+                @cancel="suspendTarget = null"
+                @confirm="handleSuspendAgent"
+            >
+                Are you sure you want to suspend agent <strong>{{ suspendTarget?.name }}</strong>? They will no longer be able to take part in transactions.
+            </ConfirmModal>
         </div>
     </AdminLayout>
 </template>

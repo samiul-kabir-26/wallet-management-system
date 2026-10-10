@@ -5,6 +5,7 @@ import { useAuthGuard } from '@/composables/useAuthGuard';
 import { api } from '@/services/api';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import Badge from '@/components/Badge.vue';
+import Skeleton from '@/components/Skeleton.vue';
 import Pagination from '@/components/Pagination.vue';
 import Alert from '@/components/Alert.vue';
 import type { Pagination as PaginationType, Transaction } from '@/types/models';
@@ -57,9 +58,7 @@ onMounted(() => {
 
             <!-- Ledger Table -->
             <div class="rounded-2xl border border-zinc-200 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
-                <div v-if="loading && transactions.length === 0" class="p-12 text-center text-sm text-zinc-500">
-                    Loading platform records...
-                </div>
+                <div v-if="loading && transactions.length === 0" class="p-6"><Skeleton :rows="5" height="h-6" /></div>
 
                 <div v-else-if="transactions.length === 0" class="p-12 text-center text-sm text-zinc-500">
                     No transactions recorded on the platform yet.

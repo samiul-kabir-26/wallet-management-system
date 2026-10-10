@@ -1,59 +1,61 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
+import { storeToRefs } from 'pinia';
+import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
+import { parseApiError } from '@/composables/useApiError';
+import { money } from '@/composables/validators';
 import { api } from '@/services/api';
+import { useToastStore } from '@/stores/toast';
+import { useWalletStore } from '@/stores/wallet';
 import AgentLayout from '@/layouts/AgentLayout.vue';
-import Alert from '@/components/Alert.vue';
-import type { Wallet } from '@/types/models';
+import Skeleton from '@/components/Skeleton.vue';
+import TextField from '@/components/Forms/TextField.vue';
+import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
 
 useAuthGuard('AGENT');
 
-const wallet = ref<Wallet | null>(null);
-const amount = ref<number | ''>('');
+const toast = useToastStore();
+const walletStore = useWalletStore();
+const { wallet, loading: walletLoading } = storeToRefs(walletStore);
 const loading = ref(false);
-const successMessage = ref<string | null>(null);
-const errorMessage = ref<string | null>(null);
+const confirmOpen = ref(false);
 
-const fetchWallet = async () => {
-    try {
-        const res = await api.get('/wallets/me');
-        wallet.value = res.data.data?.wallet ?? res.data.data;
-    } catch {
-        // Ignore
-    }
-};
+const { handleSubmit, resetForm, setErrors, values } = useForm<{ amount: string }>({
+    validationSchema: { amount: money('Withdrawal amount') },
+    initialValues: { amount: '' },
+});
 
-const handleWithdrawal = async () => {
-    if (!amount.value || Number(amount.value) <= 0) {
-        errorMessage.value = 'Please enter a valid withdrawal amount.';
-        return;
-    }
+const onValid = handleSubmit(() => {
+    confirmOpen.value = true;
+});
 
+const submit = async () => {
     loading.value = true;
-    errorMessage.value = null;
-    successMessage.value = null;
-
     try {
         const res = await api.post('/transactions/agent/withdrawal', {
-            amount: Number(amount.value),
+            amount: Number(values.amount),
             idempotency_key: crypto.randomUUID(),
         });
-
-        const txId = res.data.data?.id ?? '';
-        successMessage.value = `Successfully initiated bank withdrawal of ৳${Number(amount.value).toFixed(2)}! (Tx ID: #${txId})`;
-        amount.value = '';
-        await fetchWallet();
+        toast.success(`Bank withdrawal of ৳${Number(values.amount).toFixed(2)} initiated (Tx #${res.data.data?.id ?? ''}).`);
+        confirmOpen.value = false;
+        resetForm();
+        await walletStore.fetchWallet();
     } catch (err: unknown) {
-        const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Withdrawal failed. Check balance and agent status.';
+        const { message, fieldErrors } = parseApiError(err, 'Withdrawal failed. Check balance and agent status.');
+        if (fieldErrors.amount) {
+            setErrors({ amount: fieldErrors.amount });
+        }
+        confirmOpen.value = false;
+        toast.error(message);
     } finally {
         loading.value = false;
     }
 };
 
 onMounted(() => {
-    fetchWallet();
+    walletStore.fetchWallet();
 });
 </script>
 
@@ -70,18 +72,12 @@ onMounted(() => {
                 </p>
             </div>
 
-            <div v-if="successMessage" class="mb-4">
-                <Alert type="success" :message="successMessage" dismissible @close="successMessage = null" />
-            </div>
-            <div v-if="errorMessage" class="mb-4">
-                <Alert type="error" :message="errorMessage" dismissible @close="errorMessage = null" />
-            </div>
-
             <!-- Current Balance Card -->
             <div class="rounded-xl border border-zinc-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 flex justify-between items-center">
                 <div>
                     <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Available Balance</span>
-                    <div class="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mt-1">
+                    <Skeleton v-if="walletLoading && !wallet" class="mt-2 w-32" height="h-7" />
+                    <div v-else class="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mt-1">
                         ৳{{ Number(wallet?.balance ?? 0).toFixed(2) }}
                     </div>
                 </div>
@@ -92,29 +88,27 @@ onMounted(() => {
 
             <!-- Form -->
             <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
-                <form class="space-y-4" @submit.prevent="handleWithdrawal">
-                    <div>
-                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Withdrawal Amount (BDT)</label>
-                        <input
-                            v-model="amount"
-                            type="number"
-                            step="0.01"
-                            min="1"
-                            required
-                            placeholder="500.00"
-                            class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                        />
-                    </div>
-
+                <form class="space-y-4" novalidate @submit.prevent="onValid">
+                    <TextField name="amount" label="Withdrawal Amount (BDT)" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="500.00" />
                     <button
                         type="submit"
                         :disabled="loading"
                         class="w-full rounded-lg bg-amber-600 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-amber-500 disabled:opacity-50 transition"
                     >
-                        {{ loading ? 'Processing Bank Transfer...' : 'Withdraw to Bank' }}
+                        Review Withdrawal
                     </button>
                 </form>
             </div>
         </div>
+        <ConfirmModal
+            :open="confirmOpen"
+            title="Confirm Bank Withdrawal"
+            :loading="loading"
+            confirm-label="Withdraw to Bank"
+            @cancel="confirmOpen = false"
+            @confirm="submit"
+        >
+            You are about to withdraw <strong>৳{{ Number(values.amount || 0).toFixed(2) }}</strong> from your wallet to your bank account.
+        </ConfirmModal>
     </AgentLayout>
 </template>

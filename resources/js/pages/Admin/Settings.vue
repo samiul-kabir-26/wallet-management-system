@@ -1,56 +1,70 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
+import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
+import { parseApiError } from '@/composables/useApiError';
+import { rate } from '@/composables/validators';
 import { api } from '@/services/api';
+import { useToastStore } from '@/stores/toast';
 import AdminLayout from '@/layouts/AdminLayout.vue';
-import Alert from '@/components/Alert.vue';
+import Skeleton from '@/components/Skeleton.vue';
+import TextField from '@/components/Forms/TextField.vue';
 
 useAuthGuard('ADMIN');
 
-const transactionFeeRate = ref<number>(0.05);
-const agentCommissionRate = ref<number>(0.01);
+const toast = useToastStore();
 const loading = ref(true);
 const saving = ref(false);
-const successMessage = ref<string | null>(null);
-const errorMessage = ref<string | null>(null);
+
+const { handleSubmit, setValues, setErrors, values } = useForm<{ feeRate: string; commissionRate: string }>({
+    validationSchema: {
+        feeRate: rate('Transaction fee rate'),
+        commissionRate: rate('Agent commission rate'),
+    },
+    initialValues: { feeRate: '', commissionRate: '' },
+});
+
+const asPercent = (value: string): string => (value === '' || Number.isNaN(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(2)}%`);
 
 const fetchSettings = async () => {
     loading.value = true;
-    errorMessage.value = null;
     try {
         const res = await api.get('/system-settings');
         const settings = res.data.data?.settings;
         if (settings) {
-            transactionFeeRate.value = Number(settings.transaction_fee_rate);
-            agentCommissionRate.value = Number(settings.agent_commission_rate);
+            setValues({
+                feeRate: String(settings.system_fee_rate),
+                commissionRate: String(settings.agent_commission_rate),
+            });
         }
     } catch (err: unknown) {
-        const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to fetch system settings.';
+        toast.error(parseApiError(err, 'Failed to fetch system settings.').message);
     } finally {
         loading.value = false;
     }
 };
 
-const handleSaveSettings = async () => {
+const handleSaveSettings = handleSubmit(async (formValues) => {
     saving.value = true;
-    errorMessage.value = null;
-    successMessage.value = null;
     try {
         await api.patch('/system-settings', {
-            transaction_fee_rate: Number(transactionFeeRate.value),
-            agent_commission_rate: Number(agentCommissionRate.value),
+            system_fee_rate: Number(formValues.feeRate),
+            agent_commission_rate: Number(formValues.commissionRate),
         });
-        successMessage.value = 'System settings updated successfully!';
+        toast.success('System settings updated successfully!');
         await fetchSettings();
     } catch (err: unknown) {
-        const apiError = err as { response?: { data?: { message?: string } } };
-        errorMessage.value = apiError.response?.data?.message || 'Failed to update system settings.';
+        const { message, fieldErrors } = parseApiError(err, 'Failed to update system settings.');
+        const mapped: Record<string, string> = {};
+        if (fieldErrors.system_fee_rate) mapped.feeRate = fieldErrors.system_fee_rate;
+        if (fieldErrors.agent_commission_rate) mapped.commissionRate = fieldErrors.agent_commission_rate;
+        setErrors(mapped);
+        toast.error(message);
     } finally {
         saving.value = false;
     }
-};
+});
 
 onMounted(() => {
     fetchSettings();
@@ -70,67 +84,40 @@ onMounted(() => {
                 </p>
             </div>
 
-            <div v-if="successMessage" class="mb-4">
-                <Alert type="success" :message="successMessage" dismissible @close="successMessage = null" />
-            </div>
-            <div v-if="errorMessage" class="mb-4">
-                <Alert type="error" :message="errorMessage" dismissible @close="errorMessage = null" />
-            </div>
-
             <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
-                <form class="space-y-6" @submit.prevent="handleSaveSettings">
-                    <!-- System Fee Rate -->
+                <Skeleton v-if="loading" :rows="4" height="h-8" />
+                <form v-else class="space-y-6" novalidate @submit.prevent="handleSaveSettings">
                     <div class="space-y-2">
-                        <label class="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                            Global Transaction Fee Rate (Decimal)
-                        </label>
+                        <p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Global Transaction Fee Rate (Decimal, 0-1)</p>
                         <p class="text-xs text-zinc-500">
-                            Applied to cash-out withdrawals. For example, 0.05 represents a 5% system fee charged to the customer.
+                            Applied to cash-out withdrawals. For example, 0.02 represents a 2% system fee charged to the customer.
                         </p>
-                        <div class="flex items-center gap-3">
-                            <input
-                                v-model="transactionFeeRate"
-                                type="number"
-                                step="0.001"
-                                min="0"
-                                max="0.5"
-                                required
-                                class="block w-48 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                            />
-                            <span class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                = {{ (Number(transactionFeeRate) * 100).toFixed(1) }}%
-                            </span>
+                        <div class="flex items-start gap-3">
+                            <div class="w-48">
+                                <TextField name="feeRate" label="Fee rate" type="number" step="0.0001" min="0" inputmode="decimal" />
+                            </div>
+                            <span class="pt-7 text-sm font-semibold text-zinc-700 dark:text-zinc-300">= {{ asPercent(values.feeRate) }}</span>
                         </div>
                     </div>
 
-                    <div class="border-t border-zinc-100 dark:border-zinc-800 pt-6 space-y-2">
-                        <label class="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                            Default Agent Commission Rate (Decimal)
-                        </label>
+                    <div class="space-y-2 border-t border-zinc-100 pt-6 dark:border-zinc-800">
+                        <p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Default Agent Commission Rate (Decimal, 0-1)</p>
                         <p class="text-xs text-zinc-500">
                             Used as the default commission rate when onboarding and approving newly registered agents.
                         </p>
-                        <div class="flex items-center gap-3">
-                            <input
-                                v-model="agentCommissionRate"
-                                type="number"
-                                step="0.001"
-                                min="0"
-                                max="0.5"
-                                required
-                                class="block w-48 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                            />
-                            <span class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                = {{ (Number(agentCommissionRate) * 100).toFixed(1) }}%
-                            </span>
+                        <div class="flex items-start gap-3">
+                            <div class="w-48">
+                                <TextField name="commissionRate" label="Commission rate" type="number" step="0.0001" min="0" inputmode="decimal" />
+                            </div>
+                            <span class="pt-7 text-sm font-semibold text-zinc-700 dark:text-zinc-300">= {{ asPercent(values.commissionRate) }}</span>
                         </div>
                     </div>
 
-                    <div class="border-t border-zinc-100 dark:border-zinc-800 pt-6 flex justify-end">
+                    <div class="flex justify-end border-t border-zinc-100 pt-6 dark:border-zinc-800">
                         <button
                             type="submit"
-                            :disabled="saving || loading"
-                            class="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 disabled:opacity-50 transition"
+                            :disabled="saving"
+                            class="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-xs transition hover:bg-indigo-500 disabled:opacity-50"
                         >
                             {{ saving ? 'Saving Changes...' : 'Save System Settings' }}
                         </button>

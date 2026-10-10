@@ -5,6 +5,7 @@ import { useAuthGuard } from '@/composables/useAuthGuard';
 import { api } from '@/services/api';
 import UserLayout from '@/layouts/UserLayout.vue';
 import Badge from '@/components/Badge.vue';
+import Skeleton from '@/components/Skeleton.vue';
 import Alert from '@/components/Alert.vue';
 import type { Transaction, Wallet } from '@/types/models';
 
@@ -148,9 +149,7 @@ onMounted(() => {
                     </Link>
                 </div>
 
-                <div v-if="loading" class="p-8 text-center text-sm text-zinc-500">
-                    Loading transactions...
-                </div>
+                <div v-if="loading" class="p-6"><Skeleton :rows="5" height="h-6" /></div>
 
                 <div v-else-if="recentTransactions.length === 0" class="p-8 text-center text-sm text-zinc-500">
                     No transactions recorded yet.
