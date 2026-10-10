@@ -33,11 +33,28 @@ class TransactionService
     ) {}
 
     /**
+     * Find a transaction previously created by the given initiator under this idempotency key.
+     *
+     * Keys are scoped per initiator, so a key can never resolve to another user's transaction.
+     */
+    private function findByIdempotencyKey(User $initiator, string $idempotencyKey, bool $lock = false): ?Transaction
+    {
+        $query = Transaction::where('initiated_by', $initiator->id)
+            ->where('idempotency_key', $idempotencyKey);
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        return $query->first();
+    }
+
+    /**
      * Top-up user's own wallet balance.
      */
     public function topUp(User $user, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
     {
-        $existing = Transaction::where('idempotency_key', $idempotencyKey)->first();
+        $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
         if ($existing) {
             return $existing;
         }
@@ -46,7 +63,7 @@ class TransactionService
 
         try {
             return DB::transaction(function () use ($user, $formattedAmount, $idempotencyKey, $description): Transaction {
-                $existing = Transaction::where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
+                $existing = $this->findByIdempotencyKey($user, $idempotencyKey, lock: true);
                 if ($existing) {
                     return $existing;
                 }
@@ -76,7 +93,7 @@ class TransactionService
                 ]);
             });
         } catch (UniqueConstraintViolationException|QueryException $e) {
-            $existing = Transaction::where('idempotency_key', $idempotencyKey)->first();
+            $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
             if ($existing) {
                 return $existing;
             }
@@ -101,7 +118,7 @@ class TransactionService
             throw new AgentNotApprovedException;
         }
 
-        $existing = Transaction::where('idempotency_key', $idempotencyKey)->first();
+        $existing = $this->findByIdempotencyKey($agent, $idempotencyKey);
         if ($existing) {
             return $existing;
         }
@@ -110,7 +127,7 @@ class TransactionService
 
         try {
             return DB::transaction(function () use ($agent, $formattedAmount, $idempotencyKey, $description): Transaction {
-                $existing = Transaction::where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
+                $existing = $this->findByIdempotencyKey($agent, $idempotencyKey, lock: true);
                 if ($existing) {
                     return $existing;
                 }
@@ -140,7 +157,7 @@ class TransactionService
                 ]);
             });
         } catch (UniqueConstraintViolationException|QueryException $e) {
-            $existing = Transaction::where('idempotency_key', $idempotencyKey)->first();
+            $existing = $this->findByIdempotencyKey($agent, $idempotencyKey);
             if ($existing) {
                 return $existing;
             }
@@ -176,7 +193,7 @@ class TransactionService
             throw new AgentNotApprovedException;
         }
 
-        $existing = Transaction::where('idempotency_key', $idempotencyKey)->first();
+        $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
         if ($existing) {
             return $existing;
         }
@@ -185,7 +202,7 @@ class TransactionService
 
         try {
             return DB::transaction(function () use ($user, $agent, $formattedAmount, $idempotencyKey, $description): Transaction {
-                $existing = Transaction::where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
+                $existing = $this->findByIdempotencyKey($user, $idempotencyKey, lock: true);
                 if ($existing) {
                     return $existing;
                 }
@@ -241,7 +258,7 @@ class TransactionService
                 ]);
             });
         } catch (UniqueConstraintViolationException|QueryException $e) {
-            $existing = Transaction::where('idempotency_key', $idempotencyKey)->first();
+            $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
             if ($existing) {
                 return $existing;
             }
@@ -279,7 +296,7 @@ class TransactionService
             throw new AgentNotApprovedException;
         }
 
-        $existing = Transaction::where('idempotency_key', $idempotencyKey)->first();
+        $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
         if ($existing) {
             return $existing;
         }
@@ -304,7 +321,7 @@ class TransactionService
                 $idempotencyKey,
                 $description,
             ): Transaction {
-                $existing = Transaction::where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
+                $existing = $this->findByIdempotencyKey($user, $idempotencyKey, lock: true);
                 if ($existing) {
                     return $existing;
                 }
@@ -417,7 +434,7 @@ class TransactionService
                 return $cashOut;
             });
         } catch (UniqueConstraintViolationException|QueryException $e) {
-            $existing = Transaction::where('idempotency_key', $idempotencyKey)->first();
+            $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
             if ($existing) {
                 return $existing;
             }
@@ -452,7 +469,7 @@ class TransactionService
             throw new InvalidRecipientException('Recipient must have a user account.');
         }
 
-        $existing = Transaction::where('idempotency_key', $idempotencyKey)->first();
+        $existing = $this->findByIdempotencyKey($sender, $idempotencyKey);
         if ($existing) {
             return $existing;
         }
@@ -467,7 +484,7 @@ class TransactionService
                 $idempotencyKey,
                 $description,
             ): Transaction {
-                $existing = Transaction::where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
+                $existing = $this->findByIdempotencyKey($sender, $idempotencyKey, lock: true);
                 if ($existing) {
                     return $existing;
                 }
@@ -539,7 +556,7 @@ class TransactionService
                 ]);
             });
         } catch (UniqueConstraintViolationException|QueryException $e) {
-            $existing = Transaction::where('idempotency_key', $idempotencyKey)->first();
+            $existing = $this->findByIdempotencyKey($sender, $idempotencyKey);
             if ($existing) {
                 return $existing;
             }
