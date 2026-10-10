@@ -38,7 +38,7 @@ const submit = async () => {
             amount: Number(values.amount),
             idempotency_key: crypto.randomUUID(),
         });
-        toast.success(`Bank withdrawal of ৳${Number(values.amount).toFixed(2)} initiated (Tx #${res.data.data?.id ?? ''}).`);
+        toast.success(`Bank withdrawal of ৳${Number(values.amount).toFixed(2)} initiated (Tx #${res.data.data?.transaction?.id ?? ''}).`);
         confirmOpen.value = false;
         resetForm();
         await walletStore.fetchWallet();
