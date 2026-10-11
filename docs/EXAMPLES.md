@@ -163,7 +163,7 @@ curl -X POST https://api.wallet.local/api/v1/transactions/transfer \
 ## 4. Cash-Out via Agent Counter
 
 Assume `system_fee_rate` is 5% (0.05) and the Agent's `commission_rate` is 2% (0.02).  
-When user cashes out 2,000.00 BDT through Agent (`agent_id: 20`):
+When user cashes out 2,000.00 BDT through Agent (`agent_phone: "01812345678"`, internal `agent_id: 20`):
 - Fee deducted from user: 2,000 × 0.05 = 100.00 BDT
 - Total user debit: 2,100.00 BDT
 - Agent commission credited: 2,000 × 0.02 = 40.00 BDT
@@ -175,7 +175,7 @@ curl -X POST https://api.wallet.local/api/v1/transactions/cash-out \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{
-    "agent_id": 20,
+    "agent_phone": "01812345678",
     "amount": 2000.00,
     "idempotency_key": "cashout-req-20261007-003",
     "description": "Counter withdrawal"

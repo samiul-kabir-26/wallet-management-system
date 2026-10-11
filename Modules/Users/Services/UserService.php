@@ -5,10 +5,13 @@ namespace Modules\Users\Services;
 use App\Models\AuditLog;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Wallet;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Modules\SystemSettings\Services\SystemSettingService;
 use Modules\Users\Exceptions\AgentNotApprovedException;
 use Modules\Users\Exceptions\AgentNotPendingException;
+use Modules\Users\Exceptions\UserInactiveException;
 use Modules\Users\Exceptions\UserNotAnAgentException;
 
 class UserService
@@ -42,11 +45,16 @@ class UserService
             // Password and PIN are automatically hashed via User::casts()
             $user = User::create($userData);
 
-            // 2. Create the initial wallet (schema defaults: balance 50.00, currency BDT)
-            $user->wallet()->create();
+            // 2. Create the initial wallet only for non-staff accounts (schema defaults: balance 50.00, currency BDT)
+            if (in_array($data['role'], ['USER', 'AGENT'], true)) {
+                $kind = $data['role'] === 'AGENT' ? Wallet::KIND_AGENT : Wallet::KIND_USER;
+                $user->wallets()->create([
+                    'kind' => $kind,
+                ]);
 
-            // 3. Create transaction cap limits (schema defaults: daily 10,000.00, monthly 50,000.00)
-            $user->cap()->create();
+                // 3. Create transaction cap limits (schema defaults: daily 10,000.00, monthly 50,000.00)
+                $user->cap()->create();
+            }
 
             // 4. If AGENT, create agent_info record (schema default: status PENDING)
             if ($data['role'] === 'AGENT') {
@@ -66,13 +74,101 @@ class UserService
     }
 
     /**
+     * Assign an additional role to a user, initializing the corresponding wallet at 0.00 balance if needed.
+     *
+     * @throws \InvalidArgumentException
+     * @throws UserInactiveException
+     * @throws AuthorizationException
+     */
+    public function assignRole(User $user, string $roleName, ?User $actor = null): User
+    {
+        if (! in_array($roleName, ['AGENT', 'USER'], true)) {
+            throw new \InvalidArgumentException("Role [{$roleName}] cannot be assigned via assignRole. Only AGENT and USER roles are supported.");
+        }
+
+        if ($actor !== null && $actor->id === $user->id) {
+            throw new AuthorizationException('Administrators cannot assign roles to themselves.');
+        }
+
+        return DB::transaction(function () use ($user, $roleName, $actor): User {
+            /** @var User $lockedUser */
+            $lockedUser = User::where('id', $user->id)->lockForUpdate()->firstOrFail();
+
+            if ($lockedUser->is_active !== 'ACTIVE') {
+                throw new UserInactiveException;
+            }
+
+            $role = Role::where('name', $roleName)->firstOrFail();
+
+            $alreadyHadRole = $lockedUser->roles()->where('roles.id', $role->id)->exists();
+
+            if (! $alreadyHadRole) {
+                $lockedUser->roles()->attach($role->id, [
+                    'assigned_at' => now(),
+                    'assigned_by' => $actor?->id,
+                ]);
+            }
+
+            if ($roleName === 'AGENT') {
+                if (! $lockedUser->agentInfo()->exists()) {
+                    $lockedUser->agentInfo()->create();
+                }
+
+                if (! $lockedUser->cap()->exists()) {
+                    $lockedUser->cap()->create();
+                }
+
+                if (! $lockedUser->wallets()->where('kind', Wallet::KIND_AGENT)->exists()) {
+                    $wallet = $lockedUser->wallets()->create([
+                        'kind' => Wallet::KIND_AGENT,
+                    ]);
+                    $wallet->balance = '0.00';
+                    $wallet->save();
+                }
+            } elseif ($roleName === 'USER') {
+                if (! $lockedUser->cap()->exists()) {
+                    $lockedUser->cap()->create();
+                }
+
+                if (! $lockedUser->wallets()->where('kind', Wallet::KIND_USER)->exists()) {
+                    $wallet = $lockedUser->wallets()->create([
+                        'kind' => Wallet::KIND_USER,
+                    ]);
+                    $wallet->balance = '0.00';
+                    $wallet->save();
+                }
+            }
+
+            if (! $alreadyHadRole) {
+                AuditLog::create([
+                    'actor_id' => $actor?->id,
+                    'action' => 'ROLE_ASSIGNED',
+                    'auditable_type' => $lockedUser->getMorphClass(),
+                    'auditable_id' => $lockedUser->id,
+                    'metadata' => [
+                        'role' => $roleName,
+                        'assigned_by' => $actor?->id,
+                    ],
+                ]);
+            }
+
+            return $lockedUser->refresh()->load(['roles', 'wallets', 'cap', 'agentInfo']);
+        });
+    }
+
+    /**
      * Approve a pending agent and set their commission rate.
      *
      * @throws AgentNotPendingException
      * @throws UserNotAnAgentException
+     * @throws AuthorizationException
      */
     public function approveAgent(User $agentUser, ?float $commissionRate, User $actor): User
     {
+        if ($actor->id === $agentUser->id) {
+            throw new AuthorizationException('Administrators cannot approve their own agent status.');
+        }
+
         return DB::transaction(function () use ($agentUser, $commissionRate, $actor): User {
             $agentInfo = $agentUser->agentInfo()->lockForUpdate()->first();
 

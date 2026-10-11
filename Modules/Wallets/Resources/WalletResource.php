@@ -28,6 +28,7 @@ class WalletResource extends JsonResource
         return [
             'id' => $this->resource->id,
             'user_id' => $this->resource->user_id,
+            'kind' => $this->resource->kind,
             'balance' => (float) $this->resource->balance,
             'currency' => $this->resource->currency,
             'is_blocked' => (bool) $this->resource->is_blocked,

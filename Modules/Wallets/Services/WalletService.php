@@ -16,19 +16,36 @@ use Modules\Wallets\Exceptions\WalletNotFoundException;
 class WalletService
 {
     /**
-     * Get the wallet associated with the given user.
+     * Get the wallet of the given kind associated with the user.
      *
      * @throws WalletNotFoundException
      */
-    public function getWalletForUser(User $user): Wallet
+    public function getWalletForUser(User $user, string $kind = Wallet::KIND_USER): Wallet
     {
-        $wallet = $user->wallet;
+        $wallet = $user->wallets()->where('kind', $kind)->first();
 
         if (! $wallet) {
             throw new WalletNotFoundException;
         }
 
         return $wallet;
+    }
+
+    /**
+     * Find the wallet corresponding to the user's active token ability, or null if none.
+     *
+     * Maps 'agent' ability to the AGENT wallet, and 'user' ability to the USER wallet.
+     * Returns null for admin tokens, unhandled abilities, or when no such wallet exists.
+     */
+    public function findWalletForToken(User $user): ?Wallet
+    {
+        $kind = $user->currentWalletKind();
+
+        if ($kind === null) {
+            return null;
+        }
+
+        return $user->wallets()->where('kind', $kind)->first();
     }
 
     /**
@@ -118,14 +135,13 @@ class WalletService
     }
 
     /**
-     * Atomically update a user's wallet balance with row-level locking.
-     *
+     * Atomically update a user's wallet balance for a specific kind with row-level locking.
      *
      * @throws WalletNotFoundException
      * @throws WalletBlockedException
      * @throws InsufficientBalanceException
      */
-    public function updateBalance(int $userId, string|float $amount, string $type = 'CREDIT'): Wallet
+    public function updateBalance(int $userId, string|float $amount, string $type = 'CREDIT', string $kind = Wallet::KIND_USER): Wallet
     {
         $type = strtoupper($type);
         if (! in_array($type, ['CREDIT', 'DEBIT'], true)) {
@@ -134,9 +150,12 @@ class WalletService
 
         $formattedAmount = number_format((float) $amount, 2, '.', '');
 
-        return DB::transaction(function () use ($userId, $formattedAmount, $type): Wallet {
+        return DB::transaction(function () use ($userId, $formattedAmount, $type, $kind): Wallet {
             /** @var Wallet|null $wallet */
-            $wallet = Wallet::where('user_id', $userId)->lockForUpdate()->first();
+            $wallet = Wallet::where('user_id', $userId)
+                ->where('kind', $kind)
+                ->lockForUpdate()
+                ->first();
 
             if (! $wallet) {
                 throw new WalletNotFoundException;
@@ -164,15 +183,36 @@ class WalletService
     }
 
     /**
-     * Lock multiple users' wallets in a deterministic order to prevent deadlocks.
+     * Lock specific wallets by (user_id, kind) pairs in deterministic order by wallet id to prevent deadlocks.
      *
-     * @param  array<int, int>  $userIds
+     * @param  array<int|string, array{user_id: int, kind: string}>  $targets
      * @return Collection<int, Wallet>
      */
-    public function lockWalletsForUsers(array $userIds): Collection
+    public function lockWalletsForUsers(array $targets): Collection
     {
-        return Wallet::whereIn('user_id', array_unique($userIds))
-            ->orderBy('user_id')
+        if (empty($targets)) {
+            return new Collection;
+        }
+
+        $query = Wallet::query();
+
+        $query->where(function ($q) use ($targets) {
+            foreach ($targets as $target) {
+                if (is_array($target)) {
+                    $q->orWhere(function ($sub) use ($target) {
+                        $sub->where('user_id', (int) $target['user_id'])
+                            ->where('kind', (string) ($target['kind'] ?? Wallet::KIND_USER));
+                    });
+                } else {
+                    $q->orWhere(function ($sub) use ($target) {
+                        $sub->where('user_id', (int) $target)
+                            ->where('kind', Wallet::KIND_USER);
+                    });
+                }
+            }
+        });
+
+        return $query->orderBy('id')
             ->lockForUpdate()
             ->get();
     }

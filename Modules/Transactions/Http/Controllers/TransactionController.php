@@ -14,6 +14,7 @@ use Modules\Transactions\Http\Requests\TopUpRequest;
 use Modules\Transactions\Http\Requests\TransferRequest;
 use Modules\Transactions\Resources\TransactionResource;
 use Modules\Transactions\Services\TransactionService;
+use Modules\Wallets\Services\WalletService;
 
 class TransactionController extends Controller
 {
@@ -21,6 +22,7 @@ class TransactionController extends Controller
 
     public function __construct(
         protected TransactionService $transactionService,
+        protected WalletService $walletService,
     ) {}
 
     /**
@@ -72,7 +74,7 @@ class TransactionController extends Controller
     {
         $transaction = $this->transactionService->cashIn(
             user: $request->user(),
-            agentId: (int) $request->validated('agent_id'),
+            agentPhone: $request->validated('agent_phone'),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
             description: $request->validated('description'),
@@ -94,7 +96,7 @@ class TransactionController extends Controller
     {
         $transaction = $this->transactionService->cashOut(
             user: $request->user(),
-            agentId: (int) $request->validated('agent_id'),
+            agentPhone: $request->validated('agent_phone'),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
             description: $request->validated('description'),
@@ -147,12 +149,27 @@ class TransactionController extends Controller
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
 
+        $actor = $request->user();
+        $isStaff = $actor->isStaffWithAdminAccess();
         $perPage = (int) ($validated['per_page'] ?? 15);
-        $paginator = $this->transactionService->listUserHistory(
-            user: $request->user(),
-            filters: $validated,
-            perPage: $perPage,
-        );
+
+        if ($isStaff) {
+            $paginator = $this->transactionService->listAllTransactions(
+                filters: $validated,
+                perPage: $perPage,
+            );
+        } else {
+            $wallet = $this->walletService->findWalletForToken($actor);
+            if ($wallet !== null) {
+                $request->attributes->set('viewer_wallet_id', $wallet->id);
+            }
+
+            $paginator = $this->transactionService->listUserHistory(
+                wallet: $wallet,
+                filters: $validated,
+                perPage: $perPage,
+            );
+        }
 
         return response()->json([
             'success' => true,
@@ -173,9 +190,19 @@ class TransactionController extends Controller
     /**
      * Get details for a specific transaction.
      */
-    public function show(Transaction $transaction): JsonResponse
+    public function show(Request $request, Transaction $transaction): JsonResponse
     {
         $this->authorize('view', $transaction);
+
+        $actor = $request->user();
+        $isStaff = $actor->isStaffWithAdminAccess();
+
+        if (! $isStaff) {
+            $wallet = $this->walletService->findWalletForToken($actor);
+            if ($wallet !== null) {
+                $request->attributes->set('viewer_wallet_id', $wallet->id);
+            }
+        }
 
         return response()->json([
             'success' => true,

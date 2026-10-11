@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Transaction;
 use App\Models\User;
+use Modules\Wallets\Services\WalletService;
 
 class TransactionPolicy
 {
@@ -12,27 +13,27 @@ class TransactionPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin() && $user->tokenCan('admin');
+        return $user->isStaffWithAdminAccess();
     }
 
     /**
      * Determine whether the user can view the specific transaction.
-     * Allowed if the user is an admin with admin token ability or participates in any of the 5 FK slots:
-     * user_id, sender_id, recipient_id, agent_id, initiated_by.
      */
     public function view(User $user, Transaction $transaction): bool
     {
-        if ($user->isAdmin() && $user->tokenCan('admin')) {
+        if ($user->isStaffWithAdminAccess()) {
             return true;
         }
 
-        return in_array($user->id, [
-            $transaction->user_id,
-            $transaction->sender_id,
-            $transaction->recipient_id,
-            $transaction->agent_id,
-            $transaction->initiated_by,
-        ], true);
+        $wallet = app(WalletService::class)->findWalletForToken($user);
+        if (! $wallet) {
+            return false;
+        }
+
+        return Transaction::query()
+            ->where('id', $transaction->id)
+            ->involvingWallet($wallet)
+            ->exists();
     }
 
     /**

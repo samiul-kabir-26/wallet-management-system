@@ -29,11 +29,22 @@ class WalletFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
+            'kind' => Wallet::KIND_USER,
             'currency' => 'BDT',
             'is_blocked' => false,
             'blocked_by' => null,
             'blocked_at' => null,
         ];
+    }
+
+    /**
+     * Mark the wallet as an agent wallet.
+     */
+    public function agent(): static
+    {
+        return $this->state(fn () => [
+            'kind' => Wallet::KIND_AGENT,
+        ]);
     }
 
     /**

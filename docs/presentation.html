@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wallet Management System</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #181f31; --panel2: #1f2840; --text: #e8ecf6; --muted: #93a0bd;
+    --accent: #3ddc97; --accent2: #5b8def; --warn: #f5b84b; --danger: #ef6b73; --line: #2c3752;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  .deck { position: relative; width: 100vw; height: 100vh; }
+  .slide { position: absolute; inset: 0; padding: 6vh 7vw 9vh; display: none; flex-direction: column;
+    justify-content: center; gap: 2.2vh; animation: in .35s ease; }
+  .slide.active { display: flex; }
+  @keyframes in { from { opacity: 0; transform: translateX(24px);} to { opacity: 1; transform: none;} }
+  h1 { font-size: clamp(2.4rem, 6vw, 4.6rem); line-height: 1.05; }
+  h2 { font-size: clamp(1.6rem, 3.4vw, 2.6rem); }
+  h2 small { display: block; font-size: .42em; color: var(--accent); letter-spacing: .12em;
+    text-transform: uppercase; margin-bottom: .5em; font-weight: 600; }
+  p, li { font-size: clamp(.95rem, 1.7vw, 1.3rem); color: var(--muted); line-height: 1.5; }
+  p b, li b { color: var(--text); }
+  ul { padding-left: 1.2em; display: grid; gap: .5em; }
+  code { background: var(--panel2); padding: .1em .4em; border-radius: 5px; color: var(--accent);
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .92em; }
+  .grid { display: grid; gap: 1.6vh 1.4vw; }
+  .g2 { grid-template-columns: repeat(2, 1fr); } .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 1.6vh 1.2vw; }
+  .card h3 { font-size: clamp(1rem, 1.8vw, 1.35rem); margin-bottom: .35em; }
+  .card p, .card li { font-size: clamp(.82rem, 1.25vw, 1.02rem); }
+  .tag { display: inline-block; font-size: .75rem; padding: .15em .6em; border-radius: 99px;
+    background: var(--panel2); color: var(--accent); border: 1px solid var(--line); margin-right: .3em; }
+  .tag.b { color: var(--accent2);} .tag.w { color: var(--warn);} .tag.d { color: var(--danger);}
+  .flow { display: flex; align-items: stretch; gap: .6vw; flex-wrap: wrap; }
+  .step { flex: 1; min-width: 120px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 1.2vh .9vw; font-size: clamp(.78rem, 1.15vw, .98rem); color: var(--muted); }
+  .step b { display: block; color: var(--accent); margin-bottom: .25em; }
+  .arrow { align-self: center; color: var(--accent2); font-size: 1.4rem; }
+  table { width: 100%; border-collapse: collapse; font-size: clamp(.78rem, 1.2vw, 1rem); }
+  th, td { text-align: left; padding: .8vh .8vw; border-bottom: 1px solid var(--line); color: var(--muted); }
+  th { color: var(--text); background: var(--panel); }
+  td.y { color: var(--accent);} td.n { color: var(--danger);}
+  .title-slide { align-items: flex-start; }
+  .title-slide h1 span { color: var(--accent); }
+  .nav { position: fixed; bottom: 2.2vh; left: 0; right: 0; display: flex; justify-content: center;
+    align-items: center; gap: 1.2rem; color: var(--muted); font-size: .85rem; z-index: 5; }
+  .nav button { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: .35em .9em; cursor: pointer; font-size: 1rem; }
+  .nav button:hover { border-color: var(--accent); }
+  .bar { position: fixed; top: 0; left: 0; height: 3px; background: var(--accent); transition: width .3s; z-index: 6; }
+  .callout { border-left: 4px solid var(--warn); background: var(--panel); padding: 1.2vh 1.2vw;
+    border-radius: 0 10px 10px 0; }
+  .callout p { font-size: clamp(.85rem, 1.35vw, 1.1rem); }
+  @media (max-width: 800px) { .g2,.g3,.g4 { grid-template-columns: 1fr; } .slide { overflow-y: auto; justify-content: flex-start; } }
+  @media print { html,body{overflow:visible;height:auto} .slide{display:flex!important;position:relative;height:100vh;page-break-after:always} .nav,.bar{display:none} }
+</style>
+</head>
+<body>
+<div class="bar" id="bar"></div>
+<div class="deck" id="deck">
+
+<!-- 1 -->
+<section class="slide title-slide">
+  <span class="tag">Laravel 13 · Sanctum · Vue + Inertia</span>
+  <h1>Digital <span>Wallet</span><br>Management System</h1>
+  <p>A bKash/Nagad-style platform: three panels, five roles, one API-first Laravel backend that also serves a Flutter app.</p>
+  <p style="font-size:.9rem">Use ← → keys or the buttons below to navigate</p>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <h2><small>Overview</small>What the system does</h2>
+  <div class="grid g3">
+    <div class="card"><h3>Admin Panel</h3><p>Register users/agents, approve or suspend agents, block wallets, audit all transactions, manage fees and commission.</p></div>
+    <div class="card"><h3>Agent Panel</h3><p>Handle customer cash-in / cash-out, earn commission, withdraw accumulated funds.</p></div>
+    <div class="card"><h3>User Panel</h3><p>Top up, cash in/out via agents, transfer money, view wallet and history.</p></div>
+  </div>
+  <div class="callout"><p>Everything is exposed under <code>/api/v1</code>. The Vue web app and the Flutter app are both just clients of the same API.</p></div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <h2><small>Architecture</small>Modular Laravel backend</h2>
+  <div class="grid g4">
+    <div class="card"><h3>Authentication</h3><p>Logins, OTP, PIN set/reset, invites, tokens</p></div>
+    <div class="card"><h3>Users</h3><p>Registration, roles, agent approval</p></div>
+    <div class="card"><h3>Wallets</h3><p>Balances, block/unblock, locking</p></div>
+    <div class="card"><h3>Transactions</h3><p>Money movement, fee, commission, caps</p></div>
+    <div class="card"><h3>SystemSettings</h3><p>Fee and commission rates</p></div>
+    <div class="card"><h3>app/Models</h3><p>Shared Eloquent models</p></div>
+    <div class="card"><h3>app/Policies</h3><p>Authorization rules</p></div>
+    <div class="card"><h3>resources/js</h3><p>Vue pages, stores, composables</p></div>
+  </div>
+  <p>Each module separates layers: <code>Http/Controllers</code> → <code>Http/Requests</code> (validation) → <code>Services</code> (business logic) → <code>Resources</code> (JSON output) + <code>Exceptions</code>.</p>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <h2><small>Request lifecycle</small>How a request flows</h2>
+  <div class="flow">
+    <div class="step"><b>Route</b>Sanctum auth + <code>ability</code> + <code>password.changed</code> middleware</div><div class="arrow">→</div>
+    <div class="step"><b>Form Request</b>Input validation and authorization</div><div class="arrow">→</div>
+    <div class="step"><b>Controller</b>Thin: delegates only</div><div class="arrow">→</div>
+    <div class="step"><b>Service</b>Business rules inside DB transaction</div><div class="arrow">→</div>
+    <div class="step"><b>Resource</b>Consistent JSON response</div>
+  </div>
+  <ul>
+    <li>Controllers never contain money logic — it lives in <code>TransactionService</code> and <code>WalletService</code>.</li>
+    <li>Domain failures are typed exceptions (<code>InsufficientBalanceException</code>, <code>WalletBlockedException</code>, <code>DailyCapsExceededException</code>…) mapped to clean API errors.</li>
+  </ul>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <h2><small>Roles</small>Five roles, three panels</h2>
+  <table>
+    <tr><th>Role</th><th>Register users</th><th>Register agents</th><th>Register admins</th><th>Approve agents</th><th>View any txn</th><th>Settings</th><th>Start PIN reset</th></tr>
+    <tr><td>SUPER_ADMIN</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td></tr>
+    <tr><td>ADMIN</td><td class="y">✔</td><td class="y">✔</td><td class="n">✘</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td></tr>
+    <tr><td>MODERATOR</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="y">✔</td><td class="n">✘</td><td class="y">✔</td></tr>
+    <tr><td>AGENT</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td></tr>
+    <tr><td>USER</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td></tr>
+  </table>
+  <p>A user may hold <b>multiple roles</b> (e.g. admin + agent + user). <b>Role ≠ panel</b>: the panel is decided by the login route used plus roles held — there is no <code>user_type</code> column.</p>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <h2><small>Authentication</small>Three login routes, three credentials</h2>
+  <table>
+    <tr><th>Route</th><th>Credentials</th><th>2nd factor</th><th>Requires</th><th>Token ability</th></tr>
+    <tr><td><code>/auth/admin/login</code></td><td>email or phone + password</td><td>6-digit OTP</td><td>SUPER_ADMIN / ADMIN / MODERATOR</td><td><span class="tag">admin</span></td></tr>
+    <tr><td><code>/auth/agent/login</code></td><td>phone + PIN</td><td>—</td><td>AGENT + approved</td><td><span class="tag b">agent</span></td></tr>
+    <tr><td><code>/auth/user/login</code></td><td>phone + PIN</td><td>—</td><td>USER</td><td><span class="tag w">user</span></td></tr>
+  </table>
+  <ul>
+    <li>Password is for admin only; PIN is for agent/user only — <b>never a fallback between them</b>.</li>
+    <li>Passing credentials but lacking the role is rejected.</li>
+    <li>Rate limiting on every auth endpoint; bcrypt hashing; refresh-token and logout endpoints.</li>
+  </ul>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <h2><small>Security</small>Token scoping with Sanctum abilities</h2>
+  <div class="grid g2">
+    <div class="card"><h3>Every protected route checks two things</h3>
+      <ul><li>Does the user hold the required <b>role</b>?</li><li>Does the token carry the matching <b>ability</b>?</li></ul></div>
+    <div class="card"><h3>Why it matters</h3><p>If someone brute-forces a short PIN and logs in on the user route, that token carries only <code>user</code>. It can never call admin endpoints — the admin password and OTP stay meaningful.</p></div>
+  </div>
+  <div class="callout"><p>In code: route groups like <code>auth:sanctum</code> + <code>ability:user</code> + <code>password.changed</code>. Forced password change is enforced by middleware, not per-controller checks.</p></div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <h2><small>Credential lifecycle</small>Granting access and recovering PINs</h2>
+  <div class="grid g3">
+    <div class="card"><h3>Admin wants agent/user access</h3><p>Requests OTP by email → submits OTP + new PIN. Setting a PIN grants a <b>credential</b>, not a role.</p></div>
+    <div class="card"><h3>User wants admin access</h3><p>Admin assigns email + temporary password, issues a one-time signed URL. User accepts invite and must change password first.</p></div>
+    <div class="card"><h3>PIN reset (staff-initiated)</h3><p>Users can't self-reset. Customer care verifies identity out-of-band, submits phone + email, and a signed link lets the <b>user</b> choose their own PIN. Staff never see it.</p></div>
+  </div>
+  <p>Admin password reset is separate and self-service via email OTP.</p>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <h2><small>Wallets</small>One wallet per user</h2>
+  <ul>
+    <li>Created automatically at registration with a <b>BDT 50.00</b> starting balance.</li>
+    <li>Admins can block / unblock wallets (recorded with reason and actor in audit logs).</li>
+    <li><b>Blocked wallets can neither send nor receive</b> — checked in the service layer before any financial operation.</li>
+    <li>Balances are <code>DECIMAL</code>, handled with string math (<code>bcmath</code>), never floats.</li>
+  </ul>
+  <div class="grid g3">
+    <div class="card"><h3>GET /wallets/me</h3><p>Own wallet</p></div>
+    <div class="card"><h3>GET /wallets/admin/all</h3><p>Admin overview</p></div>
+    <div class="card"><h3>PATCH /wallets/{id}/block | unblock</h3><p>Admin only</p></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <h2><small>Transactions</small>Money movements</h2>
+  <table>
+    <tr><th>Operation</th><th>Who</th><th>Money flow</th><th>Fee / commission</th></tr>
+    <tr><td>Top-up</td><td>USER</td><td>External → own wallet</td><td>none</td></tr>
+    <tr><td>Cash-in</td><td>USER via approved AGENT</td><td>Agent wallet → user wallet (1:1)</td><td>none</td></tr>
+    <tr><td>Cash-out</td><td>USER via approved AGENT</td><td>User wallet → agent wallet</td><td>system fee on user; commission to agent</td></tr>
+    <tr><td>Transfer</td><td>USER</td><td>Sender → recipient (not self)</td><td>per system settings</td></tr>
+    <tr><td>Agent withdrawal</td><td>AGENT</td><td>Agent wallet → out</td><td>none</td></tr>
+  </table>
+  <p>Each operation writes a <code>transactions</code> row with the balances-after for every involved wallet, status, and the <b>rate and amount of fee/commission frozen at that moment</b> — changing settings later never rewrites history.</p>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <h2><small>Financial integrity</small>Safe under concurrency</h2>
+  <div class="flow">
+    <div class="step"><b>1 · Idempotency</b>Look up key per initiator; replay returns the original result</div><div class="arrow">→</div>
+    <div class="step"><b>2 · DB::transaction</b>All-or-nothing</div><div class="arrow">→</div>
+    <div class="step"><b>3 · Lock caps row</b><code>lockForUpdate()</code></div><div class="arrow">→</div>
+    <div class="step"><b>4 · Lock wallets</b>Ordered by <code>user_id</code></div><div class="arrow">→</div>
+    <div class="step"><b>5 · Check &amp; apply</b>Blocked? Balance? Caps? Then write txn</div>
+  </div>
+  <ul>
+    <li><b>Row locking</b> stops two simultaneous requests from spending the same balance (double spend).</li>
+    <li><b>Deterministic lock order</b> (Cap → Wallets sorted by id) prevents deadlocks.</li>
+    <li><b>Idempotency keys</b> scoped to the initiator make retries safe and prevent key leakage across users; a unique constraint is the backstop for races.</li>
+    <li>Failure at any step rolls back everything — no partial balance changes.</li>
+  </ul>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <h2><small>Fees · commission · caps</small>Where the money rules live</h2>
+  <div class="grid g3">
+    <div class="card"><h3>Fee</h3><p><code>FeeCalculator</code> reads <code>system_fee_rate</code> from settings; computed with <code>bcmul</code>, rounded to 2 decimals.</p></div>
+    <div class="card"><h3>Commission</h3><p><code>CommissionCalculator</code> uses the agent’s own rate or the default 1%; capped by the fee. Paid as a separate <code>COMMISSION_PAYOUT</code> transaction.</p></div>
+    <div class="card"><h3>Caps</h3><p><code>CapService</code> enforces daily and monthly limits per user, checked inside the same DB transaction as the balance change.</p></div>
+  </div>
+  <div class="callout"><p>Scheduled jobs <code>ResetDailyCaps</code> (00:00 UTC daily) and <code>ResetMonthlyCaps</code> (1st of month) zero usage. All times are stored in UTC; the frontend localizes.</p></div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <h2><small>Auditability</small>Everything is traceable</h2>
+  <ul>
+    <li>Transactions record <b>who initiated</b>, all parties, amounts, fee and commission rates, and balances after.</li>
+    <li>Agent approval stores approver and timestamp.</li>
+    <li>Wallet block/unblock, settings changes, and PIN-reset initiation are written to <code>audit_logs</code>.</li>
+    <li>Financial records are not casually deleted.</li>
+  </ul>
+  <div class="grid g3">
+    <div class="card"><h3>History</h3><p><code>GET /transactions/history</code> — only your own</p></div>
+    <div class="card"><h3>Details</h3><p><code>GET /transactions/{id}</code> — participants or admins (no IDOR)</p></div>
+    <div class="card"><h3>Admin audit</h3><p><code>GET /transactions/admin/all</code> — admin ability only</p></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <h2><small>API surface</small>Key endpoints</h2>
+  <div class="grid g3">
+    <div class="card"><h3>Auth</h3><p><code>admin|agent|user/login</code>, <code>admin/verify-otp</code>, <code>set-pin</code>, <code>pin-reset/initiate</code>, <code>reset-pin</code>, <code>accept-invite</code>, <code>change-password</code>, <code>refresh-token</code>, <code>logout</code>, <code>forgot/reset-password</code></p></div>
+    <div class="card"><h3>Users &amp; settings</h3><p><code>users/register</code>, <code>all-users</code>, <code>{id}</code>, <code>approve-agent</code>, <code>suspend-agent</code>, <code>grant-admin-access</code>, <code>system-settings</code> GET/PATCH</p></div>
+    <div class="card"><h3>Wallets &amp; transactions</h3><p><code>wallets/me</code>, <code>wallets/admin/all</code>, <code>block|unblock</code>, <code>top-up</code>, <code>cash-in</code>, <code>cash-out</code>, <code>transfer</code>, <code>agent/withdrawal</code>, <code>history</code>, <code>admin/all</code></p></div>
+  </div>
+  <p>36 routes total. Responses use Eloquent API Resources; errors are consistent JSON; stack traces are hidden when <code>APP_DEBUG=false</code>.</p>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <h2><small>Frontend</small>Vue 3 + Inertia, plus Flutter</h2>
+  <div class="grid g3">
+    <div class="card"><h3>Admin</h3><p>Dashboard, Users, Agents, Wallets, Transactions, Settings</p></div>
+    <div class="card"><h3>Agent</h3><p>Dashboard, Transactions, Withdrawal</p></div>
+    <div class="card"><h3>User</h3><p>Dashboard, Wallet, Transfer, History</p></div>
+  </div>
+  <ul>
+    <li>Shared layer: stores, composables, services, Vee-Validate forms, toasts, skeleton loaders, confirm modals.</li>
+    <li>Business logic stays on the server, so the Flutter app reuses the same API without duplication.</li>
+  </ul>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <h2><small>Summary</small>Design principles</h2>
+  <div class="grid g2">
+    <div class="card"><h3>Separation</h3><p>HTTP layer, domain services and persistence are kept apart in modules.</p></div>
+    <div class="card"><h3>Least privilege</h3><p>Role + token ability on every route; PIN tokens never act as admin.</p></div>
+    <div class="card"><h3>Money-safe</h3><p>Transactions, row locks, ordered locking, idempotency, decimal math.</p></div>
+    <div class="card"><h3>Auditable</h3><p>Immutable rates and balances-after on every record, plus audit logs.</p></div>
+  </div>
+  <h2 style="margin-top:2vh">Thank you</h2>
+</section>
+
+</div>
+
+<div class="nav">
+  <button id="prev" aria-label="Previous slide">←</button>
+  <span id="count"></span>
+  <button id="next" aria-label="Next slide">→</button>
+</div>
+
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  let i = 0;
+  const show = n => {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    document.getElementById('count').textContent = (i + 1) + ' / ' + slides.length;
+    document.getElementById('bar').style.width = ((i + 1) / slides.length * 100) + '%';
+    history.replaceState(null, '', '#' + (i + 1));
+  };
+  document.getElementById('prev').onclick = () => show(i - 1);
+  document.getElementById('next').onclick = () => show(i + 1);
+  addEventListener('keydown', e => {
+    if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); show(i + 1); }
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); show(i - 1); }
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End') show(slides.length - 1);
+    if (e.key === 'f') document.documentElement.requestFullscreen?.();
+  });
+  show((parseInt(location.hash.slice(1)) || 1) - 1);
+</script>
+</body>
+</html>

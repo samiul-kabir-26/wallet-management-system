@@ -24,7 +24,7 @@ function createAgentWithWallet(float $balance = 1000.00, string $status = 'APPRO
         'status' => $status,
     ]);
 
-    Wallet::factory()->for($agent)->balance($balance)->create();
+    Wallet::factory()->agent()->for($agent)->balance($balance)->create();
 
     return $agent;
 }
@@ -53,10 +53,10 @@ test('approved agent can successfully withdraw funds from their wallet', functio
         ->assertJsonPath('data.transaction.initiated_by', $agent->id)
         ->assertJsonPath('data.transaction.status', 'COMPLETED')
         ->assertJsonPath('data.transaction.sender_wallet_balance_after', fn ($val) => (float) $val === 600.0)
-        ->assertJsonPath('data.transaction.recipient_wallet_balance_after', null);
+        ->assertJsonMissingPath('data.transaction.recipient_wallet_balance_after');
 
-    $agent->wallet->refresh();
-    expect((float) $agent->wallet->balance)->toBe(600.00);
+    $agent->agentWallet->refresh();
+    expect((float) $agent->agentWallet->balance)->toBe(600.00);
 
     expect(Transaction::where('idempotency_key', 'withdrawal-key-001')->count())->toBe(1);
 });
@@ -78,9 +78,9 @@ test('submitting same idempotency_key on agent withdrawal returns same transacti
     $response2->assertSuccessful()
         ->assertJsonPath('data.transaction.id', $response1->json('data.transaction.id'));
 
-    $agent->wallet->refresh();
+    $agent->agentWallet->refresh();
     // 1000 - 300 = 700, not debited twice (which would be 400)
-    expect((float) $agent->wallet->balance)->toBe(700.00);
+    expect((float) $agent->agentWallet->balance)->toBe(700.00);
     expect(Transaction::where('idempotency_key', 'withdraw-idem-test')->count())->toBe(1);
 });
 
@@ -97,14 +97,14 @@ test('agent withdrawal fails if requested amount exceeds wallet balance', functi
     $response->assertStatus(422)
         ->assertJsonPath('success', false);
 
-    $agent->wallet->refresh();
-    expect((float) $agent->wallet->balance)->toBe(200.00);
+    $agent->agentWallet->refresh();
+    expect((float) $agent->agentWallet->balance)->toBe(200.00);
     expect(Transaction::count())->toBe(0);
 });
 
 test('agent withdrawal fails on a blocked agent wallet', function () {
     $agent = createAgentWithWallet(500.00);
-    $agent->wallet->update(['is_blocked' => true]);
+    $agent->agentWallet->update(['is_blocked' => true]);
 
     Sanctum::actingAs($agent, ['agent']);
 
@@ -116,8 +116,8 @@ test('agent withdrawal fails on a blocked agent wallet', function () {
     $response->assertStatus(403)
         ->assertJsonPath('success', false);
 
-    $agent->wallet->refresh();
-    expect((float) $agent->wallet->balance)->toBe(500.00);
+    $agent->agentWallet->refresh();
+    expect((float) $agent->agentWallet->balance)->toBe(500.00);
     expect(Transaction::count())->toBe(0);
 });
 
@@ -134,8 +134,8 @@ test('agent withdrawal fails if agent is not approved', function () {
     $response->assertStatus(409)
         ->assertJsonPath('success', false);
 
-    $agent->wallet->refresh();
-    expect((float) $agent->wallet->balance)->toBe(500.00);
+    $agent->agentWallet->refresh();
+    expect((float) $agent->agentWallet->balance)->toBe(500.00);
     expect(Transaction::count())->toBe(0);
 });
 

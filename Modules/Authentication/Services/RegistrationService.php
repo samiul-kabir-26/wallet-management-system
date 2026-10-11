@@ -4,6 +4,7 @@ namespace Modules\Authentication\Services;
 
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Wallet;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -25,7 +26,10 @@ class RegistrationService
             ]);
 
             // 2. Create the initial wallet (schema defaults: balance 50.00, currency BDT)
-            $user->wallet()->create();
+            $kind = $data['role'] === 'AGENT' ? Wallet::KIND_AGENT : Wallet::KIND_USER;
+            $user->wallets()->create([
+                'kind' => $kind,
+            ]);
 
             // 3. Create transaction cap limits (schema defaults: daily 10,000.00, monthly 50,000.00)
             $user->cap()->create();

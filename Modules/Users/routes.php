@@ -7,6 +7,7 @@ use Modules\Users\Http\Controllers\UserController;
 Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(function (): void {
     Route::post('/register', [UserController::class, 'register']);
     Route::get('/all-users', [UserController::class, 'index']);
+    Route::post('/{user}/assign-role', [UserController::class, 'assignRole']);
     Route::patch('/{user}/approve-agent', [UserController::class, 'approveAgent']);
     Route::patch('/{user}/suspend-agent', [UserController::class, 'suspendAgent']);
 });

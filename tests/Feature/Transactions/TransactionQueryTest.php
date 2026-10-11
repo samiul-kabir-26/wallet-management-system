@@ -3,6 +3,7 @@
 use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Models\Wallet;
 use Database\Seeders\RoleSeeder;
 use Database\Seeders\SystemSettingsSeeder;
 use Laravel\Sanctum\Sanctum;
@@ -18,6 +19,12 @@ function createActorForQuery(string $roleName): User
     $role = Role::where('name', $roleName)->firstOrFail();
     $user->roles()->attach($role->id, ['assigned_at' => now()]);
 
+    if ($roleName === 'AGENT') {
+        Wallet::factory()->agent()->create(['user_id' => $user->id]);
+    } elseif ($roleName === 'USER') {
+        Wallet::factory()->create(['user_id' => $user->id]);
+    }
+
     return $user;
 }
 
@@ -26,11 +33,17 @@ test('user can only view their own transactions in history', function () {
     $user2 = createActorForQuery('USER');
     $user3 = createActorForQuery('USER');
 
+    $w1 = $user1->wallets()->first();
+    $w2 = $user2->wallets()->first();
+    $w3 = $user3->wallets()->first();
+
     // Tx 1: User 1 transfers to User 2
     Transaction::create([
         'user_id' => $user1->id,
         'sender_id' => $user1->id,
         'recipient_id' => $user2->id,
+        'sender_wallet_id' => $w1->id,
+        'recipient_wallet_id' => $w2->id,
         'initiated_by' => $user1->id,
         'type' => 'TRANSFER',
         'amount' => '100.00',
@@ -48,6 +61,7 @@ test('user can only view their own transactions in history', function () {
         'user_id' => $user3->id,
         'sender_id' => null,
         'recipient_id' => null,
+        'recipient_wallet_id' => $w3->id,
         'initiated_by' => $user3->id,
         'type' => 'TOP_UP',
         'amount' => '500.00',
@@ -65,6 +79,8 @@ test('user can only view their own transactions in history', function () {
         'user_id' => $user3->id,
         'sender_id' => $user3->id,
         'recipient_id' => $user1->id,
+        'sender_wallet_id' => $w3->id,
+        'recipient_wallet_id' => $w1->id,
         'initiated_by' => $user3->id,
         'type' => 'TRANSFER',
         'amount' => '200.00',
@@ -98,10 +114,12 @@ test('user can only view their own transactions in history', function () {
 
 test('history can be filtered by transaction type and status', function () {
     $user = createActorForQuery('USER');
+    $w = $user->wallets()->first();
 
     Transaction::create([
         'user_id' => $user->id,
         'sender_id' => $user->id,
+        'recipient_wallet_id' => $w->id,
         'initiated_by' => $user->id,
         'type' => 'TOP_UP',
         'amount' => '100.00',
@@ -117,6 +135,7 @@ test('history can be filtered by transaction type and status', function () {
     Transaction::create([
         'user_id' => $user->id,
         'sender_id' => $user->id,
+        'sender_wallet_id' => $w->id,
         'initiated_by' => $user->id,
         'type' => 'CASH_OUT',
         'amount' => '200.00',
@@ -140,11 +159,13 @@ test('history can be filtered by transaction type and status', function () {
 
 test('history supports pagination parameters', function () {
     $user = createActorForQuery('USER');
+    $w = $user->wallets()->first();
 
     for ($i = 1; $i <= 5; $i++) {
         Transaction::create([
             'user_id' => $user->id,
             'sender_id' => $user->id,
+            'recipient_wallet_id' => $w->id,
             'initiated_by' => $user->id,
             'type' => 'TOP_UP',
             'amount' => '50.00',
@@ -178,6 +199,8 @@ test('transaction participant can view transaction details', function () {
         'user_id' => $user1->id,
         'sender_id' => $user1->id,
         'recipient_id' => $user2->id,
+        'sender_wallet_id' => $user1->wallets()->first()->id,
+        'recipient_wallet_id' => $user2->wallets()->first()->id,
         'initiated_by' => $user1->id,
         'type' => 'TRANSFER',
         'amount' => '300.00',
@@ -214,6 +237,8 @@ test('non-participant user is forbidden from viewing transaction details', funct
         'user_id' => $user1->id,
         'sender_id' => $user1->id,
         'recipient_id' => $user2->id,
+        'sender_wallet_id' => $user1->wallets()->first()->id,
+        'recipient_wallet_id' => $user2->wallets()->first()->id,
         'initiated_by' => $user1->id,
         'type' => 'TRANSFER',
         'amount' => '300.00',
@@ -238,6 +263,7 @@ test('admin can view any transaction details', function () {
     $tx = Transaction::create([
         'user_id' => $user1->id,
         'sender_id' => $user1->id,
+        'recipient_wallet_id' => $user1->wallets()->first()->id,
         'initiated_by' => $user1->id,
         'type' => 'TOP_UP',
         'amount' => '500.00',
@@ -264,6 +290,7 @@ test('admin can view all transactions via admin audit endpoint', function () {
     Transaction::create([
         'user_id' => $user1->id,
         'sender_id' => $user1->id,
+        'recipient_wallet_id' => $user1->wallets()->first()->id,
         'initiated_by' => $user1->id,
         'type' => 'TOP_UP',
         'amount' => '100.00',
@@ -279,6 +306,7 @@ test('admin can view all transactions via admin audit endpoint', function () {
     Transaction::create([
         'user_id' => $user2->id,
         'sender_id' => $user2->id,
+        'recipient_wallet_id' => $user2->wallets()->first()->id,
         'initiated_by' => $user2->id,
         'type' => 'TRANSFER',
         'amount' => '200.00',
@@ -319,6 +347,7 @@ test('token without admin, agent, or user ability is forbidden from history and 
     $tx = Transaction::create([
         'user_id' => $user->id,
         'sender_id' => $user->id,
+        'recipient_wallet_id' => $user->wallets()->first()->id,
         'initiated_by' => $user->id,
         'type' => 'TOP_UP',
         'amount' => '100.00',
@@ -348,6 +377,7 @@ test('admin without admin token ability cannot bypass participant check on trans
     $tx = Transaction::create([
         'user_id' => $user->id,
         'sender_id' => $user->id,
+        'recipient_wallet_id' => $user->wallets()->first()->id,
         'initiated_by' => $user->id,
         'type' => 'TOP_UP',
         'amount' => '100.00',
@@ -370,10 +400,12 @@ test('admin without admin token ability cannot bypass participant check on trans
 test('admin without admin token ability only sees participated transactions in history', function () {
     $user = createActorForQuery('USER');
     $admin = createActorForQuery('ADMIN');
+    $adminUserWallet = Wallet::factory()->create(['user_id' => $admin->id]);
 
     Transaction::create([
         'user_id' => $user->id,
         'sender_id' => $user->id,
+        'recipient_wallet_id' => $user->wallets()->first()->id,
         'initiated_by' => $user->id,
         'type' => 'TOP_UP',
         'amount' => '100.00',
@@ -389,6 +421,7 @@ test('admin without admin token ability only sees participated transactions in h
     Transaction::create([
         'user_id' => $admin->id,
         'sender_id' => $admin->id,
+        'recipient_wallet_id' => $adminUserWallet->id,
         'initiated_by' => $admin->id,
         'type' => 'TOP_UP',
         'amount' => '200.00',

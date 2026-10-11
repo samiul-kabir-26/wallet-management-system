@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Modules\Users\Http\Requests\ApproveAgentRequest;
+use Modules\Users\Http\Requests\AssignRoleRequest;
 use Modules\Users\Http\Requests\RegisterUserRequest;
 use Modules\Users\Http\Requests\SuspendAgentRequest;
 use Modules\Users\Http\Requests\UpdateUserRequest;
@@ -108,7 +109,7 @@ class UserController extends Controller
     {
         $this->authorize('view', $user);
 
-        $user->load(['roles', 'wallet', 'cap', 'agentInfo']);
+        $user->load(['roles', 'wallets', 'cap', 'agentInfo']);
 
         return response()->json([
             'success' => true,
@@ -125,7 +126,7 @@ class UserController extends Controller
     {
         $user->update($request->validated());
 
-        $user->load(['roles', 'wallet', 'cap', 'agentInfo']);
+        $user->load(['roles', 'wallets', 'cap', 'agentInfo']);
 
         return response()->json([
             'success' => true,
@@ -175,6 +176,26 @@ class UserController extends Controller
             'message' => 'Agent suspended successfully',
             'data' => [
                 'agent' => new AgentResource($agentInfo),
+            ],
+        ]);
+    }
+
+    /**
+     * Assign an additional role (AGENT or USER) to the specified user.
+     */
+    public function assignRole(AssignRoleRequest $request, User $user): JsonResponse
+    {
+        $updatedUser = $this->userService->assignRole(
+            user: $user,
+            roleName: $request->validated('role'),
+            actor: $request->user(),
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Role assigned successfully',
+            'data' => [
+                'user' => new UserResource($updatedUser),
             ],
         ]);
     }

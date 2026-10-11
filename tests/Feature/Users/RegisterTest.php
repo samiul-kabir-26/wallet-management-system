@@ -45,8 +45,8 @@ test('ADMIN can register a USER', function () {
         ->assertJsonPath('data.user.roles', ['USER']);
 
     $registeredUser = User::where('phone_number', '01712345678')->firstOrFail();
-    expect($registeredUser->wallet)->not->toBeNull()
-        ->and((float) $registeredUser->wallet->balance)->toBe(50.00)
+    expect($registeredUser->userWallet)->not->toBeNull()
+        ->and((float) $registeredUser->userWallet->balance)->toBe(50.00)
         ->and($registeredUser->cap)->not->toBeNull()
         ->and((float) $registeredUser->cap->daily_cap)->toBe(10000.00)
         ->and($registeredUser->hasRole('USER'))->toBeTrue()
@@ -74,6 +74,8 @@ test('ADMIN can register an AGENT with PENDING agent_info status', function () {
     $agent = User::where('phone_number', '01798765432')->firstOrFail();
     expect($agent->agentInfo)->not->toBeNull()
         ->and($agent->agentInfo->status)->toBe('PENDING')
+        ->and($agent->agentWallet)->not->toBeNull()
+        ->and((float) $agent->agentWallet->balance)->toBe(50.00)
         ->and($agent->hasRole('AGENT'))->toBeTrue()
         ->and($agent->roles->first()->pivot->assigned_by)->toBe($admin->id);
 });

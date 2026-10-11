@@ -4,7 +4,7 @@ import { Head } from '@inertiajs/vue3';
 import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { parseApiError } from '@/composables/useApiError';
-import { money, positiveInteger } from '@/composables/validators';
+import { money, phone, positiveInteger } from '@/composables/validators';
 import { api } from '@/services/api';
 import { useToastStore } from '@/stores/toast';
 import UserLayout from '@/layouts/UserLayout.vue';
@@ -21,7 +21,7 @@ const confirmOpen = ref(false);
 const submitting = ref(false);
 const feeRate = ref<number | null>(null);
 
-const tabConfig: Record<Tab, { label: string; endpoint: string; counterparty: 'recipientId' | 'agentId'; title: string; button: string; color: string }> = {
+const tabConfig: Record<Tab, { label: string; endpoint: string; counterparty: 'recipientId' | 'agentPhone'; title: string; button: string; color: string }> = {
     transfer: {
         label: 'Send Money (P2P)',
         endpoint: '/transactions/transfer',
@@ -33,7 +33,7 @@ const tabConfig: Record<Tab, { label: string; endpoint: string; counterparty: 'r
     cash_out: {
         label: 'Cash-Out (Withdraw)',
         endpoint: '/transactions/cash-out',
-        counterparty: 'agentId',
+        counterparty: 'agentPhone',
         title: 'Confirm Cash-Out',
         button: 'Review Cash-Out',
         color: 'bg-amber-600 hover:bg-amber-500',
@@ -41,7 +41,7 @@ const tabConfig: Record<Tab, { label: string; endpoint: string; counterparty: 'r
     cash_in: {
         label: 'Cash-In (Deposit)',
         endpoint: '/transactions/cash-in',
-        counterparty: 'agentId',
+        counterparty: 'agentPhone',
         title: 'Confirm Cash-In',
         button: 'Review Cash-In',
         color: 'bg-emerald-600 hover:bg-emerald-500',
@@ -51,13 +51,16 @@ const tabConfig: Record<Tab, { label: string; endpoint: string; counterparty: 'r
 const current = computed(() => tabConfig[activeTab.value]);
 
 const validationSchema = computed(() => ({
-    [current.value.counterparty]: positiveInteger(current.value.counterparty === 'recipientId' ? 'Recipient user ID' : 'Agent user ID'),
+    [current.value.counterparty]:
+        current.value.counterparty === 'recipientId'
+            ? positiveInteger('Recipient user ID')
+            : phone,
     amount: money('Amount'),
 }));
 
-const { handleSubmit, setErrors, resetForm, values } = useForm<{ recipientId: string; agentId: string; amount: string }>({
+const { handleSubmit, setErrors, resetForm, values } = useForm<{ recipientId: string; agentPhone: string; amount: string }>({
     validationSchema,
-    initialValues: { recipientId: '', agentId: '', amount: '' },
+    initialValues: { recipientId: '', agentPhone: '', amount: '' },
 });
 
 const serverErrors = ref<Record<string, string>>({});
@@ -92,7 +95,7 @@ const submit = async () => {
         if (current.value.counterparty === 'recipientId') {
             body.recipient_id = Number(values.recipientId);
         } else {
-            body.agent_id = Number(values.agentId);
+            body.agent_phone = values.agentPhone;
         }
         const res = await api.post(current.value.endpoint, body);
         const txId = res.data.data?.transaction?.id ?? '';
@@ -104,7 +107,7 @@ const submit = async () => {
         confirmOpen.value = false;
         const mapped: Record<string, string> = {};
         if (fieldErrors.recipient_id) mapped.recipientId = fieldErrors.recipient_id;
-        if (fieldErrors.agent_id) mapped.agentId = fieldErrors.agent_id;
+        if (fieldErrors.agent_phone) mapped.agentPhone = fieldErrors.agent_phone;
         if (fieldErrors.amount) mapped.amount = fieldErrors.amount;
         setErrors(mapped);
         toast.error(message);
@@ -179,7 +182,15 @@ onMounted(async () => {
                         inputmode="numeric"
                         placeholder="e.g. 2"
                     />
-                    <TextField v-else name="agentId" label="Agent User ID" type="number" min="1" inputmode="numeric" placeholder="e.g. 3" />
+                    <TextField
+                        v-else
+                        name="agentPhone"
+                        label="Agent Phone Number"
+                        type="tel"
+                        inputmode="tel"
+                        autocomplete="tel"
+                        placeholder="01712345678"
+                    />
 
                     <div>
                         <TextField name="amount" label="Amount (BDT)" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="500.00" />
@@ -210,8 +221,8 @@ onMounted(async () => {
         >
             <dl class="space-y-2">
                 <div class="flex justify-between">
-                    <dt class="text-zinc-500">{{ counterpartyLabel }} user ID</dt>
-                    <dd class="font-semibold">#{{ current.counterparty === 'recipientId' ? values.recipientId : values.agentId }}</dd>
+                    <dt class="text-zinc-500">{{ counterpartyLabel }} {{ current.counterparty === 'recipientId' ? 'user ID' : 'phone number' }}</dt>
+                    <dd class="font-semibold">{{ current.counterparty === 'recipientId' ? `#${values.recipientId}` : values.agentPhone }}</dd>
                 </div>
                 <div class="flex justify-between">
                     <dt class="text-zinc-500">Amount</dt>

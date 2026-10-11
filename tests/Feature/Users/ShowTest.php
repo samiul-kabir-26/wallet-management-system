@@ -2,6 +2,7 @@
 
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Wallet;
 use Database\Seeders\RoleSeeder;
 use Laravel\Sanctum\Sanctum;
 
@@ -23,7 +24,7 @@ function createActorWithAttachedRole(string $roleName): User
 
 test('plain USER with user-ability token can view their own profile', function () {
     $user = createActorWithAttachedRole('USER');
-    $user->wallet()->create();
+    Wallet::factory()->for($user)->create();
     $user->cap()->create();
 
     Sanctum::actingAs($user, ['user']);
@@ -35,7 +36,7 @@ test('plain USER with user-ability token can view their own profile', function (
         ->assertJsonPath('data.user.id', $user->id)
         ->assertJsonPath('data.user.name', $user->name)
         ->assertJsonPath('data.user.roles', ['USER'])
-        ->assertJsonPath('data.user.wallet.balance', '50.00')
+        ->assertJsonPath('data.user.wallets.0.balance', '50.00')
         ->assertJsonPath('data.user.caps.daily_cap', '10000.00');
 });
 
@@ -53,7 +54,7 @@ test('plain USER with user-ability token is rejected with 403 when viewing anoth
 test('ADMIN with admin-ability token can view any user profile', function () {
     $admin = createActorWithAttachedRole('ADMIN');
     $targetUser = createActorWithAttachedRole('USER');
-    $targetUser->wallet()->create();
+    Wallet::factory()->for($targetUser)->create();
 
     Sanctum::actingAs($admin, ['admin']);
 

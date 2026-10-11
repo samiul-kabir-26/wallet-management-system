@@ -34,7 +34,7 @@ class UserResource extends JsonResource
             'roles' => $this->whenLoaded('roles', fn () => $this->resource->roles->pluck('name')),
             'is_active' => $this->resource->is_active,
             'is_verified' => (bool) $this->resource->is_verified,
-            'wallet' => $this->whenLoaded('wallet'),
+            'wallets' => $this->whenLoaded('wallets'),
             'caps' => $this->whenLoaded('cap'),
             'agent_info' => $this->whenLoaded('agentInfo'),
             'created_at' => $this->resource->created_at,

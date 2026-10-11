@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'user_id',
+    'kind',
     'currency',
     'is_blocked',
     'blocked_by',
@@ -17,6 +19,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Wallet extends Model
 {
     use HasFactory;
+
+    public const KIND_USER = 'USER';
+
+    public const KIND_AGENT = 'AGENT';
+
+    /**
+     * Scope query to a specific wallet kind.
+     */
+    public function scopeOfKind(Builder $query, string $kind): void
+    {
+        $query->where('kind', $kind);
+    }
 
     /**
      * Get the attributes that should be cast.

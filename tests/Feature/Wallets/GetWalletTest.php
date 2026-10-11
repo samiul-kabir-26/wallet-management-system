@@ -40,7 +40,7 @@ test('user can view their own wallet via /me', function () {
 
 test('agent can view their own wallet via /me', function () {
     $agent = createActorWithRoleForWallet('AGENT');
-    $wallet = Wallet::factory()->for($agent)->balance(1500.00)->create([
+    $wallet = Wallet::factory()->agent()->for($agent)->balance(1500.00)->create([
         'currency' => 'BDT',
     ]);
 
@@ -51,7 +51,33 @@ test('agent can view their own wallet via /me', function () {
     $response->assertOk()
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.wallet.id', $wallet->id)
+        ->assertJsonPath('data.wallet.kind', 'AGENT')
         ->assertJsonPath('data.wallet.balance', 1500);
+});
+
+test('/wallets/me returns the right wallet kind for each token ability when user has both wallets', function () {
+    $user = createActorWithRoleForWallet('USER');
+    $agentRole = Role::where('name', 'AGENT')->firstOrFail();
+    $user->roles()->attach($agentRole->id, ['assigned_at' => now()]);
+
+    $userWallet = Wallet::factory()->for($user)->balance(100.00)->create();
+    $agentWallet = Wallet::factory()->agent()->for($user)->balance(500.00)->create();
+
+    // 1. With user ability token
+    Sanctum::actingAs($user, ['user']);
+    $userResponse = $this->getJson('/api/v1/wallets/me');
+    $userResponse->assertOk()
+        ->assertJsonPath('data.wallet.id', $userWallet->id)
+        ->assertJsonPath('data.wallet.kind', 'USER')
+        ->assertJsonPath('data.wallet.balance', 100);
+
+    // 2. With agent ability token
+    Sanctum::actingAs($user, ['agent']);
+    $agentResponse = $this->getJson('/api/v1/wallets/me');
+    $agentResponse->assertOk()
+        ->assertJsonPath('data.wallet.id', $agentWallet->id)
+        ->assertJsonPath('data.wallet.kind', 'AGENT')
+        ->assertJsonPath('data.wallet.balance', 500);
 });
 
 test('admin can view all wallets via /admin/all with pagination and filters', function () {

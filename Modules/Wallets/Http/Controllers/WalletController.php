@@ -29,7 +29,13 @@ class WalletController extends Controller
         /** @var User $actor */
         $actor = $request->user();
 
-        $wallet = $this->walletService->getWalletForUser($actor);
+        $kind = $actor->currentWalletKind();
+
+        if (! $kind) {
+            throw new WalletNotFoundException('No wallet associated with current token ability.');
+        }
+
+        $wallet = $this->walletService->getWalletForUser($actor, $kind);
 
         $this->authorize('view', $wallet);
 

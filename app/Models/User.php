@@ -66,9 +66,19 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
-    public function wallet(): HasOne
+    public function wallets(): HasMany
     {
-        return $this->hasOne(Wallet::class);
+        return $this->hasMany(Wallet::class);
+    }
+
+    public function userWallet(): HasOne
+    {
+        return $this->hasOne(Wallet::class)->where('kind', Wallet::KIND_USER);
+    }
+
+    public function agentWallet(): HasOne
+    {
+        return $this->hasOne(Wallet::class)->where('kind', Wallet::KIND_AGENT);
     }
 
     public function cap(): HasOne
@@ -172,5 +182,36 @@ class User extends Authenticatable
     public function isUser(): bool
     {
         return $this->hasRole('USER');
+    }
+
+    /**
+     * Determine the wallet kind associated with the current token ability, if any.
+     *
+     * Returns Wallet::KIND_AGENT for agent ability, Wallet::KIND_USER for user ability,
+     * or null for tokens without wallet scoping (such as admin tokens).
+     */
+    public function currentWalletKind(): ?string
+    {
+        return match (true) {
+            $this->tokenCan('agent') => Wallet::KIND_AGENT,
+            $this->tokenCan('user') => Wallet::KIND_USER,
+            default => null,
+        };
+    }
+
+    /**
+     * Determine if the user holds an administrative staff role (SUPER_ADMIN, ADMIN, MODERATOR).
+     */
+    public function isStaff(): bool
+    {
+        return $this->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR']);
+    }
+
+    /**
+     * Determine if the user holds a staff role and is authenticated with administrative token ability.
+     */
+    public function isStaffWithAdminAccess(): bool
+    {
+        return $this->isStaff() && $this->tokenCan('admin');
     }
 }
