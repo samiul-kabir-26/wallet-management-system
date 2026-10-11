@@ -58,14 +58,14 @@ test('user can successfully transfer funds to another user', function () {
         ->assertJsonPath('data.transaction.agent_id', null)
         ->assertJsonPath('data.transaction.initiated_by', $sender->id)
         ->assertJsonPath('data.transaction.sender_wallet_balance_after', fn ($val) => (float) $val === 1000.0)
-        ->assertJsonPath('data.transaction.recipient_wallet_balance_after', fn ($val) => (float) $val === 700.0)
-        ->assertJsonPath('data.transaction.agent_wallet_balance_after', null);
+        ->assertJsonMissingPath('data.transaction.recipient_wallet_balance_after')
+        ->assertJsonMissingPath('data.transaction.agent_wallet_balance_after');
 
     // Refresh wallet balances
-    $sender->wallet->refresh();
-    $recipient->wallet->refresh();
-    expect((float) $sender->wallet->balance)->toBe(1000.00)
-        ->and((float) $recipient->wallet->balance)->toBe(700.00);
+    $sender->userWallet->refresh();
+    $recipient->userWallet->refresh();
+    expect((float) $sender->userWallet->balance)->toBe(1000.00)
+        ->and((float) $recipient->userWallet->balance)->toBe(700.00);
 
     // Exactly one transaction row
     expect(Transaction::count())->toBe(1);
@@ -108,10 +108,10 @@ test('transfer accepts recipientId in camelCase', function () {
     $response->assertStatus(201)
         ->assertJsonPath('data.transaction.recipient_id', $recipient->id);
 
-    $sender->wallet->refresh();
-    $recipient->wallet->refresh();
-    expect((float) $sender->wallet->balance)->toBe(750.00)
-        ->and((float) $recipient->wallet->balance)->toBe(550.00);
+    $sender->userWallet->refresh();
+    $recipient->userWallet->refresh();
+    expect((float) $sender->userWallet->balance)->toBe(750.00)
+        ->and((float) $recipient->userWallet->balance)->toBe(550.00);
 });
 
 test('submitting same idempotency_key returns existing transaction without duplicate mutations', function () {
@@ -133,10 +133,10 @@ test('submitting same idempotency_key returns existing transaction without dupli
     $response2->assertSuccessful()
         ->assertJsonPath('data.transaction.id', $response1->json('data.transaction.id'));
 
-    $sender->wallet->refresh();
-    $recipient->wallet->refresh();
-    expect((float) $sender->wallet->balance)->toBe(600.00)
-        ->and((float) $recipient->wallet->balance)->toBe(900.00);
+    $sender->userWallet->refresh();
+    $recipient->userWallet->refresh();
+    expect((float) $sender->userWallet->balance)->toBe(600.00)
+        ->and((float) $recipient->userWallet->balance)->toBe(900.00);
 
     expect(Transaction::count())->toBe(1);
 
@@ -159,10 +159,10 @@ test('transfer fails when sender has insufficient balance', function () {
     $response->assertStatus(422)
         ->assertJsonPath('success', false);
 
-    $sender->wallet->refresh();
-    $recipient->wallet->refresh();
-    expect((float) $sender->wallet->balance)->toBe(300.00)
-        ->and((float) $recipient->wallet->balance)->toBe(100.00);
+    $sender->userWallet->refresh();
+    $recipient->userWallet->refresh();
+    expect((float) $sender->userWallet->balance)->toBe(300.00)
+        ->and((float) $recipient->userWallet->balance)->toBe(100.00);
 
     expect(Transaction::count())->toBe(0);
 
@@ -188,10 +188,10 @@ test('transfer fails when daily cap is exceeded', function () {
     $response->assertStatus(422)
         ->assertJsonPath('success', false);
 
-    $sender->wallet->refresh();
-    $recipient->wallet->refresh();
-    expect((float) $sender->wallet->balance)->toBe(2000.00)
-        ->and((float) $recipient->wallet->balance)->toBe(500.00);
+    $sender->userWallet->refresh();
+    $recipient->userWallet->refresh();
+    expect((float) $sender->userWallet->balance)->toBe(2000.00)
+        ->and((float) $recipient->userWallet->balance)->toBe(500.00);
 
     expect(Transaction::count())->toBe(0);
 });
@@ -214,10 +214,10 @@ test('transfer fails when monthly cap is exceeded', function () {
     $response->assertStatus(422)
         ->assertJsonPath('success', false);
 
-    $sender->wallet->refresh();
-    $recipient->wallet->refresh();
-    expect((float) $sender->wallet->balance)->toBe(2000.00)
-        ->and((float) $recipient->wallet->balance)->toBe(500.00);
+    $sender->userWallet->refresh();
+    $recipient->userWallet->refresh();
+    expect((float) $sender->userWallet->balance)->toBe(2000.00)
+        ->and((float) $recipient->userWallet->balance)->toBe(500.00);
 
     expect(Transaction::count())->toBe(0);
 });

@@ -65,19 +65,21 @@ test('updating balance on nonexistent user wallet throws WalletNotFoundException
         ->toThrow(WalletNotFoundException::class);
 });
 
-test('lockWalletsForUsers locks and returns wallets sorted deterministically by user_id', function () {
+test('lockWalletsForUsers locks and returns wallets sorted deterministically by wallet id', function () {
     $user1 = User::factory()->create();
     $user2 = User::factory()->create();
     $wallet1 = Wallet::factory()->for($user1)->balance(100.00)->create();
     $wallet2 = Wallet::factory()->for($user2)->balance(200.00)->create();
 
-    // Ensure order is tested regardless of input order
-    $higherId = max($user1->id, $user2->id);
-    $lowerId = min($user1->id, $user2->id);
+    $higherId = max($wallet1->id, $wallet2->id);
+    $lowerId = min($wallet1->id, $wallet2->id);
 
-    $locked = $this->service->lockWalletsForUsers([$higherId, $lowerId]);
+    $locked = $this->service->lockWalletsForUsers([
+        ['user_id' => $user2->id, 'kind' => Wallet::KIND_USER],
+        ['user_id' => $user1->id, 'kind' => Wallet::KIND_USER],
+    ]);
 
     expect($locked)->toHaveCount(2)
-        ->and($locked->first()->user_id)->toBe($lowerId)
-        ->and($locked->last()->user_id)->toBe($higherId);
+        ->and($locked->first()->id)->toBe($lowerId)
+        ->and($locked->last()->id)->toBe($higherId);
 });

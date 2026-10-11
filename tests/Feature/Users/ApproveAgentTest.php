@@ -164,3 +164,19 @@ test('approving a user that has no agent_info record returns 404', function () {
         ->assertJsonPath('success', false)
         ->assertJsonPath('message', 'Target user does not have an agent profile.');
 });
+
+test('ADMIN cannot approve their own agent profile', function () {
+    $admin = createActorForAgentApproval('ADMIN');
+    $agentRole = Role::where('name', 'AGENT')->firstOrFail();
+    $admin->roles()->attach($agentRole->id, ['assigned_at' => now()]);
+    $admin->agentInfo()->create([
+        'status' => 'PENDING',
+        'commission_rate' => 0.0100,
+    ]);
+
+    Sanctum::actingAs($admin, ['admin']);
+
+    $response = $this->patchJson("/api/v1/users/{$admin->id}/approve-agent", []);
+
+    $response->assertStatus(403);
+});

@@ -31,7 +31,7 @@ function createAgentForCashIn(float $balance = 1000.00, string $status = 'APPROV
         'status' => $status,
     ]);
 
-    Wallet::factory()->for($agent)->balance($balance)->create();
+    Wallet::factory()->agent()->for($agent)->balance($balance)->create();
 
     return $agent;
 }
@@ -45,7 +45,7 @@ test('user can successfully perform cash-in via an approved agent with 1:1 balan
     Sanctum::actingAs($user, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_id' => $agent->id,
+        'agent_phone' => $agent->phone_number,
         'amount' => 500.00,
         'description' => 'Cash-in deposit at agent point',
         'idempotency_key' => 'cash-in-key-001',
@@ -64,15 +64,15 @@ test('user can successfully perform cash-in via an approved agent with 1:1 balan
         ->assertJsonPath('data.transaction.initiated_by', $user->id)
         ->assertJsonPath('data.transaction.status', 'COMPLETED')
         ->assertJsonPath('data.transaction.recipient_wallet_balance_after', fn ($val) => (float) $val === 600.0)
-        ->assertJsonPath('data.transaction.agent_wallet_balance_after', fn ($val) => (float) $val === 500.0)
-        ->assertJsonPath('data.transaction.sender_wallet_balance_after', null);
+        ->assertJsonMissingPath('data.transaction.agent_wallet_balance_after')
+        ->assertJsonMissingPath('data.transaction.sender_wallet_balance_after');
 
     $userWallet->refresh();
-    $agent->wallet->refresh();
+    $agent->agentWallet->refresh();
 
     // 1:1 transfer: agent debited by 500, user credited by 500
     expect((float) $userWallet->balance)->toBe(600.00)
-        ->and((float) $agent->wallet->balance)->toBe(500.00);
+        ->and((float) $agent->agentWallet->balance)->toBe(500.00);
 
     expect(Transaction::where('idempotency_key', 'cash-in-key-001')->count())->toBe(1);
 });
@@ -86,7 +86,7 @@ test('submitting same idempotency_key on cash-in returns existing transaction wi
     Sanctum::actingAs($user, ['user']);
 
     $payload = [
-        'agent_id' => $agent->id,
+        'agent_phone' => $agent->phone_number,
         'amount' => 300.00,
         'idempotency_key' => 'cash-in-idem-test',
     ];
@@ -99,10 +99,10 @@ test('submitting same idempotency_key on cash-in returns existing transaction wi
         ->assertJsonPath('data.transaction.id', $response1->json('data.transaction.id'));
 
     $userWallet->refresh();
-    $agent->wallet->refresh();
+    $agent->agentWallet->refresh();
 
     expect((float) $userWallet->balance)->toBe(500.00)
-        ->and((float) $agent->wallet->balance)->toBe(700.00);
+        ->and((float) $agent->agentWallet->balance)->toBe(700.00);
 
     expect(Transaction::where('idempotency_key', 'cash-in-idem-test')->count())->toBe(1);
 });
@@ -116,7 +116,7 @@ test('cash-in fails if agent has insufficient balance and creates zero transacti
     Sanctum::actingAs($user, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_id' => $agent->id,
+        'agent_phone' => $agent->phone_number,
         'amount' => 500.00,
         'idempotency_key' => 'cash-in-insufficient',
     ]);
@@ -125,10 +125,10 @@ test('cash-in fails if agent has insufficient balance and creates zero transacti
         ->assertJsonPath('success', false);
 
     $userWallet->refresh();
-    $agent->wallet->refresh();
+    $agent->agentWallet->refresh();
 
     expect((float) $userWallet->balance)->toBe(100.00)
-        ->and((float) $agent->wallet->balance)->toBe(200.00);
+        ->and((float) $agent->agentWallet->balance)->toBe(200.00);
 
     expect(Transaction::count())->toBe(0);
 });
@@ -142,7 +142,7 @@ test('cash-in fails if user wallet is blocked and creates zero transaction recor
     Sanctum::actingAs($user, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_id' => $agent->id,
+        'agent_phone' => $agent->phone_number,
         'amount' => 200.00,
         'idempotency_key' => 'cash-in-user-blocked',
     ]);
@@ -151,10 +151,10 @@ test('cash-in fails if user wallet is blocked and creates zero transaction recor
         ->assertJsonPath('success', false);
 
     $userWallet->refresh();
-    $agent->wallet->refresh();
+    $agent->agentWallet->refresh();
 
     expect((float) $userWallet->balance)->toBe(100.00)
-        ->and((float) $agent->wallet->balance)->toBe(1000.00);
+        ->and((float) $agent->agentWallet->balance)->toBe(1000.00);
 
     expect(Transaction::count())->toBe(0);
 });
@@ -164,12 +164,12 @@ test('cash-in fails if agent wallet is blocked and creates zero transaction reco
     $userWallet = Wallet::factory()->for($user)->balance(100.00)->create();
 
     $agent = createAgentForCashIn(1000.00);
-    $agent->wallet->update(['is_blocked' => true]);
+    $agent->agentWallet->update(['is_blocked' => true]);
 
     Sanctum::actingAs($user, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_id' => $agent->id,
+        'agent_phone' => $agent->phone_number,
         'amount' => 200.00,
         'idempotency_key' => 'cash-in-agent-blocked',
     ]);
@@ -178,10 +178,10 @@ test('cash-in fails if agent wallet is blocked and creates zero transaction reco
         ->assertJsonPath('success', false);
 
     $userWallet->refresh();
-    $agent->wallet->refresh();
+    $agent->agentWallet->refresh();
 
     expect((float) $userWallet->balance)->toBe(100.00)
-        ->and((float) $agent->wallet->balance)->toBe(1000.00);
+        ->and((float) $agent->agentWallet->balance)->toBe(1000.00);
 
     expect(Transaction::count())->toBe(0);
 });
@@ -195,7 +195,7 @@ test('cash-in fails if agent is not approved', function () {
     Sanctum::actingAs($user, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_id' => $agent->id,
+        'agent_phone' => $agent->phone_number,
         'amount' => 200.00,
         'idempotency_key' => 'cash-in-pending-agent',
     ]);
@@ -204,10 +204,10 @@ test('cash-in fails if agent is not approved', function () {
         ->assertJsonPath('success', false);
 
     $userWallet->refresh();
-    $agent->wallet->refresh();
+    $agent->agentWallet->refresh();
 
     expect((float) $userWallet->balance)->toBe(100.00)
-        ->and((float) $agent->wallet->balance)->toBe(1000.00);
+        ->and((float) $agent->agentWallet->balance)->toBe(1000.00);
 
     expect(Transaction::count())->toBe(0);
 });
@@ -222,7 +222,7 @@ test('cash-in fails if target user is not an agent', function () {
     Sanctum::actingAs($user, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_id' => $otherUser->id,
+        'agent_phone' => $otherUser->phone_number,
         'amount' => 100.00,
         'idempotency_key' => 'cash-in-not-an-agent',
     ]);
@@ -240,13 +240,91 @@ test('user cannot cash in from themselves', function () {
     Sanctum::actingAs($user, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_id' => $user->id,
+        'agent_phone' => $user->phone_number,
         'amount' => 100.00,
         'idempotency_key' => 'cash-in-self',
     ]);
 
     $response->assertStatus(422)
-        ->assertJsonValidationErrors(['agent_id']);
+        ->assertJsonValidationErrors(['agent_phone']);
+});
+
+test('cash-in fails with not-found error when agent phone does not exist', function () {
+    $user = createActorForCashIn('USER');
+    Wallet::factory()->for($user)->balance(100.00)->create();
+
+    Sanctum::actingAs($user, ['user']);
+
+    $response = $this->postJson('/api/v1/transactions/cash-in', [
+        'agent_phone' => '01999999999',
+        'amount' => 100.00,
+        'idempotency_key' => 'cash-in-nonexistent-phone',
+    ]);
+
+    $response->assertStatus(404)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Agent user not found.');
+
+    expect(Transaction::count())->toBe(0);
+});
+
+test('cash-in fails with 422 when agent phone is malformed', function (string $invalidPhone) {
+    $user = createActorForCashIn('USER');
+    Wallet::factory()->for($user)->balance(100.00)->create();
+
+    Sanctum::actingAs($user, ['user']);
+
+    $response = $this->postJson('/api/v1/transactions/cash-in', [
+        'agent_phone' => $invalidPhone,
+        'amount' => 100.00,
+        'idempotency_key' => 'cash-in-malformed-phone',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['agent_phone']);
+
+    expect(Transaction::count())->toBe(0);
+})->with([
+    'too short' => '0171234',
+    'invalid prefix' => '01212345678',
+    'international prefix' => '+8801712345678',
+    'with letters' => '0171234567a',
+]);
+
+test('replaying idempotency key on cash-in with different agent_phone returns existing transaction', function () {
+    $user = createActorForCashIn('USER');
+    $userWallet = Wallet::factory()->for($user)->balance(100.00)->create();
+
+    $agent1 = createAgentForCashIn(1000.00);
+    $agent2 = createAgentForCashIn(1000.00);
+
+    Sanctum::actingAs($user, ['user']);
+
+    $response1 = $this->postJson('/api/v1/transactions/cash-in', [
+        'agent_phone' => $agent1->phone_number,
+        'amount' => 200.00,
+        'idempotency_key' => 'cash-in-replay-diff-phone',
+    ]);
+    $response1->assertStatus(201);
+
+    $response2 = $this->postJson('/api/v1/transactions/cash-in', [
+        'agent_phone' => $agent2->phone_number,
+        'amount' => 200.00,
+        'idempotency_key' => 'cash-in-replay-diff-phone',
+    ]);
+    $response2->assertSuccessful()
+        ->assertJsonPath('data.transaction.id', $response1->json('data.transaction.id'))
+        ->assertJsonPath('data.transaction.agent_id', $agent1->id);
+
+    $userWallet->refresh();
+    $agent1->agentWallet->refresh();
+    $agent2->agentWallet->refresh();
+
+    expect((float) $userWallet->balance)->toBe(300.00)
+        ->and((float) $agent1->agentWallet->balance)->toBe(800.00)
+        ->and((float) $agent2->agentWallet->balance)->toBe(1000.00);
+
+    expect(Transaction::count())->toBe(1);
 });
 
 test('agent or admin cannot perform cash-in', function () {
@@ -256,7 +334,7 @@ test('agent or admin cannot perform cash-in', function () {
     Sanctum::actingAs($agent, ['agent']);
 
     $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_id' => $targetAgent->id,
+        'agent_phone' => $targetAgent->phone_number,
         'amount' => 100.00,
         'idempotency_key' => 'agent-cash-in',
     ])->assertStatus(403);
@@ -267,7 +345,7 @@ test('agent or admin cannot perform cash-in', function () {
     Sanctum::actingAs($admin, ['admin']);
 
     $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_id' => $targetAgent->id,
+        'agent_phone' => $targetAgent->phone_number,
         'amount' => 100.00,
         'idempotency_key' => 'admin-cash-in',
     ])->assertStatus(403);

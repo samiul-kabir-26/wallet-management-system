@@ -6,6 +6,7 @@ use App\Models\AgentInfo;
 use App\Models\Cap;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Models\Wallet;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -68,7 +69,7 @@ class TransactionService
                     return $existing;
                 }
 
-                $updatedWallet = $this->walletService->updateBalance($user->id, $formattedAmount, 'CREDIT');
+                $updatedWallet = $this->walletService->updateBalance($user->id, $formattedAmount, 'CREDIT', Wallet::KIND_USER);
 
                 return Transaction::create([
                     'user_id' => $user->id,
@@ -89,6 +90,9 @@ class TransactionService
                     'sender_wallet_balance_after' => null,
                     'recipient_wallet_balance_after' => $updatedWallet->balance,
                     'agent_wallet_balance_after' => null,
+                    'sender_wallet_id' => null,
+                    'recipient_wallet_id' => $updatedWallet->id,
+                    'agent_wallet_id' => null,
                     'meta' => null,
                 ]);
             });
@@ -132,7 +136,7 @@ class TransactionService
                     return $existing;
                 }
 
-                $updatedWallet = $this->walletService->updateBalance($agent->id, $formattedAmount, 'DEBIT');
+                $updatedWallet = $this->walletService->updateBalance($agent->id, $formattedAmount, 'DEBIT', Wallet::KIND_AGENT);
 
                 return Transaction::create([
                     'user_id' => $agent->id,
@@ -153,6 +157,9 @@ class TransactionService
                     'sender_wallet_balance_after' => $updatedWallet->balance,
                     'recipient_wallet_balance_after' => null,
                     'agent_wallet_balance_after' => null,
+                    'sender_wallet_id' => $updatedWallet->id,
+                    'recipient_wallet_id' => null,
+                    'agent_wallet_id' => null,
                     'meta' => null,
                 ]);
             });
@@ -178,9 +185,9 @@ class TransactionService
      * @throws WalletBlockedException
      * @throws InsufficientBalanceException
      */
-    public function cashIn(User $user, int $agentId, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
+    public function cashIn(User $user, string $agentPhone, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
     {
-        $agent = User::with('agentInfo')->find($agentId);
+        $agent = User::with('agentInfo')->where('phone_number', $agentPhone)->first();
         if (! $agent) {
             throw new UserNotFoundException('Agent user not found.');
         }
@@ -207,11 +214,14 @@ class TransactionService
                     return $existing;
                 }
 
-                // Deterministically lock both wallets ordered by user_id
-                $wallets = $this->walletService->lockWalletsForUsers([$user->id, $agent->id])->keyBy('user_id');
+                // Deterministically lock both wallets ordered by wallet id
+                $wallets = $this->walletService->lockWalletsForUsers([
+                    ['user_id' => $user->id, 'kind' => Wallet::KIND_USER],
+                    ['user_id' => $agent->id, 'kind' => Wallet::KIND_AGENT],
+                ]);
 
-                $userWallet = $wallets->get($user->id);
-                $agentWallet = $wallets->get($agent->id);
+                $userWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $user->id && $w->kind === Wallet::KIND_USER);
+                $agentWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $agent->id && $w->kind === Wallet::KIND_AGENT);
 
                 if (! $userWallet || ! $agentWallet) {
                     throw new WalletNotFoundException;
@@ -254,6 +264,9 @@ class TransactionService
                     'sender_wallet_balance_after' => null,
                     'recipient_wallet_balance_after' => $newUserBalance,
                     'agent_wallet_balance_after' => $newAgentBalance,
+                    'sender_wallet_id' => null,
+                    'recipient_wallet_id' => $userWallet->id,
+                    'agent_wallet_id' => $agentWallet->id,
                     'meta' => null,
                 ]);
             });
@@ -281,9 +294,9 @@ class TransactionService
      * @throws WalletBlockedException
      * @throws InsufficientBalanceException
      */
-    public function cashOut(User $user, int $agentId, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
+    public function cashOut(User $user, string $agentPhone, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
     {
-        $agent = User::with('agentInfo')->find($agentId);
+        $agent = User::with('agentInfo')->where('phone_number', $agentPhone)->first();
         if (! $agent) {
             throw new UserNotFoundException('Agent user not found.');
         }
@@ -336,11 +349,14 @@ class TransactionService
                 // 2. Assert within caps (throws DailyCapsExceededException or MonthlyCapsExceededException)
                 $this->capService->assertWithinCaps($lockedCap, $formattedAmount);
 
-                // 3. Deterministically lock wallets ordered by user_id
-                $wallets = $this->walletService->lockWalletsForUsers([$user->id, $agent->id])->keyBy('user_id');
+                // 3. Deterministically lock wallets ordered by wallet id
+                $wallets = $this->walletService->lockWalletsForUsers([
+                    ['user_id' => $user->id, 'kind' => Wallet::KIND_USER],
+                    ['user_id' => $agent->id, 'kind' => Wallet::KIND_AGENT],
+                ]);
 
-                $userWallet = $wallets->get($user->id);
-                $agentWallet = $wallets->get($agent->id);
+                $userWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $user->id && $w->kind === Wallet::KIND_USER);
+                $agentWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $agent->id && $w->kind === Wallet::KIND_AGENT);
 
                 if (! $userWallet || ! $agentWallet) {
                     throw new WalletNotFoundException;
@@ -403,6 +419,9 @@ class TransactionService
                     'sender_wallet_balance_after' => $newUserBalance,
                     'recipient_wallet_balance_after' => null,
                     'agent_wallet_balance_after' => $newAgentBalance,
+                    'sender_wallet_id' => $userWallet->id,
+                    'recipient_wallet_id' => null,
+                    'agent_wallet_id' => $agentWallet->id,
                     'meta' => null,
                 ]);
 
@@ -426,6 +445,9 @@ class TransactionService
                     'sender_wallet_balance_after' => null,
                     'recipient_wallet_balance_after' => $newAgentBalance,
                     'agent_wallet_balance_after' => $newAgentBalance,
+                    'sender_wallet_id' => null,
+                    'recipient_wallet_id' => $agentWallet->id,
+                    'agent_wallet_id' => $agentWallet->id,
                     'meta' => [
                         'related_transaction_id' => $cashOut->id,
                     ],
@@ -499,14 +521,21 @@ class TransactionService
                 // 2. Assert within caps (sender outward caps)
                 $this->capService->assertWithinCaps($lockedCap, $formattedAmount);
 
-                // 3. Deterministically lock wallets ordered by user_id
-                $wallets = $this->walletService->lockWalletsForUsers([$sender->id, $recipient->id])->keyBy('user_id');
+                // 3. Deterministically lock wallets ordered by wallet id
+                $wallets = $this->walletService->lockWalletsForUsers([
+                    ['user_id' => $sender->id, 'kind' => Wallet::KIND_USER],
+                    ['user_id' => $recipient->id, 'kind' => Wallet::KIND_USER],
+                ]);
 
-                $senderWallet = $wallets->get($sender->id);
-                $recipientWallet = $wallets->get($recipient->id);
+                $senderWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $sender->id && $w->kind === Wallet::KIND_USER);
+                $recipientWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $recipient->id && $w->kind === Wallet::KIND_USER);
 
-                if (! $senderWallet || ! $recipientWallet) {
+                if (! $senderWallet) {
                     throw new WalletNotFoundException;
+                }
+
+                if (! $recipientWallet) {
+                    throw new InvalidRecipientException('Recipient does not have a user wallet.');
                 }
 
                 if ($senderWallet->is_blocked || $recipientWallet->is_blocked) {
@@ -552,6 +581,9 @@ class TransactionService
                     'sender_wallet_balance_after' => $newSenderBalance,
                     'recipient_wallet_balance_after' => $newRecipientBalance,
                     'agent_wallet_balance_after' => null,
+                    'sender_wallet_id' => $senderWallet->id,
+                    'recipient_wallet_id' => $recipientWallet->id,
+                    'agent_wallet_id' => null,
                     'meta' => null,
                 ]);
             });
@@ -566,20 +598,19 @@ class TransactionService
     }
 
     /**
-     * Get transaction history for a user, filtered and paginated.
+     * Get transaction history for a specific wallet, filtered and paginated.
      */
-    public function listUserHistory(User $user, array $filters = [], int $perPage = 15): LengthAwarePaginator
-    {
+    public function listUserHistory(
+        ?Wallet $wallet = null,
+        array $filters = [],
+        int $perPage = 15,
+    ): LengthAwarePaginator {
         $query = Transaction::query()->with(['sender', 'recipient', 'agent', 'user']);
 
-        if (! ($user->isAdmin() && $user->tokenCan('admin'))) {
-            $query->where(function (Builder $q) use ($user): void {
-                $q->where('user_id', $user->id)
-                    ->orWhere('sender_id', $user->id)
-                    ->orWhere('recipient_id', $user->id)
-                    ->orWhere('agent_id', $user->id)
-                    ->orWhere('initiated_by', $user->id);
-            });
+        if ($wallet !== null) {
+            $query->involvingWallet($wallet);
+        } else {
+            $query->whereRaw('1 = 0');
         }
 
         $this->applyFilters($query, $filters);

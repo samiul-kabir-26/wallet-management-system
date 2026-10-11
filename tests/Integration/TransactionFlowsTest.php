@@ -45,7 +45,7 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $user1 = User::findOrFail($user1Id);
 
     // Initial wallet balance is 50.00 BDT signup bonus
-    expect((float) $user1->wallet->balance)->toBe(50.00);
+    expect((float) $user1->userWallet->balance)->toBe(50.00);
 
     // -------------------------------------------------------------
     // 3. Register User 2 via API
@@ -60,7 +60,7 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $user2RegResponse->assertStatus(201);
     $user2Id = $user2RegResponse->json('data.user.id');
     $user2 = User::findOrFail($user2Id);
-    expect((float) $user2->wallet->balance)->toBe(50.00);
+    expect((float) $user2->userWallet->balance)->toBe(50.00);
 
     // -------------------------------------------------------------
     // 4. Register Agent via API
@@ -104,9 +104,9 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
         ->assertJsonPath('data.transaction.type', 'TOP_UP')
         ->assertJsonPath('data.transaction.status', 'COMPLETED');
 
-    $user1->wallet->refresh();
+    $user1->userWallet->refresh();
     // 50.00 (bonus) + 5000.00 = 5050.00
-    expect((float) $user1->wallet->balance)->toBe(5050.00);
+    expect((float) $user1->userWallet->balance)->toBe(5050.00);
 
     // -------------------------------------------------------------
     // 7. User 1 Transfers 1,000 BDT to User 2
@@ -119,12 +119,12 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $transferResponse->assertStatus(201)
         ->assertJsonPath('data.transaction.type', 'TRANSFER');
 
-    $user1->wallet->refresh();
-    $user2->wallet->refresh();
+    $user1->userWallet->refresh();
+    $user2->userWallet->refresh();
     $user1Cap = Cap::where('user_id', $user1Id)->firstOrFail();
 
-    expect((float) $user1->wallet->balance)->toBe(4050.00)
-        ->and((float) $user2->wallet->balance)->toBe(1050.00)
+    expect((float) $user1->userWallet->balance)->toBe(4050.00)
+        ->and((float) $user2->userWallet->balance)->toBe(1050.00)
         ->and((float) $user1Cap->daily_used)->toBe(1000.00)
         ->and((float) $user1Cap->monthly_used)->toBe(1000.00);
 
@@ -136,7 +136,7 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     // Total Agent credit = 2000 + 50 = 2050.00 BDT
     // -------------------------------------------------------------
     $cashOutResponse = $this->postJson('/api/v1/transactions/cash-out', [
-        'agent_id' => $agentId,
+        'agent_phone' => $agent->phone_number,
         'amount' => 2000.00,
         'idempotency_key' => 'flow-cashout-001',
     ]);
@@ -145,15 +145,15 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
         ->assertJsonPath('data.transaction.system_fee_amount', fn ($v) => (float) $v === 100.0)
         ->assertJsonPath('data.transaction.agent_commission_amount', fn ($v) => (float) $v === 50.0);
 
-    $user1->wallet->refresh();
-    $agent->wallet->refresh();
+    $user1->userWallet->refresh();
+    $agent->agentWallet->refresh();
     $agentInfo->refresh();
     $user1Cap->refresh();
 
     // 4050 - 2100 = 1950.00
-    expect((float) $user1->wallet->balance)->toBe(1950.00)
+    expect((float) $user1->userWallet->balance)->toBe(1950.00)
         // Agent: 50 (initial) + 2000 + 50 = 2100.00
-        ->and((float) $agent->wallet->balance)->toBe(2100.00)
+        ->and((float) $agent->agentWallet->balance)->toBe(2100.00)
         ->and((float) $agentInfo->total_commission)->toBe(50.00)
         // Daily used: 1000 + 2000 = 3000.00
         ->and((float) $user1Cap->daily_used)->toBe(3000.00)
@@ -177,9 +177,9 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $withdrawResponse->assertStatus(201)
         ->assertJsonPath('data.transaction.type', 'AGENT_WITHDRAWAL');
 
-    $agent->wallet->refresh();
+    $agent->agentWallet->refresh();
     // 2100 - 1500 = 600.00
-    expect((float) $agent->wallet->balance)->toBe(600.00);
+    expect((float) $agent->agentWallet->balance)->toBe(600.00);
 
     // -------------------------------------------------------------
     // 10. Audit: User 1 views transaction history

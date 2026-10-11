@@ -45,7 +45,7 @@ test('user can successfully top-up their wallet', function () {
         ->assertJsonPath('data.transaction.initiated_by', $user->id)
         ->assertJsonPath('data.transaction.status', 'COMPLETED')
         ->assertJsonPath('data.transaction.recipient_wallet_balance_after', fn ($val) => (float) $val === 600.0)
-        ->assertJsonPath('data.transaction.sender_wallet_balance_after', null);
+        ->assertJsonMissingPath('data.transaction.sender_wallet_balance_after');
 
     $wallet->refresh();
     expect((float) $wallet->balance)->toBe(600.00);

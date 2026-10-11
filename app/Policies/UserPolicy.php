@@ -75,7 +75,7 @@ class UserPolicy
      */
     public function approveAgent(User $user, User $agent): bool
     {
-        return $user->isAdmin();
+        return $user->isAdmin() && $user->id !== $agent->id;
     }
 
     /**
@@ -84,5 +84,13 @@ class UserPolicy
     public function suspendAgent(User $user, User $agent): bool
     {
         return $user->isAdmin();
+    }
+
+    /**
+     * Determine whether the user can assign additional roles to a user.
+     */
+    public function assignRole(User $user, User $model): bool
+    {
+        return $user->isAdmin() && $user->id !== $model->id;
     }
 }

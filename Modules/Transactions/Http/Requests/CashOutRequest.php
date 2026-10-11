@@ -8,16 +8,6 @@ use Illuminate\Foundation\Http\FormRequest;
 class CashOutRequest extends FormRequest
 {
     /**
-     * Prepare the data for validation.
-     */
-    protected function prepareForValidation(): void
-    {
-        if ($this->has('agentId') && ! $this->has('agent_id')) {
-            $this->merge(['agent_id' => $this->input('agentId')]);
-        }
-    }
-
-    /**
      * Determine if the user is authorized to make this request.
      */
     public function authorize(): bool
@@ -33,12 +23,12 @@ class CashOutRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'agent_id' => [
+            'agent_phone' => [
                 'required',
-                'integer',
-                'exists:users,id',
+                'string',
+                'regex:/^01[3-9]\d{8}$/',
                 function (string $attribute, mixed $value, \Closure $fail): void {
-                    if ((int) $value === (int) $this->user()?->id) {
+                    if ((string) $value === (string) $this->user()?->phone_number) {
                         $fail('The agent must be a different user.');
                     }
                 },
@@ -46,6 +36,18 @@ class CashOutRequest extends FormRequest
             'amount' => ['required', 'numeric', 'gt:0'],
             'description' => ['nullable', 'string', 'max:500'],
             'idempotency_key' => ['required', 'string', 'max:255'],
+        ];
+    }
+
+    /**
+     * Get custom messages for validator errors.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'agent_phone.regex' => 'The phone number must be a valid 11-digit Bangladeshi mobile number.',
         ];
     }
 }

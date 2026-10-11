@@ -48,6 +48,12 @@ export interface Transaction {
     sender_id?: number | null;
     recipient_id?: number | null;
     agent_id?: number | null;
+    sender_wallet_id?: number | null;
+    recipient_wallet_id?: number | null;
+    agent_wallet_id?: number | null;
+    sender_wallet_balance_after?: number | null;
+    recipient_wallet_balance_after?: number | null;
+    agent_wallet_balance_after?: number | null;
     source_wallet_id?: number | null;
     destination_wallet_id?: number | null;
     type: TransactionType;

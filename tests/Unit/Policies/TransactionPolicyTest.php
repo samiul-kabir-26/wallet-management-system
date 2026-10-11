@@ -16,14 +16,22 @@ beforeEach(function () {
     $this->policy = new TransactionPolicy;
 });
 
+use App\Models\Wallet;
+
 function createUserWithRole(string $roleName, ?array $abilities = null): User
 {
     $user = User::factory()->create();
     $role = Role::where('name', $roleName)->firstOrFail();
     $user->roles()->attach($role->id, ['assigned_at' => now()]);
 
+    if ($roleName === 'AGENT') {
+        Wallet::factory()->agent()->create(['user_id' => $user->id]);
+    } elseif ($roleName === 'USER') {
+        Wallet::factory()->create(['user_id' => $user->id]);
+    }
+
     $abilities ??= match ($roleName) {
-        'ADMIN', 'SUPER_ADMIN' => ['admin'],
+        'ADMIN', 'SUPER_ADMIN', 'MODERATOR' => ['admin'],
         'AGENT' => ['agent'],
         default => ['user'],
     };
@@ -33,14 +41,16 @@ function createUserWithRole(string $roleName, ?array $abilities = null): User
     return $user;
 }
 
-test('viewAny is allowed for admin and super admin, denied for regular user and agent', function () {
+test('viewAny is allowed for admin, super admin, and moderator, denied for regular user and agent', function () {
     $admin = createUserWithRole('ADMIN');
     $superAdmin = createUserWithRole('SUPER_ADMIN');
+    $moderator = createUserWithRole('MODERATOR');
     $user = createUserWithRole('USER');
     $agent = createUserWithRole('AGENT');
 
     expect($this->policy->viewAny($admin))->toBeTrue()
         ->and($this->policy->viewAny($superAdmin))->toBeTrue()
+        ->and($this->policy->viewAny($moderator))->toBeTrue()
         ->and($this->policy->viewAny($user))->toBeFalse()
         ->and($this->policy->viewAny($agent))->toBeFalse();
 });
@@ -48,6 +58,7 @@ test('viewAny is allowed for admin and super admin, denied for regular user and 
 test('admin role without admin token ability is denied view and viewAny', function () {
     $adminWithoutAdminAbility = createUserWithRole('ADMIN', ['user']);
     $transaction = new Transaction([
+        'id' => 99999,
         'user_id' => 999,
         'sender_id' => 998,
         'recipient_id' => 997,
@@ -72,27 +83,39 @@ test('view is allowed for admin regardless of transaction participants', functio
     expect($this->policy->view($admin, $transaction))->toBeTrue();
 });
 
-test('view is allowed for users participating in any of the 5 FK slots', function () {
-    $user1 = createUserWithRole('USER');
-    $user2 = createUserWithRole('USER');
-    $user3 = createUserWithRole('USER');
+test('view is allowed for users participating via wallet slots', function () {
+    $sender = createUserWithRole('USER');
+    $recipient = createUserWithRole('USER');
     $agent = createUserWithRole('AGENT');
-    $initiator = createUserWithRole('USER');
     $outsider = createUserWithRole('USER');
 
-    $transaction = new Transaction([
-        'user_id' => $user1->id,
-        'sender_id' => $user2->id,
-        'recipient_id' => $user3->id,
+    $senderWallet = $sender->wallets()->first();
+    $recipientWallet = $recipient->wallets()->first();
+    $agentWallet = $agent->wallets()->first();
+
+    $transaction = Transaction::create([
+        'user_id' => $sender->id,
+        'sender_id' => $sender->id,
+        'recipient_id' => $recipient->id,
         'agent_id' => $agent->id,
-        'initiated_by' => $initiator->id,
+        'initiated_by' => $sender->id,
+        'sender_wallet_id' => $senderWallet->id,
+        'recipient_wallet_id' => $recipientWallet->id,
+        'agent_wallet_id' => $agentWallet->id,
+        'type' => 'TRANSFER',
+        'amount' => '100.00',
+        'system_fee_amount' => '0.00',
+        'system_fee_rate' => '0.0000',
+        'agent_commission_amount' => '0.00',
+        'agent_commission_rate' => '0.0000',
+        'currency' => 'BDT',
+        'status' => 'COMPLETED',
+        'idempotency_key' => 'policy-test-tx',
     ]);
 
-    expect($this->policy->view($user1, $transaction))->toBeTrue()
-        ->and($this->policy->view($user2, $transaction))->toBeTrue()
-        ->and($this->policy->view($user3, $transaction))->toBeTrue()
+    expect($this->policy->view($sender, $transaction))->toBeTrue()
+        ->and($this->policy->view($recipient, $transaction))->toBeTrue()
         ->and($this->policy->view($agent, $transaction))->toBeTrue()
-        ->and($this->policy->view($initiator, $transaction))->toBeTrue()
         ->and($this->policy->view($outsider, $transaction))->toBeFalse();
 });
 

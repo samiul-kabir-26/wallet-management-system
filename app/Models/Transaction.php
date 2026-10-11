@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Log;
@@ -26,6 +27,9 @@ use Illuminate\Support\Facades\Log;
     'sender_wallet_balance_after',
     'recipient_wallet_balance_after',
     'agent_wallet_balance_after',
+    'sender_wallet_id',
+    'recipient_wallet_id',
+    'agent_wallet_id',
     'meta',
 ])]
 class Transaction extends Model
@@ -80,5 +84,32 @@ class Transaction extends Model
     public function initiatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'initiated_by');
+    }
+
+    public function senderWallet(): BelongsTo
+    {
+        return $this->belongsTo(Wallet::class, 'sender_wallet_id');
+    }
+
+    public function recipientWallet(): BelongsTo
+    {
+        return $this->belongsTo(Wallet::class, 'recipient_wallet_id');
+    }
+
+    public function agentWallet(): BelongsTo
+    {
+        return $this->belongsTo(Wallet::class, 'agent_wallet_id');
+    }
+
+    /**
+     * Scope query to transactions involving the given wallet across any of the three slots.
+     */
+    public function scopeInvolvingWallet(Builder $query, Wallet $wallet): void
+    {
+        $query->where(function (Builder $q) use ($wallet): void {
+            $q->where('sender_wallet_id', $wallet->id)
+                ->orWhere('recipient_wallet_id', $wallet->id)
+                ->orWhere('agent_wallet_id', $wallet->id);
+        });
     }
 }

@@ -55,7 +55,7 @@ test('distinct idempotency keys for agent withdrawal execute independently', fun
         'commission_rate' => 0.0100,
         'status' => 'APPROVED',
     ]);
-    $wallet = Wallet::factory()->for($agent)->balance(1000.00)->create();
+    $wallet = Wallet::factory()->agent()->for($agent)->balance(1000.00)->create();
 
     Sanctum::actingAs($agent, ['agent']);
 

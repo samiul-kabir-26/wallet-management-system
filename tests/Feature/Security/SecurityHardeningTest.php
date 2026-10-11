@@ -3,6 +3,7 @@
 use App\Models\OtpToken;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Wallet;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -21,7 +22,7 @@ test('user model and api resources never expose password or pin', function () {
         'pin' => Hash::make('12345'),
     ]);
     $user->roles()->attach($role->id, ['assigned_at' => now()]);
-    $user->wallet()->create();
+    Wallet::factory()->for($user)->create();
     $user->cap()->create();
 
     // 1. Eloquent serialization
@@ -143,7 +144,7 @@ test('transaction creation logs financial audit info event', function () {
     $user = User::factory()->create();
     $role = Role::where('name', 'USER')->firstOrFail();
     $user->roles()->attach($role->id, ['assigned_at' => now()]);
-    $user->wallet()->create(['balance' => 100.00]);
+    Wallet::factory()->for($user)->balance(100.00)->create();
     $user->cap()->create();
 
     Sanctum::actingAs($user, ['user']);
