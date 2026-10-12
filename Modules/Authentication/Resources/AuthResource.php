@@ -48,13 +48,16 @@ class AuthResource extends JsonResource
                     'id' => $this->resource->id,
                     'name' => $this->resource->name,
                     'phone_number' => $this->resource->phone_number,
-                    'email' => $this->whenNotNull($this->resource->email),
-                    'roles' => $this->whenLoaded('roles', fn () => $this->resource->roles->pluck('name')),
+                    'email' => $this->resource->email,
+                    'roles' => $this->whenLoaded('roles', fn () => $this->resource->roles->pluck('name')->values()->all()),
+                    'permissions' => (in_array('admin', $this->abilities, true) || $this->resource->tokenCan('admin'))
+                        ? $this->resource->permissions()->values()->all()
+                        : [],
                     'is_verified' => (bool) $this->resource->is_verified,
                     'is_active' => $this->resource->is_active,
                 ],
                 'token' => $this->token,
-                'token_type' => 'Bearer',
+                'token_type' => $this->token ? 'Bearer' : null,
                 'abilities' => $this->abilities,
             ],
         ];

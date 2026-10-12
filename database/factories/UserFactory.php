@@ -40,4 +40,12 @@ class UserFactory extends Factory
             'is_verified' => false,
         ]);
     }
+
+    public function withoutPassword(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'password' => null,
+            'password_changed_at' => null,
+        ]);
+    }
 }

@@ -1,21 +1,34 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { useAuthStore } from '@/stores/auth';
 import Badge from '@/components/Badge.vue';
 import ToastContainer from '@/components/ToastContainer.vue';
+import type { PermissionName } from '@/types/permissions';
 
 const authStore = useAuthStore();
 const sidebarOpen = ref(false);
 
-const navItems = [
+interface NavItem {
+    name: string;
+    href: string;
+    icon: string;
+    permission?: PermissionName;
+}
+
+const navItems: NavItem[] = [
     { name: 'Dashboard', href: '/admin/dashboard', icon: '📊' },
-    { name: 'Users & Staff', href: '/admin/users', icon: '👥' },
-    { name: 'Agent Approvals', href: '/admin/agents', icon: '🤝' },
-    { name: 'Wallets & Freeze', href: '/admin/wallets', icon: '💳' },
-    { name: 'Platform Transactions', href: '/admin/transactions', icon: '📜' },
+    { name: 'Users & Staff', href: '/admin/users', icon: '👥', permission: 'users.view_any' },
+    { name: 'Roles & Permissions', href: '/admin/roles', icon: '🔑', permission: 'roles.view' },
+    { name: 'Agent Approvals', href: '/admin/agents', icon: '🤝', permission: 'agents.approve' },
+    { name: 'Wallets & Freeze', href: '/admin/wallets', icon: '💳', permission: 'wallets.view_any' },
+    { name: 'Platform Transactions', href: '/admin/transactions', icon: '📜', permission: 'transactions.view_any' },
     { name: 'System Settings', href: '/admin/settings', icon: '⚙️' },
 ];
+
+const visibleNavItems = computed(() =>
+    navItems.filter((item) => !item.permission || authStore.can(item.permission)),
+);
 
 const handleLogout = async () => {
     await authStore.logout();
@@ -39,7 +52,7 @@ const handleLogout = async () => {
 
             <nav class="flex-1 space-y-1 px-3 py-4">
                 <Link
-                    v-for="item in navItems"
+                    v-for="item in visibleNavItems"
                     :key="item.href"
                     :href="item.href"
                     class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
@@ -109,7 +122,7 @@ const handleLogout = async () => {
                         </div>
                         <nav class="space-y-1 mt-4">
                             <Link
-                                v-for="item in navItems"
+                                v-for="item in visibleNavItems"
                                 :key="item.href"
                                 :href="item.href"
                                 class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"

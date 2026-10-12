@@ -11,7 +11,7 @@ class UserPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $user->can('users.view_any');
     }
 
     /**
@@ -19,7 +19,7 @@ class UserPolicy
      */
     public function view(User $user, User $model): bool
     {
-        return $user->id === $model->id || $user->isAdmin();
+        return $user->id === $model->id || $user->can('users.view');
     }
 
     /**
@@ -27,7 +27,7 @@ class UserPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $user->can('users.create');
     }
 
     /**
@@ -35,7 +35,7 @@ class UserPolicy
      */
     public function update(User $user, User $model): bool
     {
-        return $user->id === $model->id || $user->isAdmin();
+        return $user->id === $model->id || $user->can('users.update');
     }
 
     /**
@@ -75,7 +75,7 @@ class UserPolicy
      */
     public function approveAgent(User $user, User $agent): bool
     {
-        return $user->isAdmin() && $user->id !== $agent->id;
+        return $user->can('agents.approve') && $user->id !== $agent->id;
     }
 
     /**
@@ -83,7 +83,7 @@ class UserPolicy
      */
     public function suspendAgent(User $user, User $agent): bool
     {
-        return $user->isAdmin();
+        return $user->can('agents.suspend');
     }
 
     /**
@@ -91,6 +91,14 @@ class UserPolicy
      */
     public function assignRole(User $user, User $model): bool
     {
-        return $user->isAdmin() && $user->id !== $model->id;
+        return $user->can('users.assign_role') && $user->id !== $model->id;
+    }
+
+    /**
+     * Determine whether the user can grant administrative access to a user.
+     */
+    public function grantAdminAccess(User $user, User $model): bool
+    {
+        return $user->tokenCan('admin') && $user->can('users.grant_admin_access') && $user->id !== $model->id;
     }
 }

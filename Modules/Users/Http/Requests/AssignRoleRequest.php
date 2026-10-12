@@ -23,7 +23,14 @@ class AssignRoleRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'role' => ['required', 'string', Rule::in(['AGENT', 'USER'])],
+            'role' => [
+                'required',
+                'string',
+                Rule::exists('roles', 'name')->where(function ($query) {
+                    $query->whereIn('name', ['AGENT', 'USER'])
+                        ->orWhere('panel', 'admin');
+                }),
+            ],
         ];
     }
 
@@ -35,7 +42,7 @@ class AssignRoleRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'role.in' => 'Only AGENT and USER roles can be assigned via this endpoint.',
+            'role.exists' => 'The selected role must be AGENT, USER, or an admin-panel role.',
         ];
     }
 }

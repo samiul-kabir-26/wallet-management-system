@@ -4,12 +4,11 @@ use App\Models\AgentInfo;
 use App\Models\Role;
 use App\Models\SystemSetting;
 use App\Models\User;
-use Database\Seeders\RoleSeeder;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
-    $this->seed(RoleSeeder::class);
+    $this->seedRolesAndPermissions();
 });
 
 /**

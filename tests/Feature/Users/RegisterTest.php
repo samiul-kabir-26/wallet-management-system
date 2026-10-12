@@ -2,12 +2,11 @@
 
 use App\Models\Role;
 use App\Models\User;
-use Database\Seeders\RoleSeeder;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
-    $this->seed(RoleSeeder::class);
+    $this->seedRolesAndPermissions();
 });
 
 /**

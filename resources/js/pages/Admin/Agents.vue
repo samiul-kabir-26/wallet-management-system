@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
+import { useAuthStore } from '@/stores/auth';
 import { useForm } from 'vee-validate';
 import { rate } from '@/composables/validators';
 import { api } from '@/services/api';
@@ -14,8 +15,9 @@ import Skeleton from '@/components/Skeleton.vue';
 import { useToastStore } from '@/stores/toast';
 import type { User } from '@/types/models';
 
-useAuthGuard('ADMIN');
+useAuthGuard('ADMIN', 'agents.approve');
 
+const authStore = useAuthStore();
 const agents = ref<User[]>([]);
 const loading = ref(true);
 const toast = useToastStore();
@@ -147,9 +149,9 @@ onMounted(() => {
                                 <td class="px-6 py-4 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                                     ৳{{ Number(a.agent_info?.total_commission ?? 0).toFixed(2) }}
                                 </td>
-                                <td class="px-6 py-4 text-right space-x-2">
+                                <td v-if="authStore.can('agents.approve') || authStore.can('agents.suspend')" class="px-6 py-4 text-right space-x-2">
                                     <button
-                                        v-if="a.agent_info?.status !== 'APPROVED'"
+                                        v-if="a.agent_info?.status !== 'APPROVED' && authStore.can('agents.approve')"
                                         type="button"
                                         class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 shadow-xs"
                                         @click="openApproveModal(a)"
@@ -157,13 +159,16 @@ onMounted(() => {
                                         Approve
                                     </button>
                                     <button
-                                        v-if="a.agent_info?.status === 'APPROVED'"
+                                        v-if="a.agent_info?.status === 'APPROVED' && authStore.can('agents.suspend')"
                                         type="button"
                                         class="rounded-md bg-rose-50 border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-400"
                                         @click="suspendTarget = a"
                                     >
                                         Suspend
                                     </button>
+                                </td>
+                                <td v-else class="px-6 py-4 text-right text-xs text-zinc-400">
+                                    -
                                 </td>
                             </tr>
                         </tbody>

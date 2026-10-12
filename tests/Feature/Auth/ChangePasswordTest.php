@@ -90,6 +90,7 @@ test('happy path with password-change token updates password, issues admin token
     $user = User::factory()->create([
         'password' => Hash::make('temp-password-123'),
         'password_changed_at' => null,
+        'pin' => null,
     ]);
     $user->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
 

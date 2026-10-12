@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
+import { useAuthStore } from '@/stores/auth';
 import { parseApiError } from '@/composables/useApiError';
 import { rate } from '@/composables/validators';
 import { api } from '@/services/api';
@@ -13,6 +14,7 @@ import TextField from '@/components/Forms/TextField.vue';
 
 useAuthGuard('ADMIN');
 
+const authStore = useAuthStore();
 const toast = useToastStore();
 const loading = ref(true);
 const saving = ref(false);
@@ -113,7 +115,7 @@ onMounted(() => {
                         </div>
                     </div>
 
-                    <div class="flex justify-end border-t border-zinc-100 pt-6 dark:border-zinc-800">
+                    <div v-if="authStore.can('settings.update')" class="flex justify-end border-t border-zinc-100 pt-6 dark:border-zinc-800">
                         <button
                             type="submit"
                             :disabled="saving"

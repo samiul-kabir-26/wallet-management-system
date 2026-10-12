@@ -28,6 +28,7 @@ Route::prefix('agent')->name('agent.')->group(function (): void {
 Route::prefix('admin')->name('admin.')->group(function (): void {
     Route::inertia('/dashboard', 'Admin/Dashboard')->name('dashboard');
     Route::inertia('/users', 'Admin/Users')->name('users');
+    Route::inertia('/roles', 'Admin/Roles')->name('roles');
     Route::inertia('/agents', 'Admin/Agents')->name('agents');
     Route::inertia('/wallets', 'Admin/Wallets')->name('wallets');
     Route::inertia('/transactions', 'Admin/Transactions')->name('transactions');

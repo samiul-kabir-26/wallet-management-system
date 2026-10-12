@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+use Modules\Roles\Enums\Permission as PermissionEnum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -34,6 +35,42 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->configureRateLimiting();
         $this->configureAuthorizationLogging();
+        $this->configurePermissionsAndGates();
+    }
+
+    /**
+     * Configure dynamic permission gates and super admin bypass.
+     *
+     * Two-part authorization check:
+     *   1. Token ability is 'admin' (Sanctum defense in depth).
+     *   2. User is SUPER_ADMIN -> bypasses via Gate::before (only if 1 holds).
+     *   3. Some role the user holds has the permission -> User::hasPermission.
+     *
+     * Notes:
+     *   - Gate::before returning true short-circuits. Returning null falls through.
+     *     Never return false from Gate::before, as that would deny non-super-admin gates.
+     *   - tokenCan('admin') is checked inside Gate::before and each Gate definition
+     *     so that PIN-issued or customer tokens cannot exercise admin permissions.
+     */
+    protected function configurePermissionsAndGates(): void
+    {
+        Gate::before(function (User $user, string $ability): ?bool {
+            if (PermissionEnum::tryFrom($ability) !== null && $user->tokenCan('admin') && $user->isSuperAdmin()) {
+                return true;
+            }
+
+            return null;
+        });
+
+        foreach (PermissionEnum::cases() as $permission) {
+            Gate::define($permission->value, function (User $user) use ($permission): bool {
+                if ($permission->isSuperAdminOnly()) {
+                    return false;
+                }
+
+                return $user->tokenCan('admin') && $user->hasPermission($permission);
+            });
+        }
     }
 
     /**

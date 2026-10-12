@@ -3,6 +3,7 @@
 namespace Modules\Users\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
@@ -33,7 +34,7 @@ class UserController extends Controller
         $this->authorize('viewAny', User::class);
 
         $validated = $request->validate([
-            'role' => ['sometimes', 'string', Rule::in(['SUPER_ADMIN', 'ADMIN', 'MODERATOR', 'AGENT', 'USER'])],
+            'role' => ['sometimes', 'string', Rule::exists('roles', 'name')],
             'is_active' => ['sometimes', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
             'is_verified' => ['sometimes', 'boolean'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
@@ -82,12 +83,6 @@ class UserController extends Controller
      */
     public function register(RegisterUserRequest $request): JsonResponse
     {
-        // Escalation check: Only SUPER_ADMIN can register an account with role=ADMIN.
-        // Runs safely AFTER FormRequest validation has confirmed 'role' is valid.
-        if ($request->validated('role') === 'ADMIN') {
-            $this->authorize('createAdmin', User::class);
-        }
-
         $user = $this->userService->register(
             data: $request->validated(),
             actor: $request->user(),

@@ -22,6 +22,7 @@ test('complete case B lifecycle: grant access -> accept invite -> change passwor
         'email' => null,
         'is_verified' => true,
         'password' => null,
+        'pin' => null,
         'password_changed_at' => null,
     ]);
 
@@ -38,6 +39,7 @@ test('complete case B lifecycle: grant access -> accept invite -> change passwor
 
     $grantResponse = $this->patchJson("/api/v1/users/{$target->id}/grant-admin-access", [
         'email' => 'newadmin@domain.com',
+        'role' => 'ADMIN',
     ]);
     $grantResponse->assertOk();
 

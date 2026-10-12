@@ -31,7 +31,7 @@ class AdminAuthService
     {
         $user = User::where('email', $email)->first();
 
-        if (! $user || $user->is_active !== 'ACTIVE' || ! $user->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+        if (! $user || $user->is_active !== 'ACTIVE' || ! $user->hasAdminPanelRole()) {
             return;
         }
 
@@ -64,7 +64,7 @@ class AdminAuthService
             throw new AccountInactiveException;
         }
 
-        if (! $user->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+        if (! $user->hasAdminPanelRole()) {
             throw new InsufficientRoleException;
         }
 
@@ -115,7 +115,7 @@ class AdminAuthService
             throw new AccountInactiveException;
         }
 
-        if (! $user->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+        if (! $user->hasAdminPanelRole()) {
             throw new InsufficientRoleException;
         }
 
@@ -150,7 +150,7 @@ class AdminAuthService
             throw new AccountInactiveException;
         }
 
-        if (! $user->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+        if (! $user->hasAdminPanelRole()) {
             throw new InsufficientRoleException;
         }
 

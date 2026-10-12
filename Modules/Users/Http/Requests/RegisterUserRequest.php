@@ -2,16 +2,16 @@
 
 namespace Modules\Users\Http\Requests;
 
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\In;
-use Illuminate\Validation\Rules\Unique;
+use Modules\Roles\Enums\RolePanel;
 
 class RegisterUserRequest extends FormRequest
 {
     /**
-     * Only ADMIN/SUPER_ADMIN may register users; see UserPolicy::create().
+     * Only users with users.create permission may register users; see UserPolicy::create().
      */
     public function authorize(): bool
     {
@@ -21,39 +21,28 @@ class RegisterUserRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, array<int, string|In|Unique>>
+     * @return array<string, array<int, mixed>>
      */
     public function rules(): array
     {
+        $roleName = $this->input('role');
+        $role = is_string($roleName) ? Role::where('name', $roleName)->first() : null;
+        $isAdminPanel = $role !== null && (($role->panel instanceof RolePanel ? $role->panel->value : $role->panel) === RolePanel::Admin->value);
+
         return [
             'name' => ['required', 'string', 'min:2', 'max:255'],
-            'role' => ['required', 'string', Rule::in(['USER', 'AGENT', 'ADMIN', 'MODERATOR'])],
+            'role' => ['required', 'string', Rule::exists('roles', 'name')],
             'email' => [
-                'required_if:role,ADMIN,MODERATOR',
-                'prohibited_if:role,AGENT,USER',
-                'email',
-                'max:255',
-                Rule::unique('users', 'email'),
+                Rule::when($isAdminPanel, ['required', 'email', 'max:255', Rule::unique('users', 'email')], ['prohibited']),
             ],
             'password' => [
-                'required_if:role,ADMIN,MODERATOR',
-                'prohibited_if:role,AGENT,USER',
-                'string',
-                'min:8',
+                Rule::when($isAdminPanel, ['required', 'string', 'min:8'], ['prohibited']),
             ],
             'phone_number' => [
-                'required_if:role,AGENT,USER',
-                'prohibited_if:role,ADMIN,MODERATOR',
-                'string',
-                'regex:/^01[3-9]\d{8}$/',
-                Rule::unique('users', 'phone_number'),
+                Rule::when(! $isAdminPanel, ['required', 'string', 'regex:/^01[3-9]\d{8}$/', Rule::unique('users', 'phone_number')], ['prohibited']),
             ],
             'pin' => [
-                'required_if:role,AGENT,USER',
-                'prohibited_if:role,ADMIN,MODERATOR',
-                'string',
-                'digits_between:5,10',
-                'confirmed',
+                Rule::when(! $isAdminPanel, ['required', 'string', 'digits_between:5,10', 'confirmed'], ['prohibited']),
             ],
             'address' => ['nullable', 'string'],
         ];
@@ -69,18 +58,18 @@ class RegisterUserRequest extends FormRequest
         return [
             'phone_number.regex' => 'The phone number must be a valid 11-digit Bangladeshi mobile number.',
             'phone_number.unique' => 'This phone number is already registered.',
-            'phone_number.required_if' => 'The phone number is required for USER and AGENT accounts.',
-            'phone_number.prohibited_if' => 'The phone number cannot be provided during initial ADMIN or MODERATOR registration.',
-            'email.required_if' => 'The email is required for ADMIN and MODERATOR accounts.',
-            'email.prohibited_if' => 'The email cannot be provided during initial USER or AGENT registration.',
+            'phone_number.required' => 'The phone number is required for USER and AGENT accounts.',
+            'phone_number.prohibited' => 'The phone number cannot be provided during initial staff registration.',
+            'email.required' => 'The email is required for staff accounts.',
+            'email.prohibited' => 'The email cannot be provided during initial USER or AGENT registration.',
             'email.unique' => 'This email is already registered.',
-            'password.required_if' => 'A password is required for ADMIN and MODERATOR accounts.',
-            'password.prohibited_if' => 'A password cannot be set for USER or AGENT accounts.',
-            'pin.required_if' => 'A PIN is required for USER and AGENT accounts.',
-            'pin.prohibited_if' => 'A PIN cannot be set for ADMIN or MODERATOR accounts.',
+            'password.required' => 'A password is required for staff accounts.',
+            'password.prohibited' => 'A password cannot be set for USER or AGENT accounts.',
+            'pin.required' => 'A PIN is required for USER and AGENT accounts.',
+            'pin.prohibited' => 'A PIN cannot be set for staff accounts.',
             'pin.digits_between' => 'The PIN must be between 5 and 10 digits.',
             'pin.confirmed' => 'The PIN confirmation does not match.',
-            'role.in' => 'The selected role is invalid. Allowed roles are USER, AGENT, ADMIN, or MODERATOR.',
+            'role.exists' => 'The selected role is invalid.',
         ];
     }
 }

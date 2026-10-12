@@ -147,7 +147,7 @@ test('repeat login request invalidates previously active OTP', function () {
     $admin = User::factory()->create([
         'password' => Hash::make('secret_admin_pass'),
     ]);
-    $admin->roles()->attach(Role::where('name', 'MODERATOR')->first()->id, ['assigned_at' => now()]);
+    $admin->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
 
     // First request
     $this->postJson('/api/v1/auth/admin/login', [

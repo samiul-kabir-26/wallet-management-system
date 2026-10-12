@@ -6,6 +6,7 @@ import { useWalletStore } from '@/stores/wallet';
 import { useTransactionStore } from '@/stores/transactions';
 import { useUserStore } from '@/stores/user';
 import type { User } from '@/types/models';
+import type { PermissionName } from '@/types/permissions';
 
 function getInitialUser(): User | null {
     if (typeof window === 'undefined') {
@@ -19,11 +20,32 @@ function getInitialUser(): User | null {
     }
 }
 
+function getInitialPermissions(): string[] {
+    if (typeof window === 'undefined') {
+        return [];
+    }
+    try {
+        const stored = localStorage.getItem('permissions');
+        if (stored) {
+            return JSON.parse(stored) as string[];
+        }
+        const userStored = localStorage.getItem('user');
+        if (userStored) {
+            const u = JSON.parse(userStored);
+            return Array.isArray(u.permissions) ? (u.permissions as string[]) : [];
+        }
+        return [];
+    } catch {
+        return [];
+    }
+}
+
 export const useAuthStore = defineStore('auth', () => {
     const token = ref<string | null>(
         typeof window !== 'undefined' ? localStorage.getItem('token') : null,
     );
     const user = ref<User | null>(getInitialUser());
+    const permissions = ref<string[]>(getInitialPermissions());
     const loading = ref<boolean>(false);
     const error = ref<string | null>(null);
 
@@ -31,33 +53,47 @@ export const useAuthStore = defineStore('auth', () => {
     const roles = computed<string[]>(() => user.value?.roles ?? []);
     const isUser = computed<boolean>(() => roles.value.includes('USER'));
     const isAgent = computed<boolean>(() => roles.value.includes('AGENT'));
-    const isAdmin = computed<boolean>(() =>
-        roles.value.some((r) => ['SUPER_ADMIN', 'ADMIN', 'MODERATOR'].includes(r)),
-    );
     const isSuperAdmin = computed<boolean>(() =>
         roles.value.includes('SUPER_ADMIN'),
+    );
+    const isAdmin = computed<boolean>(() =>
+        isSuperAdmin.value ||
+        roles.value.includes('ADMIN') ||
+        permissions.value.length > 0 ||
+        roles.value.some((r) => !['USER', 'AGENT'].includes(r)),
     );
 
     const hasRole = (role: string): boolean => roles.value.includes(role);
 
+    const can = (permission: PermissionName): boolean => {
+        if (isSuperAdmin.value) {
+            return true;
+        }
+        return permissions.value.includes(permission);
+    };
+
     const setAuth = (newToken: string, newUser: User): void => {
         token.value = newToken;
         user.value = newUser;
+        permissions.value = Array.isArray(newUser.permissions) ? newUser.permissions : [];
         if (typeof window !== 'undefined') {
             localStorage.setItem('token', newToken);
             localStorage.setItem('user', JSON.stringify(newUser));
+            localStorage.setItem('permissions', JSON.stringify(permissions.value));
         }
     };
 
     const clearAuth = (): void => {
         token.value = null;
         user.value = null;
+        permissions.value = [];
         useWalletStore().reset();
         useTransactionStore().reset();
         useUserStore().reset();
         if (typeof window !== 'undefined') {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
+            localStorage.removeItem('permissions');
         }
     };
 
@@ -177,15 +213,16 @@ export const useAuthStore = defineStore('auth', () => {
             return null;
         }
         try {
-            // Note: Users can view their own profile via GET /users/:id or me
-            if (user.value?.id) {
-                const res = await api.get(`/users/${user.value.id}`);
-                const updatedUser = res.data.data?.user || res.data.data;
-                if (updatedUser) {
-                    user.value = { ...user.value, ...updatedUser };
-                    if (typeof window !== 'undefined') {
-                        localStorage.setItem('user', JSON.stringify(user.value));
-                    }
+            const res = await api.get('/auth/me');
+            const updatedUser = res.data.data?.user || res.data.data;
+            if (updatedUser) {
+                user.value = { ...user.value, ...updatedUser };
+                if (Array.isArray(updatedUser.permissions)) {
+                    permissions.value = updatedUser.permissions;
+                }
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem('user', JSON.stringify(user.value));
+                    localStorage.setItem('permissions', JSON.stringify(permissions.value));
                 }
             }
             return user.value;
@@ -212,6 +249,7 @@ export const useAuthStore = defineStore('auth', () => {
     return {
         token,
         user,
+        permissions,
         loading,
         error,
         isAuthenticated,
@@ -221,6 +259,7 @@ export const useAuthStore = defineStore('auth', () => {
         isAdmin,
         isSuperAdmin,
         hasRole,
+        can,
         setAuth,
         clearAuth,
         loginUser,

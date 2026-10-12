@@ -3,13 +3,12 @@
 use App\Models\AuditLog;
 use App\Models\Role;
 use App\Models\User;
-use Database\Seeders\RoleSeeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\URL;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
-    $this->seed(RoleSeeder::class);
+    $this->seedRolesAndPermissions();
 });
 
 /*
@@ -46,7 +45,7 @@ test('caller with admin ability but lacking staff role is rejected with 403 by s
 
 test('initiate-pin-reset returns 404 when target phone number is not found', function () {
     $moderator = User::factory()->create();
-    $moderator->roles()->attach(Role::where('name', 'MODERATOR')->first()->id, ['assigned_at' => now()]);
+    $moderator->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
 
     Sanctum::actingAs($moderator, ['admin']);
 
@@ -65,7 +64,7 @@ test('initiate-pin-reset returns 404 when target phone number is not found', fun
 
 test('initiate-pin-reset returns 422 when target user has no PIN configured', function () {
     $moderator = User::factory()->create();
-    $moderator->roles()->attach(Role::where('name', 'MODERATOR')->first()->id, ['assigned_at' => now()]);
+    $moderator->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
 
     $target = User::factory()->create(['pin' => null]);
 
@@ -86,7 +85,7 @@ test('initiate-pin-reset returns 422 when target user has no PIN configured', fu
 
 test('initiate-pin-reset returns 403 when target account is inactive', function () {
     $moderator = User::factory()->create();
-    $moderator->roles()->attach(Role::where('name', 'MODERATOR')->first()->id, ['assigned_at' => now()]);
+    $moderator->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
 
     $target = User::factory()->create([
         'pin' => Hash::make('12345'),
@@ -110,7 +109,7 @@ test('initiate-pin-reset returns 403 when target account is inactive', function 
 
 test('initiate-pin-reset fails validation when recovery email is already taken', function () {
     $moderator = User::factory()->create();
-    $moderator->roles()->attach(Role::where('name', 'MODERATOR')->first()->id, ['assigned_at' => now()]);
+    $moderator->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
 
     User::factory()->create(['email' => 'taken@example.com']);
     $target = User::factory()->create(['pin' => Hash::make('12345')]);
@@ -126,7 +125,7 @@ test('initiate-pin-reset fails validation when recovery email is already taken',
 
 test('moderator can initiate pin reset, attaching email and recording audit log', function () {
     $moderator = User::factory()->create();
-    $moderator->roles()->attach(Role::where('name', 'MODERATOR')->first()->id, ['assigned_at' => now()]);
+    $moderator->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
 
     $target = User::factory()->create([
         'email' => null,

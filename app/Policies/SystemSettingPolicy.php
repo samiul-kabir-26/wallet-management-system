@@ -27,6 +27,6 @@ class SystemSettingPolicy
      */
     public function update(User $user): bool
     {
-        return $user->isAdmin() && $user->tokenCan('admin');
+        return $user->can('settings.update');
     }
 }

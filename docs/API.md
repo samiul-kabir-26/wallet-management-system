@@ -208,6 +208,7 @@ All API responses follow a consistent JSON envelope structure.
         "name": "Super Admin",
         "email": "admin@wallet.local",
         "roles": ["SUPER_ADMIN"],
+        "permissions": ["users.view_any", "users.view", "..."],
         "is_active": "ACTIVE"
       },
       "token": "13|sanctum_token...",
@@ -217,6 +218,29 @@ All API responses follow a consistent JSON envelope structure.
   }
   ```
 - **Error Codes:** 401 (Invalid/expired OTP, lockout after 5 attempts).
+
+---
+
+### 2.5b Authenticated User Profile (`/me`)
+- **Method & Route:** `GET /api/v1/auth/me`
+- **Access:** Authenticated (`ability:admin,agent,user`, `password.changed`)
+- **Description:** Returns profile and effective permissions for current authenticated user.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "user": {
+        "id": 1,
+        "name": "Super Admin",
+        "email": "admin@wallet.local",
+        "roles": ["SUPER_ADMIN"],
+        "permissions": ["users.view_any", "users.create", "wallets.block", "..."],
+        "is_active": "ACTIVE"
+      }
+    }
+  }
+  ```
 
 ---
 
@@ -488,10 +512,10 @@ All API responses follow a consistent JSON envelope structure.
 - **Request Body:**
   ```json
   {
-    "name": "Moderator Staff",
+    "name": "Staff Admin",
     "phone_number": "01733445566",
-    "role": "MODERATOR",
-    "email": "mod@wallet.local"
+    "role": "ADMIN",
+    "email": "admin@wallet.local"
   }
   ```
 - **Response (201 Created):**
@@ -502,10 +526,10 @@ All API responses follow a consistent JSON envelope structure.
     "data": {
       "user": {
         "id": 17,
-        "name": "Moderator Staff",
-        "email": "mod@wallet.local",
+        "name": "Staff Admin",
+        "email": "admin@wallet.local",
         "phone_number": "01733445566",
-        "roles": ["MODERATOR"]
+        "roles": ["ADMIN"]
       }
     }
   }
@@ -1082,3 +1106,155 @@ All API responses follow a consistent JSON envelope structure.
   }
   ```
 - **Error Codes:** 403 (Non-admin token), 422 (Rate must be between 0 and 1).
+
+---
+
+## 7. Dynamic Roles & Permissions Endpoints
+
+Granular permission catalog and dynamic admin-panel role management. Access requires an admin token (`ability:admin`) and the respective catalog permission (defense-in-depth).
+
+### 7.1 List Permissions Catalog
+- **Method & Route:** `GET /api/v1/permissions`
+- **Access:** Authenticated admin staff (`roles.view`)
+- **Description:** Returns the complete 16-permission catalog flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "permissions": [
+        { "id": 1, "name": "users.view_any", "label": "View any user", "description": "View any user", "group": "Users", "is_super_admin_only": false },
+        { "id": 3, "name": "users.grant_admin_access", "label": "Grant admin access to users", "description": "Grant admin access to users", "group": "Users", "is_super_admin_only": true }
+      ],
+      "grouped": {
+        "Users": [
+          { "id": 1, "name": "users.view_any", "label": "View any user", "description": "View any user", "group": "Users", "is_super_admin_only": false },
+          { "id": 3, "name": "users.grant_admin_access", "label": "Grant admin access to users", "description": "Grant admin access to users", "group": "Users", "is_super_admin_only": true }
+        ]
+      }
+    }
+  }
+  ```
+
+---
+
+### 7.2 List Roles
+- **Method & Route:** `GET /api/v1/roles`
+- **Access:** Authenticated admin staff (`roles.view`)
+- **Query Params:**
+  - `panel` (optional, string: `admin`, `agent`, `user`)
+  - `per_page` (optional, integer: 1-100)
+  - `page` (optional, integer)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "roles": [
+        {
+          "id": 1,
+          "name": "SUPER_ADMIN",
+          "description": "Platform super administrator",
+          "panel": "admin",
+          "is_system": true,
+          "users_count": 1,
+          "permissions_count": 0
+        }
+      ]
+    }
+  }
+  ```
+
+---
+
+### 7.3 Create Custom Role
+- **Method & Route:** `POST /api/v1/roles`
+- **Access:** Admin staff with `roles.manage` (Subject to anti-escalation)
+- **Description:** Creates a new custom role with `panel = admin`.
+- **Request Body:**
+  ```json
+  {
+    "name": "AUDITOR",
+    "description": "Audit transactions and review logs only",
+    "permissions": ["transactions.view_any", "wallets.view_any"]
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Role created successfully.",
+    "data": {
+      "role": {
+        "id": 5,
+        "name": "AUDITOR",
+        "description": "Audit transactions and review logs only",
+        "panel": "admin",
+        "is_system": false,
+        "permissions": [ ... ]
+      }
+    }
+  }
+  ```
+- **Error Codes:**
+  - `403 Forbidden`: Anti-escalation violation (e.g. attempting to grant permissions actor does not possess).
+  - `422 Unprocessable Content`: Role name invalid format or duplicate.
+
+---
+
+### 7.4 Get Role Details
+- **Method & Route:** `GET /api/v1/roles/{role}`
+- **Access:** Admin staff (`roles.view`)
+- **Response (200 OK):** Detailed role model including eager-loaded `permissions`.
+
+---
+
+### 7.5 Update Role Meta
+- **Method & Route:** `PUT /api/v1/roles/{role}`
+- **Access:** Admin staff with `roles.manage`
+- **Request Body:**
+  ```json
+  {
+    "name": "AUDITOR_SENIOR",
+    "description": "Senior audit staff"
+  }
+  ```
+- **Response (200 OK):** Updated role resource.
+- **Error Codes:**
+  - `403 Forbidden`: Attempting to rename a system role (`is_system = true`).
+
+---
+
+### 7.6 Sync Role Permissions
+- **Method & Route:** `PUT /api/v1/roles/{role}/permissions`
+- **Access:** Admin staff with `roles.manage` (Subject to anti-escalation)
+- **Description:** Atomically synchronizes permissions for a role with audit logging.
+- **Request Body:**
+  ```json
+  {
+    "permissions": ["transactions.view_any"]
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Role permissions updated successfully.",
+    "data": {
+      "role": { "id": 5, "name": "AUDITOR", "permissions": [ ... ] }
+    }
+  }
+  ```
+- **Error Codes:**
+  - `403 Forbidden`: Escalation attempt (`added ∪ removed ⊈ actor_permissions`), self-modification attempt, or modifying system role without super-admin.
+
+---
+
+### 7.7 Delete Role
+- **Method & Route:** `DELETE /api/v1/roles/{role}`
+- **Access:** Admin staff with `roles.manage`
+- **Response (204 No Content)**
+- **Error Codes:**
+  - `403 Forbidden`: Attempting to delete a system role (`is_system = true`) or a role the actor currently holds.
+  - `409 Conflict`: Role is currently assigned to one or more users (`users_count > 0`).
+

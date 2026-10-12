@@ -10,7 +10,7 @@ import Pagination from '@/components/Pagination.vue';
 import Alert from '@/components/Alert.vue';
 import type { Pagination as PaginationType, Transaction } from '@/types/models';
 
-useAuthGuard('ADMIN');
+useAuthGuard('ADMIN', 'transactions.view_any');
 
 const transactions = ref<Transaction[]>([]);
 const pagination = ref<PaginationType | null>(null);

@@ -12,7 +12,7 @@ The API utilizes **Laravel Sanctum** token-based authentication. No session cook
 Every issued access token is explicitly scoped with one or more abilities matching the caller's role and state:
 - `user`: Granted to standard customers upon PIN login or registration. Can execute customer financial operations (`top-up`, `transfer`, `cash-in`, `cash-out`) and view personal wallet/history.
 - `agent`: Granted to verified, approved agents upon PIN login. Can execute `agent/withdrawal`, accept cash-in/cash-out, and view agent history.
-- `admin`: Granted to administrative staff (`SUPER_ADMIN`, `ADMIN`, `MODERATOR`) after completing password + 2FA OTP verification and satisfying mandatory password changes.
+- `admin`: Granted to administrative staff (`SUPER_ADMIN`, `ADMIN`, or custom staff roles) after completing password + 2FA OTP verification and satisfying mandatory password changes.
 - `password-change`: Restricted ability issued to invited staff upon accepting an invitation; can only call `POST /api/v1/auth/change-password`.
 
 ---
@@ -47,7 +47,7 @@ Customers (`USER`) and Agents (`AGENT`) authenticate using their **phone number*
 
 ## 3. Administrative Authentication (Password + 2FA OTP)
 
-Administrative users (`SUPER_ADMIN`, `ADMIN`, `MODERATOR`) require a two-step multi-factor authentication flow.
+Administrative users (`SUPER_ADMIN`, `ADMIN`, or custom staff roles) require a two-step multi-factor authentication flow.
 
 ### Step 1: Identifier + Password Verification
 - **Endpoint:** `POST /api/v1/auth/admin/login`
@@ -73,6 +73,8 @@ Because role and credential are fundamentally distinct (holding an admin role do
 ### 4.1 Case A — Admin Self-Service PIN Setup via OTP
 An existing administrator already proved identity via password + 2FA, but needs a second credential (PIN) to access customer/agent features. A stolen admin token must not allow minting a PIN without email verification.
 
+**Precondition & Credential Protection:** Setting a PIN is strictly restricted to accounts that have no existing PIN (`pin === null`). If a PIN is already set, both `request-otp` and `set-pin` reject the request with HTTP 409 (`PinAlreadySetException`). Overwriting existing PINs is disallowed to protect customer wallet credentials against elevated session misuse; existing PIN resets must go through Case C.
+
 1. **Request OTP:**
    - **Endpoint:** `POST /api/v1/auth/set-pin/request-otp`
    - **Access:** Admin token (`ability:admin`, `password.changed`)
@@ -88,6 +90,12 @@ An existing administrator already proved identity via password + 2FA, but needs 
 
 ### 4.2 Case B — User Elevated to Admin via Signed Invite
 An existing customer or new staff member is granted administrative permissions. This is the highest-risk transition and enforces a temporary password and mandatory first-login password change.
+
+**Privilege Protection & Anti-Escalation:**
+- The permission `users.grant_admin_access` is non-delegable (`isSuperAdminOnly()`). It cannot be attached to any role by anyone (including `SUPER_ADMIN`). In the authorization layer, `Gate::define` unconditionally denies it, ensuring only `SUPER_ADMIN` via `Gate::before` can execute this endpoint.
+- Target user cannot already possess staff access or an active password (HTTP 409 `UserAlreadyHasStaffAccessException`). If staff access is already present, staff roles must be granted via `users.assign_role`.
+- Target user must have a verified phone number (`is_verified = true`).
+- Caller cannot grant administrative access to themselves.
 
 1. **Grant Access & Send Invite:**
    - **Endpoint:** `PATCH /api/v1/users/{user}/grant-admin-access`
@@ -160,3 +168,49 @@ When exceeded, the API responds with HTTP 429 and standardized JSON:
 ### 5.2 Session Revocation
 - **Logout:** `POST /api/v1/auth/logout` deletes only the current `personal_access_tokens` record, allowing multi-device isolation without invalidating concurrent sessions.
 - **Password Reset:** When an administrator resets their password via `POST /api/v1/auth/reset-password`, all existing tokens are purged (`$user->tokens()->delete()`).
+
+---
+
+## 6. Authorization & Dynamic Permissions Architecture
+
+The system enforces a **two-part defense-in-depth authorization model** that decouples roles from hardcoded abilities and prevents privilege escalation.
+
+### 6.1 Two-Part Authorization Check
+Every privileged administrative gate (`Gate::define`) and policy method evaluates authorization through a strict decision tree:
+
+```text
+Incoming Request
+       │
+       ▼
+1. Sanctum Token Ability Check
+   Does $user->tokenCan('admin') evaluate to true?
+       ├── NO  ──> DENY (403 Forbidden)
+       │           (Prevents PIN-issued customer or agent tokens from exercising admin abilities)
+       └── YES
+            │
+            ▼
+2. Super Admin Bypass (Gate::before)
+   Does $user hold the SUPER_ADMIN role?
+       ├── YES ──> ALLOW (Short-circuits, zero rows in role_permissions table required)
+       └── NO
+            │
+            ▼
+3. Dynamic Role Permissions Check
+   Does any active role assigned to $user possess the required permission?
+       ├── YES ──> ALLOW
+       └── NO  ──> DENY (403 Forbidden)
+```
+
+### 6.2 Permission Resolution & Request Memoization (D9)
+- **Live Database Resolution:** No Redis/cache tag race conditions. When permissions are revoked or modified, changes take effect immediately on subsequent requests.
+- **Request-Scoped In-Memory Memoization:** Effective permissions are resolved and cached on the `User` model instance scoped to the active HTTP request (`spl_object_hash(request())`). Repeated checks within the same request lifecycle do not trigger duplicate database queries.
+
+### 6.3 Anti-Escalation Safeguards (D6, R1–R9)
+Administrators managing custom roles and user role assignments are bound by strict security boundaries:
+1. **Grant Boundary (R2):** An administrator cannot create a role or grant permissions that they do not personally possess.
+2. **Revoke Boundary (R3):** An administrator cannot remove a permission from another role if they do not personally hold that permission.
+3. **Self-Modification Boundary (R4):** An administrator cannot edit or delete any role they currently hold, preventing self-escalation or lockout.
+4. **Assignment Boundary (R5):** An administrator cannot assign a role whose permission set exceeds the administrator's own permissions, nor assign the `SUPER_ADMIN` role.
+5. **System Immutability (R1):** Built-in system roles (`SUPER_ADMIN`, `ADMIN`, `AGENT`, `USER`) cannot be renamed, repurposed, or deleted. System role permissions can only be altered by a `SUPER_ADMIN`.
+6. **Deletion Integrity (R7):** A custom role cannot be deleted while assigned to one or more active users (HTTP 409 Conflict).
+

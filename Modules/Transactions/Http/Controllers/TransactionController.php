@@ -150,7 +150,7 @@ class TransactionController extends Controller
         ]);
 
         $actor = $request->user();
-        $isStaff = $actor->isStaffWithAdminAccess();
+        $isStaff = $actor->can('transactions.view_any');
         $perPage = (int) ($validated['per_page'] ?? 15);
 
         if ($isStaff) {
@@ -195,7 +195,7 @@ class TransactionController extends Controller
         $this->authorize('view', $transaction);
 
         $actor = $request->user();
-        $isStaff = $actor->isStaffWithAdminAccess();
+        $isStaff = $actor->can('transactions.view_any');
 
         if (! $isStaff) {
             $wallet = $this->walletService->findWalletForToken($actor);

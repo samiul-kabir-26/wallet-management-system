@@ -4,12 +4,34 @@ export interface User {
     phone_number: string | null;
     email: string | null;
     roles: string[];
+    permissions?: string[];
     is_verified?: boolean;
     is_active?: string;
     created_at?: string;
     updated_at?: string;
     wallet?: Wallet | null;
     agent_info?: AgentInfo | null;
+}
+
+export interface PermissionCatalogItem {
+    id: number;
+    name: string;
+    label: string;
+    group: string;
+    is_super_admin_only?: boolean;
+}
+
+export interface RoleModel {
+    id: number;
+    name: string;
+    description: string | null;
+    panel: 'admin' | 'agent' | 'user';
+    is_system: boolean;
+    users_count?: number;
+    permissions_count?: number;
+    permissions?: PermissionCatalogItem[];
+    created_at?: string;
+    updated_at?: string;
 }
 
 export interface Caps {

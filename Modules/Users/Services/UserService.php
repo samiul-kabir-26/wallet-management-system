@@ -8,16 +8,21 @@ use App\Models\User;
 use App\Models\Wallet;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Modules\Roles\Enums\RolePanel;
+use Modules\Roles\Exceptions\PermissionEscalationException;
+use Modules\Roles\Services\RoleService;
 use Modules\SystemSettings\Services\SystemSettingService;
 use Modules\Users\Exceptions\AgentNotApprovedException;
 use Modules\Users\Exceptions\AgentNotPendingException;
 use Modules\Users\Exceptions\UserInactiveException;
 use Modules\Users\Exceptions\UserNotAnAgentException;
+use Modules\Users\Exceptions\UserRequiresPasswordForStaffRoleException;
 
 class UserService
 {
     public function __construct(
         protected SystemSettingService $settingService,
+        protected RoleService $roleService,
     ) {}
 
     /**
@@ -28,13 +33,20 @@ class UserService
     public function register(array $data, User $actor): User
     {
         return DB::transaction(function () use ($data, $actor): User {
+            $role = Role::where('name', $data['role'])->firstOrFail();
+
+            // Anti-escalation check (D6 / R5): actor can only assign roles whose permissions they possess
+            $this->roleService->assertCanAssignRole($actor, $role);
+
+            $isAdminPanel = ($role->panel instanceof RolePanel ? $role->panel->value : $role->panel) === RolePanel::Admin->value;
+
             // 1. Prepare user attributes based on credential track
             $userData = [
                 'name' => $data['name'],
                 'address' => $data['address'] ?? null,
             ];
 
-            if (in_array($data['role'], ['ADMIN', 'MODERATOR'], true)) {
+            if ($isAdminPanel) {
                 $userData['email'] = $data['email'];
                 $userData['password'] = $data['password'];
             } else {
@@ -46,7 +58,7 @@ class UserService
             $user = User::create($userData);
 
             // 2. Create the initial wallet only for non-staff accounts (schema defaults: balance 50.00, currency BDT)
-            if (in_array($data['role'], ['USER', 'AGENT'], true)) {
+            if (! $isAdminPanel) {
                 $kind = $data['role'] === 'AGENT' ? Wallet::KIND_AGENT : Wallet::KIND_USER;
                 $user->wallets()->create([
                     'kind' => $kind,
@@ -62,7 +74,6 @@ class UserService
             }
 
             // 5. Assign the requested role with audit tracking
-            $role = Role::where('name', $data['role'])->firstOrFail();
             $user->roles()->attach($role->id, [
                 'assigned_at' => now(),
                 'assigned_by' => $actor->id,
@@ -74,23 +85,41 @@ class UserService
     }
 
     /**
-     * Assign an additional role to a user, initializing the corresponding wallet at 0.00 balance if needed.
+     * Assign an additional role to a user.
+     * Supports customer roles (AGENT, USER) and admin-panel roles for existing staff.
      *
      * @throws \InvalidArgumentException
      * @throws UserInactiveException
      * @throws AuthorizationException
+     * @throws UserRequiresPasswordForStaffRoleException
+     * @throws PermissionEscalationException
      */
     public function assignRole(User $user, string $roleName, ?User $actor = null): User
     {
-        if (! in_array($roleName, ['AGENT', 'USER'], true)) {
-            throw new \InvalidArgumentException("Role [{$roleName}] cannot be assigned via assignRole. Only AGENT and USER roles are supported.");
+        $role = Role::where('name', $roleName)->firstOrFail();
+
+        $isCustomerRole = in_array($roleName, ['AGENT', 'USER'], true);
+        $isAdminPanelRole = $role->panel === RolePanel::Admin;
+
+        if (! $isCustomerRole && ! $isAdminPanelRole) {
+            throw new \InvalidArgumentException("Role [{$roleName}] cannot be assigned via assignRole. Only customer roles (AGENT, USER) and admin-panel roles are supported.");
         }
 
         if ($actor !== null && $actor->id === $user->id) {
             throw new AuthorizationException('Administrators cannot assign roles to themselves.');
         }
 
-        return DB::transaction(function () use ($user, $roleName, $actor): User {
+        if ($isAdminPanelRole) {
+            if ($user->password === null) {
+                throw new UserRequiresPasswordForStaffRoleException;
+            }
+
+            if ($actor !== null) {
+                $this->roleService->assertCanAssignRole($actor, $role);
+            }
+        }
+
+        return DB::transaction(function () use ($user, $role, $isAdminPanelRole, $actor): User {
             /** @var User $lockedUser */
             $lockedUser = User::where('id', $user->id)->lockForUpdate()->firstOrFail();
 
@@ -98,7 +127,15 @@ class UserService
                 throw new UserInactiveException;
             }
 
-            $role = Role::where('name', $roleName)->firstOrFail();
+            if ($isAdminPanelRole) {
+                if ($lockedUser->password === null) {
+                    throw new UserRequiresPasswordForStaffRoleException;
+                }
+
+                if ($actor !== null) {
+                    $this->roleService->assertCanAssignRole($actor, $role);
+                }
+            }
 
             $alreadyHadRole = $lockedUser->roles()->where('roles.id', $role->id)->exists();
 
@@ -109,7 +146,7 @@ class UserService
                 ]);
             }
 
-            if ($roleName === 'AGENT') {
+            if ($role->name === 'AGENT') {
                 if (! $lockedUser->agentInfo()->exists()) {
                     $lockedUser->agentInfo()->create();
                 }
@@ -125,7 +162,7 @@ class UserService
                     $wallet->balance = '0.00';
                     $wallet->save();
                 }
-            } elseif ($roleName === 'USER') {
+            } elseif ($role->name === 'USER') {
                 if (! $lockedUser->cap()->exists()) {
                     $lockedUser->cap()->create();
                 }
@@ -146,7 +183,7 @@ class UserService
                     'auditable_type' => $lockedUser->getMorphClass(),
                     'auditable_id' => $lockedUser->id,
                     'metadata' => [
-                        'role' => $roleName,
+                        'role' => $role->name,
                         'assigned_by' => $actor?->id,
                     ],
                 ]);

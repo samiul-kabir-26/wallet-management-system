@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
+import { useAuthStore } from '@/stores/auth';
 import { required } from '@/composables/validators';
 import { api } from '@/services/api';
 import AdminLayout from '@/layouts/AdminLayout.vue';
@@ -12,8 +13,9 @@ import Skeleton from '@/components/Skeleton.vue';
 import { useToastStore } from '@/stores/toast';
 import type { Pagination as PaginationType, Wallet } from '@/types/models';
 
-useAuthGuard('ADMIN');
+useAuthGuard('ADMIN', 'wallets.view_any');
 
+const authStore = useAuthStore();
 const wallets = ref<Wallet[]>([]);
 const pagination = ref<PaginationType | null>(null);
 const loading = ref(true);
@@ -156,7 +158,7 @@ onMounted(() => {
                                 </td>
                                 <td class="px-6 py-4 text-right">
                                     <button
-                                        v-if="!w.is_blocked"
+                                        v-if="!w.is_blocked && authStore.can('wallets.block')"
                                         type="button"
                                         class="rounded-md bg-rose-50 border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-400"
                                         @click="openBlockModal(w)"
@@ -164,7 +166,7 @@ onMounted(() => {
                                         Freeze Wallet
                                     </button>
                                     <button
-                                        v-else
+                                        v-else-if="w.is_blocked && authStore.can('wallets.unblock')"
                                         type="button"
                                         class="rounded-md bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400"
                                         @click="openUnblockModal(w)"

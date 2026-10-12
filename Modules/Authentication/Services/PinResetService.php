@@ -25,8 +25,8 @@ class PinResetService
      */
     public function initiate(User $staffMember, string $phoneNumber, string $email): string
     {
-        // 1. Authorize: MODERATOR, ADMIN, or SUPER_ADMIN
-        if (! $staffMember->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+        // 1. Authorize: requires pin_reset.initiate permission
+        if (! $staffMember->can('pin_reset.initiate')) {
             throw new InsufficientRoleException;
         }
 

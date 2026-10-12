@@ -4,12 +4,11 @@ use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
-use Database\Seeders\RoleSeeder;
 use Database\Seeders\SystemSettingsSeeder;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
-    $this->seed(RoleSeeder::class);
+    $this->seedRolesAndPermissions();
     $this->seed(SystemSettingsSeeder::class);
 });
 

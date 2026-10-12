@@ -27,7 +27,7 @@ class TransactionResource extends JsonResource
     public function toArray(Request $request): array
     {
         $user = $request->user();
-        $isStaff = $user !== null && $user->isStaffWithAdminAccess();
+        $isStaff = $user !== null && $user->can('transactions.view_any');
 
         $hasViewerWallet = $request->attributes->has('viewer_wallet_id');
         $viewerWalletId = $request->attributes->get('viewer_wallet_id');

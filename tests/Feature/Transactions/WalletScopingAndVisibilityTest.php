@@ -5,13 +5,12 @@ use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
-use Database\Seeders\RoleSeeder;
 use Database\Seeders\SystemSettingsSeeder;
 use Laravel\Sanctum\Sanctum;
 use Modules\Transactions\Resources\TransactionResource;
 
 beforeEach(function () {
-    $this->seed(RoleSeeder::class);
+    $this->seedRolesAndPermissions();
     $this->seed(SystemSettingsSeeder::class);
 });
 
@@ -539,9 +538,9 @@ test('wallet id foreign keys are omitted for non-admins and present for admins',
         ->and(array_key_exists('sender_wallet_id', $adminRes->json('data.transaction')))->toBeTrue();
 });
 
-test('moderator with admin ability can inspect any transaction and audit history', function () {
+test('staff with admin ability can inspect any transaction and audit history', function () {
     $customer = createScopedUser('USER');
-    $moderator = createScopedUser('MODERATOR');
+    $staff = createScopedUser('ADMIN');
 
     Sanctum::actingAs($customer, ['user']);
     $res = $this->postJson('/api/v1/transactions/top-up', [
@@ -550,8 +549,8 @@ test('moderator with admin ability can inspect any transaction and audit history
     ])->assertStatus(201);
     $txId = $res->json('data.transaction.id');
 
-    // Moderator authenticated with 'admin' ability
-    Sanctum::actingAs($moderator, ['admin']);
+    // Staff authenticated with 'admin' ability
+    Sanctum::actingAs($staff, ['admin']);
     $historyRes = $this->getJson('/api/v1/transactions/history')->assertStatus(200);
     expect($historyRes->json('data.pagination.total'))->toBeGreaterThanOrEqual(1);
 

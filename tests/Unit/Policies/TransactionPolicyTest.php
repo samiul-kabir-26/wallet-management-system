@@ -4,7 +4,6 @@ use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Policies\TransactionPolicy;
-use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -12,7 +11,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->seed(RoleSeeder::class);
+    $this->seedRolesAndPermissions();
     $this->policy = new TransactionPolicy;
 });
 
@@ -31,7 +30,7 @@ function createUserWithRole(string $roleName, ?array $abilities = null): User
     }
 
     $abilities ??= match ($roleName) {
-        'ADMIN', 'SUPER_ADMIN', 'MODERATOR' => ['admin'],
+        'ADMIN', 'SUPER_ADMIN' => ['admin'],
         'AGENT' => ['agent'],
         default => ['user'],
     };
@@ -41,16 +40,14 @@ function createUserWithRole(string $roleName, ?array $abilities = null): User
     return $user;
 }
 
-test('viewAny is allowed for admin, super admin, and moderator, denied for regular user and agent', function () {
+test('viewAny is allowed for admin and super admin, denied for regular user and agent', function () {
     $admin = createUserWithRole('ADMIN');
     $superAdmin = createUserWithRole('SUPER_ADMIN');
-    $moderator = createUserWithRole('MODERATOR');
     $user = createUserWithRole('USER');
     $agent = createUserWithRole('AGENT');
 
     expect($this->policy->viewAny($admin))->toBeTrue()
         ->and($this->policy->viewAny($superAdmin))->toBeTrue()
-        ->and($this->policy->viewAny($moderator))->toBeTrue()
         ->and($this->policy->viewAny($user))->toBeFalse()
         ->and($this->policy->viewAny($agent))->toBeFalse();
 });

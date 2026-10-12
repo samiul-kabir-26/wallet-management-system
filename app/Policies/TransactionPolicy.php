@@ -13,7 +13,7 @@ class TransactionPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isStaffWithAdminAccess();
+        return $user->can('transactions.view_any');
     }
 
     /**
@@ -21,7 +21,7 @@ class TransactionPolicy
      */
     public function view(User $user, Transaction $transaction): bool
     {
-        if ($user->isStaffWithAdminAccess()) {
+        if ($user->can('transactions.view_any')) {
             return true;
         }
 

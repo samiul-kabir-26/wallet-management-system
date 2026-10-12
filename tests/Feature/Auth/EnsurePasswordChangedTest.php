@@ -56,6 +56,7 @@ test('admin who has changed password can access protected admin routes', functio
     $admin = User::factory()->create([
         'password' => Hash::make('current_password'),
         'password_changed_at' => now(),
+        'pin' => null,
     ]);
     $admin->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
 

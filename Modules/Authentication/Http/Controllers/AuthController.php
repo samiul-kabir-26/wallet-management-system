@@ -216,7 +216,10 @@ class AuthController extends Controller
             caller: $request->user(),
             target: $user,
             email: $request->email,
+            roleName: $request->string('role')->toString(),
         );
+
+        $user->refresh();
 
         return response()->json([
             'success' => true,
@@ -358,5 +361,21 @@ class AuthController extends Controller
         $user->load('roles');
 
         return new AuthResource($user, $token, ['admin'], 'Login successful');
+    }
+
+    /**
+     * Get the authenticated user profile with roles and effective permissions.
+     */
+    public function me(Request $request): AuthResource
+    {
+        $user = $request->user()->load('roles');
+        $abilities = $user->currentAccessToken()?->abilities ?? [];
+
+        return new AuthResource(
+            resource: $user,
+            token: null,
+            abilities: $abilities,
+            message: 'User profile retrieved successfully',
+        );
     }
 }

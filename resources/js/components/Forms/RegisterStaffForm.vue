@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useForm } from 'vee-validate';
 import { api } from '@/services/api';
 import { useToastStore } from '@/stores/toast';
 import { parseApiError } from '@/composables/useApiError';
 import { email, password, phone, required } from '@/composables/validators';
 import TextField from '@/components/Forms/TextField.vue';
+import type { RoleModel } from '@/types/models';
 
 const emit = defineEmits<{
     (e: 'registered'): void;
@@ -13,7 +14,25 @@ const emit = defineEmits<{
 }>();
 
 const toast = useToastStore();
-const role = ref<'ADMIN' | 'MODERATOR' | 'USER'>('ADMIN');
+const role = ref<string>('ADMIN');
+const availableRoles = ref<RoleModel[]>([]);
+const rolesLoading = ref<boolean>(true);
+
+onMounted(async () => {
+    try {
+        const res = await api.get('/roles', { params: { panel: 'admin', per_page: 100 } });
+        availableRoles.value = res.data.data?.roles ?? [];
+        if (availableRoles.value.length > 0 && !availableRoles.value.some((r) => r.name === role.value)) {
+            role.value = availableRoles.value[0].name;
+        }
+    } catch {
+        // Fallback default
+        availableRoles.value = [{ id: 0, name: 'ADMIN', description: 'Administrator', panel: 'admin', is_system: true }];
+    } finally {
+        rolesLoading.value = false;
+    }
+});
+
 const submitting = ref(false);
 
 const { handleSubmit, setErrors, resetForm } = useForm<{ name: string; email: string; phone: string; password: string }>({
@@ -67,11 +86,12 @@ const onSubmit = handleSubmit(async (values) => {
             <select
                 id="staff-role"
                 v-model="role"
-                class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                :disabled="rolesLoading"
+                class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 disabled:opacity-50"
             >
-                <option value="ADMIN">ADMIN</option>
-                <option value="MODERATOR">MODERATOR</option>
-                <option value="USER">USER</option>
+                <option v-for="r in availableRoles" :key="r.id" :value="r.name">
+                    {{ r.name }}{{ r.description ? ` (${r.description})` : '' }}
+                </option>
             </select>
         </div>
 
