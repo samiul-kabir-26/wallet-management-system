@@ -38,11 +38,11 @@ const onSubmit = handleSubmit(async (values) => {
             <div class="flex items-center gap-3 text-xs">
                 <label class="flex cursor-pointer items-center gap-1.5">
                     <input v-model="isAgentLogin" type="radio" :value="false" class="text-indigo-600 focus:ring-indigo-500" />
-                    <span>Customer</span>
+                    <span class="text-white">Customer</span>
                 </label>
                 <label class="flex cursor-pointer items-center gap-1.5">
                     <input v-model="isAgentLogin" type="radio" :value="true" class="text-indigo-600 focus:ring-indigo-500" />
-                    <span>Agent</span>
+                    <span class="text-white">Agent</span>
                 </label>
             </div>
         </div>
