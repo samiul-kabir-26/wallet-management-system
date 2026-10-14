@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Transaction;
 use App\Models\User;
+use Modules\Roles\Enums\Permission;
 use Modules\Wallets\Services\WalletService;
 
 class TransactionPolicy
@@ -74,5 +75,13 @@ class TransactionPolicy
     public function agentWithdrawal(User $user): bool
     {
         return $user->isAgent();
+    }
+
+    /**
+     * Determine whether the user can issue float to an agent.
+     */
+    public function issueFloat(User $user): bool
+    {
+        return $user->isAdmin() && $user->hasPermission(Permission::AgentsIssueFloat);
     }
 }

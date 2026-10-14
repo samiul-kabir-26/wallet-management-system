@@ -30,6 +30,7 @@ use Illuminate\Support\Facades\Log;
     'sender_wallet_id',
     'recipient_wallet_id',
     'agent_wallet_id',
+    'external_reference',
     'meta',
 ])]
 class Transaction extends Model

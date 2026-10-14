@@ -3,9 +3,10 @@
 use Illuminate\Support\Facades\Route;
 use Modules\Transactions\Http\Controllers\TransactionController;
 
-// ADMIN endpoints: admin audit
+// ADMIN endpoints: admin audit & float issue
 Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(function (): void {
     Route::get('/admin/all', [TransactionController::class, 'adminAll']);
+    Route::post('/admin/float-issue', [TransactionController::class, 'adminIssueFloat']);
 });
 
 // Common authenticated query endpoints: history

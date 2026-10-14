@@ -13,6 +13,7 @@ enum Permission: string
 
     case AgentsApprove = 'agents.approve';
     case AgentsSuspend = 'agents.suspend';
+    case AgentsIssueFloat = 'agents.issue_float';
 
     case WalletsViewAny = 'wallets.view_any';
     case WalletsBlock = 'wallets.block';
@@ -41,6 +42,7 @@ enum Permission: string
             self::UsersGrantAdminAccess => 'Grant administrative access invite to users',
             self::AgentsApprove => 'Approve pending agent applications',
             self::AgentsSuspend => 'Suspend active agents',
+            self::AgentsIssueFloat => 'Issue e-money float to agents against external bank deposit',
             self::WalletsViewAny => 'View any wallet in the system',
             self::WalletsBlock => 'Block active wallets',
             self::WalletsUnblock => 'Unblock suspended or blocked wallets',
@@ -66,7 +68,8 @@ enum Permission: string
             self::UsersGrantAdminAccess => 'Users',
 
             self::AgentsApprove,
-            self::AgentsSuspend => 'Agents',
+            self::AgentsSuspend,
+            self::AgentsIssueFloat => 'Agents',
 
             self::WalletsViewAny,
             self::WalletsBlock,

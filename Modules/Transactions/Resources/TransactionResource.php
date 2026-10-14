@@ -62,6 +62,7 @@ class TransactionResource extends JsonResource
             'description' => $this->resource->description,
             'status' => $this->resource->status,
             'idempotency_key' => $this->resource->idempotency_key,
+            'external_reference' => $this->resource->external_reference,
             'sender_wallet_balance_after' => $this->when(
                 $showSender,
                 fn () => $this->resource->sender_wallet_balance_after !== null

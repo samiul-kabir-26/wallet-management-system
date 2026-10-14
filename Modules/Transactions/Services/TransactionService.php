@@ -3,6 +3,7 @@
 namespace Modules\Transactions\Services;
 
 use App\Models\AgentInfo;
+use App\Models\AuditLog;
 use App\Models\Cap;
 use App\Models\Transaction;
 use App\Models\User;
@@ -65,6 +66,7 @@ class TransactionService
         string $expectedAmount,
         ?int $expectedRecipientId = null,
         ?int $expectedAgentId = null,
+        ?string $expectedExternalReference = null,
     ): void {
         $amountMatches = bccomp((string) $existing->amount, (string) $expectedAmount, 2) === 0;
         $typeMatches = $existing->type === $expectedType;
@@ -75,6 +77,9 @@ class TransactionService
         }
         if ($expectedAgentId !== null) {
             $counterpartyMatches = $counterpartyMatches && (int) $existing->agent_id === (int) $expectedAgentId;
+        }
+        if ($expectedExternalReference !== null) {
+            $counterpartyMatches = $counterpartyMatches && $existing->external_reference === $expectedExternalReference;
         }
 
         if (! $typeMatches || ! $amountMatches || ! $counterpartyMatches) {
@@ -770,6 +775,157 @@ class TransactionService
         $toDate = $filters['to_date'] ?? $filters['date_to'] ?? null;
         if (! empty($toDate)) {
             $query->where('created_at', '<=', Carbon::parse($toDate)->endOfDay());
+        }
+    }
+
+    /**
+     * Issue e-money float to an approved agent by an authorized admin.
+     *
+     * @throws InvalidRecipientException
+     * @throws UserNotAnAgentException
+     * @throws AgentNotApprovedException
+     * @throws WalletNotFoundException
+     * @throws WalletBlockedException
+     * @throws InvalidAmountException
+     * @throws IdempotencyConflictException
+     */
+    public function issueFloat(
+        User $admin,
+        User $agent,
+        string|float $amount,
+        string $externalReference,
+        string $idempotencyKey,
+        ?string $description = null
+    ): Transaction {
+        if ($admin->id === $agent->id) {
+            throw new InvalidRecipientException('Cannot issue float to yourself.');
+        }
+
+        if ($agent->is_deleted) {
+            throw new UserNotFoundException('Agent user not found.');
+        }
+
+        if (! $agent->isAgent()) {
+            throw new UserNotAnAgentException;
+        }
+
+        if (! $agent->agentInfo || $agent->agentInfo->status !== 'APPROVED') {
+            throw new AgentNotApprovedException;
+        }
+
+        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
+
+        $existing = $this->findByIdempotencyKey($admin, $idempotencyKey);
+        if ($existing) {
+            $this->assertIdempotentParametersMatch(
+                existing: $existing,
+                expectedType: 'FLOAT_ISSUE',
+                expectedAmount: $formattedAmount,
+                expectedRecipientId: $agent->id,
+                expectedAgentId: $agent->id,
+                expectedExternalReference: $externalReference,
+            );
+
+            return $existing;
+        }
+
+        try {
+            return DB::transaction(function () use ($admin, $agent, $formattedAmount, $externalReference, $idempotencyKey, $description): Transaction {
+                $existing = $this->findByIdempotencyKey($admin, $idempotencyKey, lock: true);
+                if ($existing) {
+                    $this->assertIdempotentParametersMatch(
+                        existing: $existing,
+                        expectedType: 'FLOAT_ISSUE',
+                        expectedAmount: $formattedAmount,
+                        expectedRecipientId: $agent->id,
+                        expectedAgentId: $agent->id,
+                        expectedExternalReference: $externalReference,
+                    );
+
+                    return $existing;
+                }
+
+                $wallets = $this->walletService->lockWalletsForUsers([
+                    ['user_id' => $agent->id, 'kind' => Wallet::KIND_AGENT],
+                ]);
+
+                $agentWallet = $wallets->first();
+                if (! $agentWallet) {
+                    throw new WalletNotFoundException;
+                }
+
+                if ($agentWallet->is_blocked) {
+                    throw new WalletBlockedException;
+                }
+
+                $currentBalance = number_format((float) $agentWallet->balance, 2, '.', '');
+                $newBalance = bcadd($currentBalance, $formattedAmount, 2);
+                $agentWallet->balance = $newBalance;
+                $agentWallet->save();
+
+                $transaction = Transaction::create([
+                    'user_id' => $agent->id,
+                    'sender_id' => null,
+                    'recipient_id' => $agent->id,
+                    'agent_id' => $agent->id,
+                    'initiated_by' => $admin->id,
+                    'type' => 'FLOAT_ISSUE',
+                    'amount' => $formattedAmount,
+                    'system_fee_amount' => '0.00',
+                    'system_fee_rate' => '0.0000',
+                    'agent_commission_amount' => '0.00',
+                    'agent_commission_rate' => '0.0000',
+                    'currency' => $agentWallet->currency ?? 'BDT',
+                    'description' => $description,
+                    'status' => 'COMPLETED',
+                    'idempotency_key' => $idempotencyKey,
+                    'external_reference' => $externalReference,
+                    'sender_wallet_balance_after' => null,
+                    'recipient_wallet_balance_after' => $newBalance,
+                    'agent_wallet_balance_after' => $newBalance,
+                    'sender_wallet_id' => null,
+                    'recipient_wallet_id' => $agentWallet->id,
+                    'agent_wallet_id' => $agentWallet->id,
+                    'meta' => [
+                        'bank_deposit_reference' => $externalReference,
+                    ],
+                ]);
+
+                AuditLog::create([
+                    'actor_id' => $admin->id,
+                    'action' => 'FLOAT_ISSUED',
+                    'auditable_type' => $agent->getMorphClass(),
+                    'auditable_id' => $agent->id,
+                    'metadata' => [
+                        'transaction_id' => $transaction->id,
+                        'external_reference' => $externalReference,
+                        'amount' => $formattedAmount,
+                        'agent_wallet_id' => $agentWallet->id,
+                        'balance_before' => $currentBalance,
+                        'balance_after' => $newBalance,
+                        'description' => $description,
+                    ],
+                ]);
+
+                return $transaction;
+            });
+        } catch (UniqueConstraintViolationException|QueryException $e) {
+            $existing = $this->findByIdempotencyKey($admin, $idempotencyKey);
+            if ($existing) {
+                $this->assertIdempotentParametersMatch(
+                    existing: $existing,
+                    expectedType: 'FLOAT_ISSUE',
+                    expectedAmount: $formattedAmount,
+                    expectedRecipientId: $agent->id,
+                    expectedAgentId: $agent->id,
+                    expectedExternalReference: $externalReference,
+                );
+
+                return $existing;
+            }
+
+            throw $e;
         }
     }
 }

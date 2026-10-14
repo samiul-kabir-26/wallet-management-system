@@ -4,12 +4,14 @@ namespace Modules\Transactions\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
+use App\Models\User;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Modules\Transactions\Http\Requests\AgentCashInRequest;
 use Modules\Transactions\Http\Requests\AgentWithdrawalRequest;
 use Modules\Transactions\Http\Requests\CashOutRequest;
+use Modules\Transactions\Http\Requests\IssueFloatRequest;
 use Modules\Transactions\Http\Requests\TopUpRequest;
 use Modules\Transactions\Http\Requests\TransferRequest;
 use Modules\Transactions\Resources\TransactionResource;
@@ -214,7 +216,7 @@ class TransactionController extends Controller
         $this->authorize('viewAny', Transaction::class);
 
         $validated = $request->validate([
-            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT'],
+            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE'],
             'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,CANCELLED,REVERSED'],
             'user_id' => ['sometimes', 'integer', 'exists:users,id'],
             'sender_id' => ['sometimes', 'integer', 'exists:users,id'],
@@ -238,5 +240,39 @@ class TransactionController extends Controller
             $paginator,
             TransactionResource::collection($paginator),
         );
+    }
+
+    /**
+     * Issue e-money float to an approved agent by an authorized admin.
+     */
+    public function adminIssueFloat(IssueFloatRequest $request): JsonResponse
+    {
+        $agentId = $request->validated('agent_id');
+        if (! $agentId && $request->filled('agent_phone')) {
+            $agent = User::where('phone_number', $request->validated('agent_phone'))
+                ->where('is_deleted', false)
+                ->firstOrFail();
+        } else {
+            $agent = User::where('id', $agentId)
+                ->where('is_deleted', false)
+                ->firstOrFail();
+        }
+
+        $transaction = $this->transactionService->issueFloat(
+            admin: $request->user(),
+            agent: $agent,
+            amount: $request->validated('amount'),
+            externalReference: $request->validated('external_reference'),
+            idempotencyKey: $request->validated('idempotency_key'),
+            description: $request->validated('description'),
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Float issued successfully.',
+            'data' => [
+                'transaction' => new TransactionResource($transaction),
+            ],
+        ], 201);
     }
 }

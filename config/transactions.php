@@ -31,5 +31,9 @@ return [
             'min' => env('TRANSACTION_AGENT_WITHDRAWAL_MIN', 10.00),
             'max' => env('TRANSACTION_AGENT_WITHDRAWAL_MAX', 50000.00),
         ],
+        'float_issue' => [
+            'min' => env('TRANSACTION_FLOAT_ISSUE_MIN', 100.00),
+            'max' => env('TRANSACTION_FLOAT_ISSUE_MAX', 500000.00),
+        ],
     ],
 ];
