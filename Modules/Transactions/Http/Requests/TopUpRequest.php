@@ -22,8 +22,11 @@ class TopUpRequest extends FormRequest
      */
     public function rules(): array
     {
+        $min = config('transactions.limits.top_up.min', 10.00);
+        $max = config('transactions.limits.top_up.max', 50000.00);
+
         return [
-            'amount' => ['required', 'numeric', 'gt:0'],
+            'amount' => ['required', 'decimal:0,2', "min:{$min}", "max:{$max}"],
             'description' => ['nullable', 'string', 'max:500'],
             'idempotency_key' => ['required', 'string', 'max:255'],
         ];

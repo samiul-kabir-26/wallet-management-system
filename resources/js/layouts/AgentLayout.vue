@@ -10,6 +10,7 @@ const mobileMenuOpen = ref(false);
 
 const navItems = [
     { name: 'Dashboard', href: '/agent/dashboard' },
+    { name: 'Customer Cash-In', href: '/agent/cash-in' },
     { name: 'Transactions', href: '/agent/transactions' },
     { name: 'Bank Withdrawal', href: '/agent/withdrawal' },
 ];

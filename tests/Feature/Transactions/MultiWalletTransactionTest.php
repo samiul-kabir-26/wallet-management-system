@@ -39,11 +39,12 @@ test('a person holding both wallets: cash-in moves money only between the user U
     $userUserWallet = Wallet::factory()->for($user)->balance(100.00)->create();
     $userAgentWallet = Wallet::factory()->agent()->for($user)->balance(500.00)->create();
 
-    Sanctum::actingAs($user, ['user']);
+    Sanctum::actingAs($agent, ['agent']);
 
-    $response = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_phone' => $agent->phone_number,
+    $response = $this->postJson('/api/v1/transactions/agent/cash-in', [
+        'customer_phone' => $user->phone_number,
         'amount' => 200.00,
+        'pin' => '12345',
         'idempotency_key' => 'multi-wallet-cashin-01',
     ]);
 

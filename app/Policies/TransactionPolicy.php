@@ -45,11 +45,11 @@ class TransactionPolicy
     }
 
     /**
-     * Determine whether the user can initiate a cash-in.
+     * Determine whether the agent can initiate a cash-in.
      */
     public function cashIn(User $user): bool
     {
-        return $user->isUser();
+        return $user->isAgent();
     }
 
     /**

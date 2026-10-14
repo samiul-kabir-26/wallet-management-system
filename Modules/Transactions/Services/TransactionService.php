@@ -17,6 +17,7 @@ use Modules\Authentication\Exceptions\UserNotFoundException;
 use Modules\Authentication\Services\PinVerifier;
 use Modules\Transactions\Exceptions\DailyCapsExceededException;
 use Modules\Transactions\Exceptions\IdempotencyConflictException;
+use Modules\Transactions\Exceptions\InvalidAmountException;
 use Modules\Transactions\Exceptions\InvalidRecipientException;
 use Modules\Transactions\Exceptions\MonthlyCapsExceededException;
 use Modules\Users\Exceptions\AgentNotApprovedException;
@@ -82,11 +83,24 @@ class TransactionService
     }
 
     /**
+     * Guard that the formatted transaction amount is strictly greater than 0.00.
+     *
+     * @throws InvalidAmountException
+     */
+    protected function assertValidAmount(string $formattedAmount): void
+    {
+        if (bccomp($formattedAmount, '0.00', 2) <= 0) {
+            throw new InvalidAmountException('Transaction amount must be greater than 0.00.');
+        }
+    }
+
+    /**
      * Top-up user's own wallet balance.
      */
     public function topUp(User $user, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
     {
         $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
 
         $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
         if ($existing) {
@@ -160,6 +174,7 @@ class TransactionService
         }
 
         $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
 
         $existing = $this->findByIdempotencyKey($agent, $idempotencyKey);
         if ($existing) {
@@ -230,13 +245,8 @@ class TransactionService
      * @throws WalletBlockedException
      * @throws InsufficientBalanceException
      */
-    public function cashIn(User $user, string $agentPhone, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
+    public function cashIn(User $agent, string $customerPhone, string|float $amount, string $idempotencyKey, string $pin, ?string $description = null): Transaction
     {
-        $agent = User::with('agentInfo')->where('phone_number', $agentPhone)->first();
-        if (! $agent) {
-            throw new UserNotFoundException('Agent user not found.');
-        }
-
         if (! $agent->isAgent()) {
             throw new UserNotAnAgentException;
         }
@@ -245,84 +255,100 @@ class TransactionService
             throw new AgentNotApprovedException;
         }
 
-        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $customer = User::where('phone_number', $customerPhone)->where('is_deleted', false)->first();
+        if (! $customer) {
+            throw new UserNotFoundException('Customer user not found.');
+        }
 
-        $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
+        if ($customer->id === $agent->id) {
+            throw new InvalidRecipientException('You cannot cash-in to your own account.');
+        }
+
+        if (! $customer->isUser()) {
+            throw new InvalidRecipientException('Customer must have a user account.');
+        }
+
+        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
+
+        $existing = $this->findByIdempotencyKey($agent, $idempotencyKey);
         if ($existing) {
-            $this->assertIdempotentParametersMatch($existing, 'CASH_IN', $formattedAmount, expectedAgentId: $agent->id);
+            $this->assertIdempotentParametersMatch($existing, 'CASH_IN', $formattedAmount, expectedRecipientId: $customer->id, expectedAgentId: $agent->id);
 
             return $existing;
         }
 
+        $this->pinVerifier->verify($agent, $pin);
+
         try {
-            return DB::transaction(function () use ($user, $agent, $formattedAmount, $idempotencyKey, $description): Transaction {
-                $existing = $this->findByIdempotencyKey($user, $idempotencyKey, lock: true);
+            return DB::transaction(function () use ($agent, $customer, $formattedAmount, $idempotencyKey, $description): Transaction {
+                $existing = $this->findByIdempotencyKey($agent, $idempotencyKey, lock: true);
                 if ($existing) {
-                    $this->assertIdempotentParametersMatch($existing, 'CASH_IN', $formattedAmount, expectedAgentId: $agent->id);
+                    $this->assertIdempotentParametersMatch($existing, 'CASH_IN', $formattedAmount, expectedRecipientId: $customer->id, expectedAgentId: $agent->id);
 
                     return $existing;
                 }
 
                 // Deterministically lock both wallets ordered by wallet id
                 $wallets = $this->walletService->lockWalletsForUsers([
-                    ['user_id' => $user->id, 'kind' => Wallet::KIND_USER],
+                    ['user_id' => $customer->id, 'kind' => Wallet::KIND_USER],
                     ['user_id' => $agent->id, 'kind' => Wallet::KIND_AGENT],
                 ]);
 
-                $userWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $user->id && $w->kind === Wallet::KIND_USER);
+                $customerWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $customer->id && $w->kind === Wallet::KIND_USER);
                 $agentWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $agent->id && $w->kind === Wallet::KIND_AGENT);
 
-                if (! $userWallet || ! $agentWallet) {
+                if (! $customerWallet || ! $agentWallet) {
                     throw new WalletNotFoundException;
                 }
 
-                if ($userWallet->is_blocked || $agentWallet->is_blocked) {
+                if ($customerWallet->is_blocked || $agentWallet->is_blocked) {
                     throw new WalletBlockedException;
                 }
 
                 $agentBalance = number_format((float) $agentWallet->balance, 2, '.', '');
                 if (bccomp($agentBalance, $formattedAmount, 2) === -1) {
-                    throw new InsufficientBalanceException('Agent has insufficient wallet balance for cash-in.');
+                    throw new InsufficientBalanceException('Agent has insufficient float balance for cash-in.');
                 }
 
-                $userBalance = number_format((float) $userWallet->balance, 2, '.', '');
-                $newUserBalance = bcadd($userBalance, $formattedAmount, 2);
-                $userWallet->balance = $newUserBalance;
-                $userWallet->save();
+                $customerBalance = number_format((float) $customerWallet->balance, 2, '.', '');
+                $newCustomerBalance = bcadd($customerBalance, $formattedAmount, 2);
+                $customerWallet->balance = $newCustomerBalance;
+                $customerWallet->save();
 
                 $newAgentBalance = bcsub($agentBalance, $formattedAmount, 2);
                 $agentWallet->balance = $newAgentBalance;
                 $agentWallet->save();
 
                 return Transaction::create([
-                    'user_id' => $user->id,
+                    'user_id' => $customer->id,
                     'sender_id' => null,
-                    'recipient_id' => $user->id,
+                    'recipient_id' => $customer->id,
                     'agent_id' => $agent->id,
-                    'initiated_by' => $user->id,
+                    'initiated_by' => $agent->id,
                     'type' => 'CASH_IN',
                     'amount' => $formattedAmount,
                     'system_fee_amount' => '0.00',
                     'system_fee_rate' => '0.0000',
                     'agent_commission_amount' => '0.00',
                     'agent_commission_rate' => '0.0000',
-                    'currency' => $userWallet->currency ?? 'BDT',
+                    'currency' => $customerWallet->currency ?? 'BDT',
                     'description' => $description,
                     'status' => 'COMPLETED',
                     'idempotency_key' => $idempotencyKey,
                     'sender_wallet_balance_after' => null,
-                    'recipient_wallet_balance_after' => $newUserBalance,
+                    'recipient_wallet_balance_after' => $newCustomerBalance,
                     'agent_wallet_balance_after' => $newAgentBalance,
                     'sender_wallet_id' => null,
-                    'recipient_wallet_id' => $userWallet->id,
+                    'recipient_wallet_id' => $customerWallet->id,
                     'agent_wallet_id' => $agentWallet->id,
                     'meta' => null,
                 ]);
             });
         } catch (UniqueConstraintViolationException|QueryException $e) {
-            $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
+            $existing = $this->findByIdempotencyKey($agent, $idempotencyKey);
             if ($existing) {
-                $this->assertIdempotentParametersMatch($existing, 'CASH_IN', $formattedAmount, expectedAgentId: $agent->id);
+                $this->assertIdempotentParametersMatch($existing, 'CASH_IN', $formattedAmount, expectedRecipientId: $customer->id, expectedAgentId: $agent->id);
 
                 return $existing;
             }
@@ -361,6 +387,7 @@ class TransactionService
         }
 
         $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
 
         $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
         if ($existing) {
@@ -559,6 +586,7 @@ class TransactionService
         }
 
         $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
 
         $existing = $this->findByIdempotencyKey($sender, $idempotencyKey);
         if ($existing) {

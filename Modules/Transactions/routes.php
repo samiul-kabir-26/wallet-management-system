@@ -13,16 +13,16 @@ Route::middleware(['auth:sanctum', 'ability:admin,agent,user', 'password.changed
     Route::get('/history', [TransactionController::class, 'history']);
 });
 
-// USER endpoints: top-up, cash-in, cash-out, transfer
+// USER endpoints: top-up, cash-out, transfer
 Route::middleware(['auth:sanctum', 'ability:user', 'password.changed'])->group(function (): void {
     Route::post('/top-up', [TransactionController::class, 'topUp']);
-    Route::post('/cash-in', [TransactionController::class, 'cashIn']);
     Route::post('/cash-out', [TransactionController::class, 'cashOut']);
     Route::post('/transfer', [TransactionController::class, 'transfer']);
 });
 
-// AGENT endpoints: agent/withdrawal
+// AGENT endpoints: agent/cash-in, agent/withdrawal
 Route::middleware(['auth:sanctum', 'ability:agent', 'password.changed'])->group(function (): void {
+    Route::post('/agent/cash-in', [TransactionController::class, 'agentCashIn']);
     Route::post('/agent/withdrawal', [TransactionController::class, 'agentWithdrawal']);
 });
 

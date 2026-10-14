@@ -67,16 +67,21 @@ test('service operations populate exact wallet slots in database', function () {
         ->and($transferTx->recipient_wallet_id)->toBe($recipWallet->id)
         ->and($transferTx->agent_wallet_id)->toBeNull();
 
-    // 3. CASH_IN
-    $cashInRes = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_phone' => $agent->phone_number,
+    // 3. CASH_IN (Agent initiates cash-in to customer)
+    Sanctum::actingAs($agent, ['agent']);
+    $cashInRes = $this->postJson('/api/v1/transactions/agent/cash-in', [
+        'customer_phone' => $customer->phone_number,
         'amount' => 60.00,
+        'pin' => '12345',
         'idempotency_key' => 'slot-cashin-'.uniqid(),
     ])->assertStatus(201);
     $cashInTx = Transaction::findOrFail($cashInRes->json('data.transaction.id'));
     expect($cashInTx->sender_wallet_id)->toBeNull()
         ->and($cashInTx->recipient_wallet_id)->toBe($custWallet->id)
         ->and($cashInTx->agent_wallet_id)->toBe($agentWallet->id);
+
+    // Switch back to customer for cash-out
+    Sanctum::actingAs($customer, ['user']);
 
     // 4. CASH_OUT (creates CASH_OUT and COMMISSION_PAYOUT)
     $cashOutRes = $this->postJson('/api/v1/transactions/cash-out', [
@@ -436,26 +441,27 @@ test('operation responses for cash-in and cash-out return only caller balance af
     $customer = createScopedUser('USER');
     $agent = createScopedUser('AGENT');
 
-    // 1. Customer initiates cash-in
-    Sanctum::actingAs($customer, ['user']);
-    $cashInRes = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_phone' => $agent->phone_number,
+    // 1. Agent initiates cash-in
+    Sanctum::actingAs($agent, ['agent']);
+    $cashInRes = $this->postJson('/api/v1/transactions/agent/cash-in', [
+        'customer_phone' => $customer->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'op-mask-cashin-'.uniqid(),
     ])->assertStatus(201);
 
     $cashInTx = $cashInRes->json('data.transaction');
-    expect(array_key_exists('recipient_wallet_balance_after', $cashInTx))->toBeTrue()
-        ->and(array_key_exists('agent_wallet_balance_after', $cashInTx))->toBeFalse()
+    expect(array_key_exists('agent_wallet_balance_after', $cashInTx))->toBeTrue()
+        ->and(array_key_exists('recipient_wallet_balance_after', $cashInTx))->toBeFalse()
         ->and(array_key_exists('sender_wallet_balance_after', $cashInTx))->toBeFalse();
 
-    // Agent views the same cash-in row
-    Sanctum::actingAs($agent, ['agent']);
-    $agentViewCashIn = $this->getJson("/api/v1/transactions/{$cashInTx['id']}")->assertStatus(200);
-    $agentCashInData = $agentViewCashIn->json('data.transaction');
-    expect(array_key_exists('agent_wallet_balance_after', $agentCashInData))->toBeTrue()
-        ->and(array_key_exists('recipient_wallet_balance_after', $agentCashInData))->toBeFalse()
-        ->and(array_key_exists('sender_wallet_balance_after', $agentCashInData))->toBeFalse();
+    // Customer views the same cash-in row
+    Sanctum::actingAs($customer, ['user']);
+    $customerViewCashIn = $this->getJson("/api/v1/transactions/{$cashInTx['id']}")->assertStatus(200);
+    $customerCashInData = $customerViewCashIn->json('data.transaction');
+    expect(array_key_exists('recipient_wallet_balance_after', $customerCashInData))->toBeTrue()
+        ->and(array_key_exists('agent_wallet_balance_after', $customerCashInData))->toBeFalse()
+        ->and(array_key_exists('sender_wallet_balance_after', $customerCashInData))->toBeFalse();
 
     // 2. Customer initiates cash-out
     Sanctum::actingAs($customer, ['user']);

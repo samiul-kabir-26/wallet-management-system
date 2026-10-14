@@ -13,7 +13,7 @@ import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
 
 useAuthGuard('USER');
 
-type Tab = 'transfer' | 'cash_out' | 'cash_in';
+type Tab = 'transfer' | 'cash_out';
 
 const toast = useToastStore();
 const activeTab = ref<Tab>('transfer');
@@ -42,27 +42,16 @@ const tabConfig: Record<Tab, { label: string; endpoint: string; counterparty: 'r
         button: 'Review Cash-Out',
         color: 'bg-amber-600 hover:bg-amber-500',
     },
-    cash_in: {
-        label: 'Cash-In (Deposit)',
-        endpoint: '/transactions/cash-in',
-        counterparty: 'agentPhone',
-        title: 'Confirm Cash-In',
-        button: 'Review Cash-In',
-        color: 'bg-emerald-600 hover:bg-emerald-500',
-    },
 };
 
 const current = computed(() => tabConfig[activeTab.value]);
 
 const validationSchema = computed(() => {
-    const rules: Record<string, unknown> = {
+    return {
         [current.value.counterparty]: phone,
         amount: money('Amount'),
+        pin,
     };
-    if (activeTab.value !== 'cash_in') {
-        rules.pin = pin;
-    }
-    return rules;
 });
 
 const { handleSubmit, setErrors, resetForm, values } = useForm<{ recipientPhone: string; agentPhone: string; amount: string; pin: string }>({
@@ -214,12 +203,6 @@ onMounted(async () => {
                         </template>
                         <template v-else>Cash-Out incurs a system fee, added on top of the amount. The exact fee is shown on your receipt.</template>
                     </div>
-                    <div
-                        v-if="activeTab === 'cash_in'"
-                        class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
-                    >
-                        Cash-In is free of charge. You receive the exact amount loaded by the agent.
-                    </div>
 
                     <div v-if="current.counterparty === 'recipientPhone'" class="space-y-1">
                         <TextField
@@ -261,7 +244,6 @@ onMounted(async () => {
                     </div>
 
                     <TextField
-                        v-if="activeTab !== 'cash_in'"
                         name="pin"
                         label="Security PIN"
                         type="password"

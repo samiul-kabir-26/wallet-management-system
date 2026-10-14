@@ -22,6 +22,9 @@ class CashOutRequest extends FormRequest
      */
     public function rules(): array
     {
+        $min = config('transactions.limits.cash_out.min', 10.00);
+        $max = config('transactions.limits.cash_out.max', 25000.00);
+
         return [
             'agent_phone' => [
                 'required',
@@ -33,7 +36,7 @@ class CashOutRequest extends FormRequest
                     }
                 },
             ],
-            'amount' => ['required', 'numeric', 'gt:0'],
+            'amount' => ['required', 'decimal:0,2', "min:{$min}", "max:{$max}"],
             'pin' => ['required', 'string', 'digits_between:5,10'],
             'description' => ['nullable', 'string', 'max:500'],
             'idempotency_key' => ['required', 'string', 'max:255'],

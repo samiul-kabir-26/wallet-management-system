@@ -20,6 +20,7 @@ Route::prefix('user')->name('user.')->group(function (): void {
 // Agent panel routes
 Route::prefix('agent')->name('agent.')->group(function (): void {
     Route::inertia('/dashboard', 'Agent/Dashboard')->name('dashboard');
+    Route::inertia('/cash-in', 'Agent/CashIn')->name('cash-in');
     Route::inertia('/transactions', 'Agent/Transactions')->name('transactions');
     Route::inertia('/withdrawal', 'Agent/Withdrawal')->name('withdrawal');
 });

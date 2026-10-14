@@ -7,8 +7,8 @@ use App\Models\Transaction;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Modules\Transactions\Http\Requests\AgentCashInRequest;
 use Modules\Transactions\Http\Requests\AgentWithdrawalRequest;
-use Modules\Transactions\Http\Requests\CashInRequest;
 use Modules\Transactions\Http\Requests\CashOutRequest;
 use Modules\Transactions\Http\Requests\TopUpRequest;
 use Modules\Transactions\Http\Requests\TransferRequest;
@@ -69,15 +69,16 @@ class TransactionController extends Controller
     }
 
     /**
-     * Perform cash-in via an approved agent.
+     * Perform cash-in to a customer by an approved agent.
      */
-    public function cashIn(CashInRequest $request): JsonResponse
+    public function agentCashIn(AgentCashInRequest $request): JsonResponse
     {
         $transaction = $this->transactionService->cashIn(
-            user: $request->user(),
-            agentPhone: $request->validated('agent_phone'),
+            agent: $request->user(),
+            customerPhone: $request->validated('customer_phone'),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
+            pin: (string) $request->validated('pin'),
             description: $request->validated('description'),
         );
 

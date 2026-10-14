@@ -911,15 +911,17 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 5.3 Agent Cash-In
-- **Method & Route:** `POST /api/v1/transactions/cash-in`
-- **Access:** User only (`ability:user`, `password.changed`)
+### 5.3 Customer Cash-In (Deposit via Agent)
+- **Method & Route:** `POST /api/v1/transactions/agent/cash-in`
+- **Access:** Agent only (`ability:agent`, `password.changed`)
 - **Request Body:**
   ```json
   {
-    "agent_phone": "01812345678",
+    "customer_phone": "01712345678",
     "amount": 500.00,
-    "idempotency_key": "cashin-uuid-9012"
+    "pin": "12345",
+    "idempotency_key": "cashin-uuid-9012",
+    "description": "Cash-in deposit at store"
   }
   ```
 - **Response (201 Created):**
@@ -932,12 +934,20 @@ All API responses follow a consistent JSON envelope structure.
         "id": 103,
         "type": "CASH_IN",
         "amount": 500.00,
-        "recipient_wallet_balance_after": 4550.00
+        "system_fee_amount": 0.00,
+        "agent_commission_amount": 0.00,
+        "agent_wallet_balance_after": 1500.00
       }
     }
   }
   ```
-- **Error Codes:** 403 (Agent unapproved or wallet blocked), 409 (Idempotency key reused with different parameters), 422 (Agent insufficient balance).
+- **Behavior & Rules:**
+  - Initiated by the agent using their own authentication token and PIN.
+  - Requires an approved, active agent profile.
+  - Moves float 1:1 from agent wallet to customer user wallet with zero fee and no commission (0.00).
+  - Agent cannot cash-in to their own account.
+  - Recipient must be an active, non-deleted user with an active wallet.
+- **Error Codes:** 403 (Unapproved agent, user token access, or wallet blocked), 404 (Old user route removed), 409 (Idempotency key reused with different parameters, or agent status pending/suspended), 422 (Agent insufficient float, wrong PIN, self cash-in, or customer not found), 429 (PIN locked out).
 
 ---
 
