@@ -9,6 +9,7 @@ use Modules\Authentication\Exceptions\AccountInactiveException;
 use Modules\Authentication\Exceptions\InsufficientRoleException;
 use Modules\Authentication\Exceptions\InvalidCredentialsException;
 use Modules\Authentication\Exceptions\InvalidOtpException;
+use Modules\Authentication\Notifications\OtpCodeNotification;
 
 class AdminAuthService
 {
@@ -31,13 +32,13 @@ class AdminAuthService
     {
         $user = User::where('email', $email)->first();
 
-        if (! $user || $user->is_active !== 'ACTIVE' || ! $user->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+        if (! $user || $user->is_active !== 'ACTIVE' || ! $user->hasAdminPanelRole()) {
             return;
         }
 
         $otp = $this->otpService->createOtp($user->id, 'PASSWORD_RESET');
 
-        Log::info("Admin password reset OTP for [{$user->email}]: {$otp->otp_code}");
+        $user->notify(new OtpCodeNotification($otp->otp_code, 'PASSWORD_RESET', (int) config('auth_settings.otp.expiry_minutes', 5)));
     }
 
     /**
@@ -64,7 +65,7 @@ class AdminAuthService
             throw new AccountInactiveException;
         }
 
-        if (! $user->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+        if (! $user->hasAdminPanelRole()) {
             throw new InsufficientRoleException;
         }
 
@@ -115,13 +116,13 @@ class AdminAuthService
             throw new AccountInactiveException;
         }
 
-        if (! $user->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+        if (! $user->hasAdminPanelRole()) {
             throw new InsufficientRoleException;
         }
 
         $otp = $this->otpService->createOtp($user->id, 'LOGIN');
 
-        Log::info("Admin login OTP for [{$user->email}]: {$otp->otp_code}");
+        $user->notify(new OtpCodeNotification($otp->otp_code, 'LOGIN', (int) config('auth_settings.otp.expiry_minutes', 5)));
 
         return $user;
     }
@@ -150,7 +151,7 @@ class AdminAuthService
             throw new AccountInactiveException;
         }
 
-        if (! $user->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+        if (! $user->hasAdminPanelRole()) {
             throw new InsufficientRoleException;
         }
 

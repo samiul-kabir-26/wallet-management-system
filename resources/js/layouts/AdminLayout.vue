@@ -1,30 +1,48 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { useAuthStore } from '@/stores/auth';
 import Badge from '@/components/Badge.vue';
 import ToastContainer from '@/components/ToastContainer.vue';
+import SessionGuard from '@/components/SessionGuard.vue';
+import type { PermissionName } from '@/types/permissions';
 
 const authStore = useAuthStore();
 const sidebarOpen = ref(false);
 
-const navItems = [
+interface NavItem {
+    name: string;
+    href: string;
+    icon: string;
+    permission?: PermissionName;
+}
+
+const navItems: NavItem[] = [
     { name: 'Dashboard', href: '/admin/dashboard', icon: '📊' },
-    { name: 'Users & Staff', href: '/admin/users', icon: '👥' },
-    { name: 'Agent Approvals', href: '/admin/agents', icon: '🤝' },
-    { name: 'Wallets & Freeze', href: '/admin/wallets', icon: '💳' },
-    { name: 'Platform Transactions', href: '/admin/transactions', icon: '📜' },
+    { name: 'Users & Staff', href: '/admin/users', icon: '👥', permission: 'users.view_any' },
+    { name: 'Roles & Permissions', href: '/admin/roles', icon: '🔑', permission: 'roles.view' },
+    { name: 'Agent Approvals', href: '/admin/agents', icon: '🤝', permission: 'agents.approve' },
+    { name: 'Agent Withdrawals', href: '/admin/withdrawals', icon: '🏦', permission: 'agents.approve_withdrawal' },
+    { name: 'Wallets & Freeze', href: '/admin/wallets', icon: '💳', permission: 'wallets.view_any' },
+    { name: 'Platform Transactions', href: '/admin/transactions', icon: '📜', permission: 'transactions.view_any' },
     { name: 'System Settings', href: '/admin/settings', icon: '⚙️' },
 ];
 
-const handleLogout = async () => {
-    await authStore.logout();
+const visibleNavItems = computed(() =>
+    navItems.filter((item) => !item.permission || authStore.can(item.permission)),
+);
+
+const sessionGuard = ref<InstanceType<typeof SessionGuard> | null>(null);
+
+const handleLogout = () => {
+    sessionGuard.value?.confirmLogout();
 };
 </script>
 
 <template>
     <div class="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex">
         <ToastContainer />
+        <SessionGuard ref="sessionGuard" />
         <!-- Desktop Sidebar -->
         <aside class="hidden lg:flex lg:w-64 lg:flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
             <div class="flex h-16 items-center gap-2 px-6 border-b border-zinc-200 dark:border-zinc-800">
@@ -39,7 +57,7 @@ const handleLogout = async () => {
 
             <nav class="flex-1 space-y-1 px-3 py-4">
                 <Link
-                    v-for="item in navItems"
+                    v-for="item in visibleNavItems"
                     :key="item.href"
                     :href="item.href"
                     class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
@@ -109,7 +127,7 @@ const handleLogout = async () => {
                         </div>
                         <nav class="space-y-1 mt-4">
                             <Link
-                                v-for="item in navItems"
+                                v-for="item in visibleNavItems"
                                 :key="item.href"
                                 :href="item.href"
                                 class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"

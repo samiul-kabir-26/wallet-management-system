@@ -57,6 +57,7 @@ class WalletController extends Controller
         $validated = $request->validate([
             'is_blocked' => ['sometimes', Rule::in(['true', 'false', '1', '0'])],
             'user_id' => ['sometimes', 'integer', 'exists:users,id'],
+            'search' => ['sometimes', 'string', 'max:100'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
@@ -65,18 +66,10 @@ class WalletController extends Controller
 
         $paginator = $this->walletService->listWallets($validated, $perPage);
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'wallets' => WalletResource::collection($paginator),
-                'pagination' => [
-                    'total' => $paginator->total(),
-                    'per_page' => $paginator->perPage(),
-                    'current_page' => $paginator->currentPage(),
-                    'last_page' => $paginator->lastPage(),
-                ],
-            ],
-        ]);
+        return $this->paginatedResponse(
+            $paginator,
+            WalletResource::collection($paginator),
+        );
     }
 
     /**

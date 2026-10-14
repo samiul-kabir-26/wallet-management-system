@@ -55,7 +55,17 @@ class WalletService
      */
     public function listWallets(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
-        $query = Wallet::query()->latest('id');
+        $query = Wallet::query()
+            ->with('user:id,name,phone_number,email')
+            ->latest('id');
+
+        if (! empty($filters['search'])) {
+            $term = '%'.addcslashes((string) $filters['search'], '%_\\').'%';
+            $query->whereHas('user', fn ($q) => $q
+                ->where('name', 'like', $term)
+                ->orWhere('phone_number', 'like', $term)
+                ->orWhere('email', 'like', $term));
+        }
 
         if (isset($filters['is_blocked'])) {
             $isBlocked = filter_var($filters['is_blocked'], FILTER_VALIDATE_BOOLEAN);

@@ -56,6 +56,10 @@ All API responses follow a consistent JSON envelope structure.
 
 ## 2. Authentication & Credential Endpoints
 
+> **Token lifetime.** Every access token has an absolute expiry set when it is issued, based on the ability it carries (configurable in `config/auth_settings.php` → `tokens`): `admin` 8 hours, `agent` and `user` 12 hours, and the restricted `password-change` token 30 minutes. A token that has not been used for 15 minutes is also rejected (idle timeout). Both cases return **401**, and the client must log in again. Refreshing a token never extends its absolute expiry. Expired tokens are pruned daily by `sanctum:prune-expired`.
+>
+> **Secret delivery.** OTP codes, PIN reset links and staff invitations (with the temporary password) are delivered by email notification. They are never written to the application log.
+
 ### 2.1 Public Registration
 - **Method & Route:** `POST /api/v1/auth/register`
 - **Access:** Public (Rate limited: 5 req/min per IP)
@@ -121,11 +125,18 @@ All API responses follow a consistent JSON envelope structure.
       },
       "token": "11|sanctum_token...",
       "token_type": "Bearer",
-      "abilities": ["user"]
+      "abilities": ["user"],
+      "idle_timeout_minutes": 5
     }
   }
   ```
-- **Error Codes:** 401 (Invalid credentials), 403 (Account inactive or missing USER role), 429 (Throttled).
+- **Error Codes:** 401 (Invalid credentials), 403 (Account inactive or missing USER role), 429 (Too many failed PIN attempts / Account locked).
+- **Wrong panel:** one phone number holds one wallet type (as with bKash/Nagad). After a correct PIN, an agent account on this route gets 403 *"This number is registered as an agent account. Please sign in through the Agent portal; a personal wallet needs a separate number."* The agent route likewise says when a number is a customer account, awaiting approval, or suspended.
+- **Login records:** every attempt on the three login routes (success or failure, panel, identifier, IP, user agent) is stored in `login_activities`; see 3.11.
+- **`idle_timeout_minutes`:** the idle auto-logout for this panel (see 6.3). Clients should sign out after this long without interaction; the server rejects the token anyway once it has been unused for that long. `/auth/me` returns the same field.
+
+> [!NOTE]
+> **PIN Lockout & Account Enumeration Trade-off**: The 5-attempt PIN lockout counter (`pin-attempts:{userId}`) is shared atomically across both public PIN login and money-moving transaction endpoints. While an unknown phone number always returns 401, a registered phone number returns 429 when locked out after 5 consecutive failed attempts. This deliberate trade-off follows mobile financial service industry patterns (e.g., bKash) to prioritize account and wallet balance defense against credential brute-forcing.
 
 ---
 
@@ -208,6 +219,7 @@ All API responses follow a consistent JSON envelope structure.
         "name": "Super Admin",
         "email": "admin@wallet.local",
         "roles": ["SUPER_ADMIN"],
+        "permissions": ["users.view_any", "users.view", "..."],
         "is_active": "ACTIVE"
       },
       "token": "13|sanctum_token...",
@@ -217,6 +229,29 @@ All API responses follow a consistent JSON envelope structure.
   }
   ```
 - **Error Codes:** 401 (Invalid/expired OTP, lockout after 5 attempts).
+
+---
+
+### 2.5b Authenticated User Profile (`/me`)
+- **Method & Route:** `GET /api/v1/auth/me`
+- **Access:** Authenticated (`ability:admin,agent,user`, `password.changed`)
+- **Description:** Returns profile and effective permissions for current authenticated user.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "user": {
+        "id": 1,
+        "name": "Super Admin",
+        "email": "admin@wallet.local",
+        "roles": ["SUPER_ADMIN"],
+        "permissions": ["users.view_any", "users.create", "wallets.block", "..."],
+        "is_active": "ACTIVE"
+      }
+    }
+  }
+  ```
 
 ---
 
@@ -393,7 +428,7 @@ All API responses follow a consistent JSON envelope structure.
 ### 2.13 Customer Reset PIN via Signed Link (Case C Step 2)
 - **Method & Route:** `POST /api/v1/auth/reset-pin/{user}`
 - **Access:** Signed URL only (`signed` middleware)
-- **Description:** Customer sets a new PIN using the recovery link provided by customer care.
+- **Description:** Customer sets a new PIN using the recovery link provided by customer care. The link carries a `fingerprint` query parameter bound to the account's current PIN, so it works **once**: after a successful reset (or any other PIN change) the same link is rejected. A successful reset revokes every access token the account holds, clears the PIN lockout counter, and writes a `PIN_RESET_COMPLETED` audit entry.
 - **Request Body:**
   ```json
   {
@@ -408,14 +443,14 @@ All API responses follow a consistent JSON envelope structure.
     "message": "PIN reset successfully. Please log in with your new PIN."
   }
   ```
-- **Error Codes:** 403 (Invalid/expired signed link), 422 (Validation failure).
+- **Error Codes:** 403 (Invalid/expired signed link, link already used, or account inactive), 422 (Validation failure, or account has no PIN).
 
 ---
 
 ### 2.14 Refresh Token
 - **Method & Route:** `POST /api/v1/auth/refresh-token`
 - **Access:** Authenticated (`auth:sanctum`)
-- **Description:** Reissues access token preserving current abilities.
+- **Description:** Rotates the access token: the current token is revoked and a new one is issued with the same name, abilities, and **the same absolute expiry**. Refreshing never extends a session.
 - **Response (200 OK):**
   ```json
   {
@@ -440,6 +475,20 @@ All API responses follow a consistent JSON envelope structure.
   {
     "success": true,
     "message": "Logged out successfully."
+  }
+  ```
+
+---
+
+### 2.16 Logout From All Sessions
+- **Method & Route:** `POST /api/v1/auth/logout-all`
+- **Access:** Authenticated (`auth:sanctum`)
+- **Description:** Revokes every access token the caller holds, on every device and panel.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Logged out from all sessions."
   }
   ```
 
@@ -488,10 +537,10 @@ All API responses follow a consistent JSON envelope structure.
 - **Request Body:**
   ```json
   {
-    "name": "Moderator Staff",
+    "name": "Staff Admin",
     "phone_number": "01733445566",
-    "role": "MODERATOR",
-    "email": "mod@wallet.local"
+    "role": "ADMIN",
+    "email": "admin@wallet.local"
   }
   ```
 - **Response (201 Created):**
@@ -502,10 +551,10 @@ All API responses follow a consistent JSON envelope structure.
     "data": {
       "user": {
         "id": 17,
-        "name": "Moderator Staff",
-        "email": "mod@wallet.local",
+        "name": "Staff Admin",
+        "email": "admin@wallet.local",
         "phone_number": "01733445566",
-        "roles": ["MODERATOR"]
+        "roles": ["ADMIN"]
       }
     }
   }
@@ -547,7 +596,37 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 3.4 Update User Profile
+### 3.4 Recipient Lookup
+- **Method & Route:** `GET /api/v1/users/lookup?phone_number={phone_number}`
+- **Access:** Authenticated caller (`ability:admin,agent,user`, `password.changed`)
+- **Throttle:** 30 requests per minute
+- **Query Parameters:**
+  - `phone_number` (string, required): 11-digit Bangladeshi mobile number (`^01[3-9]\d{8}$`)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "name": "R***l K***r",
+      "phone_number": "01712345678",
+      "can_receive": true
+    }
+  }
+  ```
+- **Error Codes:** 404 (User not found), 422 (Validation error: invalid phone number format), 429 (Too many requests).
+- **Security & Privacy Trade-Off:**
+  - *Purpose:* Allows the sender or agent to confirm the recipient before money moves, preventing misdirected transfers (standard pattern in payment apps like bKash/Nagad).
+  - *Privacy Trade-Off:* Revealing that a number is registered allows probing for account existence.
+  - *Mitigations:*
+    - Requires authentication (`ability:admin,agent,user`).
+    - Strictly rate-limited to 30 requests per minute per caller.
+    - Full recipient names are masked (`R***l K***r`) to protect privacy while still providing recognizable verification.
+    - Soft-deleted users are treated as not found (404), identical to non-existent numbers.
+    - Eligibility checks (`can_receive`) are derived centrally via `User::canReceiveTransfers()`.
+
+---
+
+### 3.5 Update User Profile
 - **Method & Route:** `PATCH /api/v1/users/{user}`
 - **Access:** Authenticated caller updating self, or Admin (`UserPolicy`)
 - **Request Body:**
@@ -574,7 +653,7 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 3.5 Grant Admin Access to Existing User (Case B Step 1)
+### 3.6 Grant Admin Access to Existing User (Case B Step 1)
 - **Method & Route:** `PATCH /api/v1/users/{user}/grant-admin-access`
 - **Access:** SUPER_ADMIN only (`auth:sanctum`, `ability:admin`, `password.changed`)
 - **Description:** Elevates user to administrator, assigns temporary password, attaches email, and generates signed invitation link. Target phone must be verified.
@@ -598,7 +677,7 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 3.6 Approve Pending Agent
+### 3.7 Approve Pending Agent
 - **Method & Route:** `PATCH /api/v1/users/{user}/approve-agent`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
 - **Request Body (Optional):**
@@ -629,7 +708,7 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 3.7 Suspend Approved Agent
+### 3.8 Suspend Approved Agent
 - **Method & Route:** `PATCH /api/v1/users/{user}/suspend-agent`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
 - **Request Body:**
@@ -657,7 +736,7 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 3.8 Assign Additional Role to User ("Become an Agent" Flow)
+### 3.9 Assign Additional Role to User ("Become an Agent" Flow)
 - **Method & Route:** `POST /api/v1/users/{user}/assign-role`
 - **Access:** Admin only (`ability:admin`, `password.changed`, `UserPolicy::assignRole`). Separation of duties strictly enforced: administrators cannot assign roles to themselves (`403 Forbidden`).
 - **Request Body:**
@@ -703,6 +782,28 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
+### 3.10 Mark Phone Verified
+- **Method & Route:** `PATCH /api/v1/users/{user}/verify-phone`
+- **Access:** Admin only **and** `users.verify_phone`. Staff cannot verify their own phone.
+- **Description:** Records that staff confirmed out of band (call, NID check) that the phone number belongs to this person. Granting admin access (3.6) requires a verified phone. Idempotent; audited once as `PHONE_VERIFIED`.
+- **Error Codes:** 403, 422 (account has no phone number).
+
+---
+
+### 3.11 User Login Records
+- **Method & Route:** `GET /api/v1/users/{user}/login-activity`
+- **Access:** Admin only **and** `users.view_activity`.
+- **Response:** paginated `{ id, panel, identifier, status (SUCCESS|FAILED), failure_reason, ip_address, user_agent, created_at }`, newest first. Admin password-step failures are recorded; admin success is recorded when the OTP is verified.
+
+---
+
+### 3.12 User Audit Trail
+- **Method & Route:** `GET /api/v1/users/{user}/audit-trail`
+- **Access:** Admin only **and** `users.view_activity`.
+- **Response:** paginated audit entries the user performed, entries recorded against the user, and entries recorded against any of the user's wallets: `{ id, action, actor { id, name }, auditable_type, auditable_id, metadata, created_at }`.
+
+---
+
 ## 4. Wallet Management Endpoints
 
 ### 4.1 View Current Wallet
@@ -729,8 +830,8 @@ All API responses follow a consistent JSON envelope structure.
 ### 4.2 List All Wallets
 - **Method & Route:** `GET /api/v1/wallets/admin/all`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
-- **Query Params:** `is_blocked`, `user_id`, `per_page`, `page`
-- **Response (200 OK):** Paginated wallet list with total, per_page, current_page.
+- **Query Params:** `is_blocked`, `user_id`, `search` (owner name, phone or email), `per_page`, `page`
+- **Response (200 OK):** Paginated wallet list. Each item includes `owner: { id, name, phone_number, email }`.
 
 ---
 
@@ -791,6 +892,7 @@ All API responses follow a consistent JSON envelope structure.
   ```json
   {
     "amount": 5000.00,
+    "pin": "12345",
     "idempotency_key": "topup-uuid-1234",
     "description": "Bank transfer deposit"
   }
@@ -813,7 +915,10 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 403 (Wallet blocked), 422 (Validation error).
+- **Behavior & Rules:**
+  - **Simulation:** `TOP_UP` stands in for a bank or card payment gateway and creates new e-money. In a production system the credit would only be applied after a verified gateway callback.
+  - Requires the user's transaction PIN (shared lockout counter with PIN login).
+- **Error Codes:** 403 (Wallet blocked), 422 (Validation error or wrong PIN), 429 (PIN locked out).
 
 ---
 
@@ -823,8 +928,9 @@ All API responses follow a consistent JSON envelope structure.
 - **Request Body:**
   ```json
   {
-    "recipient_id": 11,
+    "recipient_phone": "01712345678",
     "amount": 1000.00,
+    "pin": "12345",
     "idempotency_key": "transfer-uuid-5678",
     "description": "Dinner split"
   }
@@ -849,19 +955,21 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 403 (Wallet blocked), 422 (Insufficient balance, cap exceeded, self-transfer).
+- **Error Codes:** 403 (Wallet blocked), 409 (Idempotency key reused with different parameters), 422 (Wrong PIN, insufficient balance, cap exceeded, self-transfer), 429 (PIN locked out).
 
 ---
 
-### 5.3 Agent Cash-In
-- **Method & Route:** `POST /api/v1/transactions/cash-in`
-- **Access:** User only (`ability:user`, `password.changed`)
+### 5.3 Customer Cash-In (Deposit via Agent)
+- **Method & Route:** `POST /api/v1/transactions/agent/cash-in`
+- **Access:** Agent only (`ability:agent`, `password.changed`)
 - **Request Body:**
   ```json
   {
-    "agent_phone": "01812345678",
+    "customer_phone": "01712345678",
     "amount": 500.00,
-    "idempotency_key": "cashin-uuid-9012"
+    "pin": "12345",
+    "idempotency_key": "cashin-uuid-9012",
+    "description": "Cash-in deposit at store"
   }
   ```
 - **Response (201 Created):**
@@ -874,12 +982,20 @@ All API responses follow a consistent JSON envelope structure.
         "id": 103,
         "type": "CASH_IN",
         "amount": 500.00,
-        "recipient_wallet_balance_after": 4550.00
+        "system_fee_amount": 0.00,
+        "agent_commission_amount": 0.00,
+        "agent_wallet_balance_after": 1500.00
       }
     }
   }
   ```
-- **Error Codes:** 403 (Agent unapproved or wallet blocked), 422 (Agent insufficient balance).
+- **Behavior & Rules:**
+  - Initiated by the agent using their own authentication token and PIN.
+  - Requires an approved, active agent profile.
+  - Moves float 1:1 from agent wallet to customer user wallet with zero fee and no commission (0.00).
+  - Agent cannot cash-in to their own account.
+  - Recipient must be an active, non-deleted user with an active wallet.
+- **Error Codes:** 403 (Unapproved agent, user token access, or wallet blocked), 404 (Old user route removed), 409 (Idempotency key reused with different parameters, or agent status pending/suspended), 422 (Agent insufficient float, wrong PIN, self cash-in, or customer not found), 429 (PIN locked out).
 
 ---
 
@@ -892,6 +1008,7 @@ All API responses follow a consistent JSON envelope structure.
   {
     "agent_phone": "01812345678",
     "amount": 2000.00,
+    "pin": "12345",
     "idempotency_key": "cashout-uuid-3456"
   }
   ```
@@ -916,7 +1033,7 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 403 (Agent unapproved or wallet blocked), 422 (Insufficient balance or cap exceeded).
+- **Error Codes:** 403 (Agent unapproved or wallet blocked), 409 (Idempotency key reused with different parameters), 422 (Wrong PIN, insufficient balance or cap exceeded), 429 (PIN locked out).
 
 ---
 
@@ -927,6 +1044,7 @@ All API responses follow a consistent JSON envelope structure.
   ```json
   {
     "amount": 1500.00,
+    "pin": "12345",
     "idempotency_key": "withdraw-uuid-7890"
   }
   ```
@@ -934,7 +1052,7 @@ All API responses follow a consistent JSON envelope structure.
   ```json
   {
     "success": true,
-    "message": "Withdrawal completed successfully.",
+    "message": "Withdrawal request submitted and awaiting approval.",
     "data": {
       "transaction": {
         "id": 106,
@@ -942,13 +1060,58 @@ All API responses follow a consistent JSON envelope structure.
         "agent_id": 12,
         "type": "AGENT_WITHDRAWAL",
         "amount": 1500.00,
-        "status": "COMPLETED",
+        "status": "PENDING",
         "sender_wallet_balance_after": 600.00
       }
     }
   }
   ```
-- **Error Codes:** 403 (Wallet blocked or unapproved), 422 (Insufficient balance).
+- **Behavior & Rules:** the amount is debited (held) immediately so it cannot be spent twice. The transaction stays `PENDING` until staff approve it (5.10, `COMPLETED`) or reject it (5.11, `REJECTED`, amount returned).
+- **Error Codes:** 403 (Wallet blocked or unapproved), 409 (Idempotency key reused with different parameters), 422 (Wrong PIN, insufficient balance), 429 (PIN locked out).
+
+---
+
+### 5.5b Current Cap Usage
+- **Method & Route:** `GET /api/v1/transactions/caps`
+- **Access:** User only (`ability:user`, `password.changed`)
+- **Description:** Returns the caller's daily and monthly spending caps as they apply right now.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "caps": {
+        "daily_limit": 10000.00,
+        "daily_used": 1500.00,
+        "daily_remaining": 8500.00,
+        "monthly_limit": 50000.00,
+        "monthly_used": 3200.00,
+        "monthly_remaining": 46800.00
+      }
+    }
+  }
+  ```
+- **Behavior & Rules:**
+  - Caps count the transaction **amount** (not the fee) of outgoing cash-outs and transfers.
+  - Periods roll over at midnight in the business timezone (`config/transactions.php` → `business_timezone`, default `Asia/Dhaka`), not midnight UTC.
+  - Rollover is lazy: the first cash-out or transfer of a new day (or month) resets the counter under the same row lock that checks the cap, so correctness never depends on a scheduled job. Usage from an earlier period is reported as `0` even before that first transaction. A daily `ResetStaleCaps` job only tidies stored values.
+
+---
+
+### 5.5c Fee Quote
+- **Method & Route:** `GET /api/v1/transactions/quote?type=CASH_OUT&amount=1000`
+- **Access:** User only (`ability:user`, `password.changed`)
+- **Description:** Previews the fee and total debit using the same fee calculator the transaction uses, so the confirm dialog shows what will actually be charged. `type` is `CASH_OUT` or `TRANSFER` (transfers have no fee).
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "quote": { "type": "CASH_OUT", "amount": 1000.00, "fee_rate": 0.05, "fee_amount": 50.00, "total": 1050.00 }
+    }
+  }
+  ```
+- **Note:** a quote is informational. If the fee rate changes between the quote and the submit, the transaction uses the rate at submit time.
 
 ---
 
@@ -1033,8 +1196,66 @@ All API responses follow a consistent JSON envelope structure.
 ### 5.8 Admin Audit (All System Transactions)
 - **Method & Route:** `GET /api/v1/transactions/admin/all`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
-- **Query Params:** `type`, `status`, `user_id`, `sender_id`, `recipient_id`, `agent_id`, `from_date`, `to_date`, `per_page`, `page`
-- **Response (200 OK):** Full paginated system transactions list with eager-loaded user/sender/recipient/agent relations.
+- **Query Params:** `type`, `status` (`COMPLETED`, `PENDING`, `FAILED`, `REJECTED`), `search`, `party_id`, `user_id`, `sender_id`, `recipient_id`, `agent_id`, `from_date`, `to_date`, `per_page`, `page`
+  - `search` matches the name, phone or email of any party, the `external_reference`, or the transaction ID (`123` or `#123`). LIKE wildcards are matched literally.
+  - `party_id` returns transactions where that user is the user, sender, recipient or agent.
+- **Response (200 OK):** Full paginated system transactions list. For staff each item includes `parties: { sender, recipient, agent }` with `{ id, name, phone_number }`.
+
+---
+
+### 5.9 Admin Float Issuance
+- **Method & Route:** `POST /api/v1/transactions/admin/float-issue`
+- **Access:** Admin only (`ability:admin`, `password.changed`) **and** the `agents.issue_float` permission. ADMIN does not hold it by default; SUPER_ADMIN can assign it to a custom role (e.g. FINANCE).
+- **Description:** Credits e-money float to an approved agent's AGENT wallet against a confirmed external bank deposit. Writes a `FLOAT_ISSUE` transaction (`initiated_by` = admin) and a `FLOAT_ISSUED` audit log entry.
+- **Request Body:** (`agent_id` or `agent_phone` is required)
+  ```json
+  {
+    "agent_id": 42,
+    "amount": "5000.00",
+    "external_reference": "BANK-SLIP-1001",
+    "idempotency_key": "float-uuid-1234",
+    "description": "Cheque deposit branch #42"
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Float issued successfully.",
+    "data": {
+      "transaction": {
+        "type": "FLOAT_ISSUE",
+        "amount": "5000.00",
+        "external_reference": "BANK-SLIP-1001",
+        "status": "COMPLETED"
+      }
+    }
+  }
+  ```
+- **Behavior & Rules:**
+  - `external_reference` is unique across all transactions (enforced by a database unique index), so one bank deposit can never be credited twice — including by two concurrent requests.
+  - An admin cannot issue float to themselves.
+  - The agent must be approved, and their agent wallet must not be blocked.
+  - Amount limits come from `config/transactions.php` → `limits.float_issue`.
+- **Error Codes:** 403 (Missing permission, non-admin token, or wallet blocked), 409 (Idempotency key reused with different parameters, or agent not approved), 422 (Validation error, reused external reference, or self-issuance).
+
+---
+
+### 5.10 Approve Agent Withdrawal
+- **Method & Route:** `PATCH /api/v1/transactions/admin/withdrawals/{transaction}/approve`
+- **Access:** Admin only (`ability:admin`, `password.changed`) **and** `agents.approve_withdrawal`. Staff cannot review their own withdrawal.
+- **Request Body:** `{ "external_reference": "BEFTN-20261014-0042", "note": "optional" }` — the bank transfer reference, unique across all transactions.
+- **Behavior:** the funds were already held at request time, so only the status changes (`PENDING` → `COMPLETED`). The review is stored in `meta.review` and audited as `WITHDRAWAL_APPROVED`.
+- **Error Codes:** 403 (Missing permission, non-admin token, own withdrawal), 409 (Not a pending agent withdrawal), 422 (Missing or reused reference).
+
+---
+
+### 5.11 Reject Agent Withdrawal
+- **Method & Route:** `PATCH /api/v1/transactions/admin/withdrawals/{transaction}/reject`
+- **Access:** Same as 5.10.
+- **Request Body:** `{ "reason": "Bank account name does not match" }` (5–500 characters)
+- **Behavior:** returns the held amount to the agent wallet under a row lock and marks the transaction `REJECTED`. The refund goes through even if the wallet was blocked after the request, because the money never left the platform. A `REJECTED` row nets to zero in the ledger. Audited as `WITHDRAWAL_REJECTED` with balances before and after.
+- **Error Codes:** 403, 409 (already reviewed — a second rejection never refunds twice), 422 (Missing reason).
 
 ---
 
@@ -1082,3 +1303,164 @@ All API responses follow a consistent JSON envelope structure.
   }
   ```
 - **Error Codes:** 403 (Non-admin token), 422 (Rate must be between 0 and 1).
+- **Audit:** each update writes a `SETTINGS_UPDATED` audit entry with the before and after value of every changed key.
+
+---
+
+### 6.3 Session Idle Timeouts
+- **Routes:** `GET /api/v1/system-settings/session-timeouts` (any admin token) and `PATCH /api/v1/system-settings/session-timeouts` (`settings.manage_session_timeouts`)
+- **Request Body (PATCH):** any of `{ "admin": 15, "agent": 5, "user": 3 }` — whole minutes from 1 to 120.
+- **Response (200 OK):** `{ "success": true, "data": { "session_timeouts": { "admin": 15, "agent": 5, "user": 3 } } }`
+- **Behavior:** a token unused for longer than its panel's timeout is rejected with 401 on the next request. Defaults are 5 minutes per panel (`config/auth_settings.php` → `tokens.idle_timeout_minutes`); changes are stored in `system_settings` and take effect for every existing session immediately. Audited as `SESSION_TIMEOUTS_UPDATED`. Tokens without a panel ability (password-change) use `tokens.default_idle_timeout_minutes`.
+
+---
+
+## 7. Dynamic Roles & Permissions Endpoints
+
+Granular permission catalog and dynamic admin-panel role management. Access requires an admin token (`ability:admin`) and the respective catalog permission (defense-in-depth).
+
+### 7.1 List Permissions Catalog
+- **Method & Route:** `GET /api/v1/permissions`
+- **Access:** Authenticated admin staff (`roles.view`)
+- **Description:** Returns the complete 16-permission catalog flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "permissions": [
+        { "id": 1, "name": "users.view_any", "label": "View any user", "description": "View any user", "group": "Users", "is_super_admin_only": false },
+        { "id": 3, "name": "users.grant_admin_access", "label": "Grant admin access to users", "description": "Grant admin access to users", "group": "Users", "is_super_admin_only": true }
+      ],
+      "grouped": {
+        "Users": [
+          { "id": 1, "name": "users.view_any", "label": "View any user", "description": "View any user", "group": "Users", "is_super_admin_only": false },
+          { "id": 3, "name": "users.grant_admin_access", "label": "Grant admin access to users", "description": "Grant admin access to users", "group": "Users", "is_super_admin_only": true }
+        ]
+      }
+    }
+  }
+  ```
+
+---
+
+### 7.2 List Roles
+- **Method & Route:** `GET /api/v1/roles`
+- **Access:** Authenticated admin staff (`roles.view`)
+- **Query Params:**
+  - `panel` (optional, string: `admin`, `agent`, `user`)
+  - `per_page` (optional, integer: 1-100)
+  - `page` (optional, integer)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "roles": [
+        {
+          "id": 1,
+          "name": "SUPER_ADMIN",
+          "description": "Platform super administrator",
+          "panel": "admin",
+          "is_system": true,
+          "users_count": 1,
+          "permissions_count": 0
+        }
+      ]
+    }
+  }
+  ```
+
+---
+
+### 7.3 Create Custom Role
+- **Method & Route:** `POST /api/v1/roles`
+- **Access:** Admin staff with `roles.manage` (Subject to anti-escalation)
+- **Description:** Creates a new custom role with `panel = admin`.
+- **Request Body:**
+  ```json
+  {
+    "name": "AUDITOR",
+    "description": "Audit transactions and review logs only",
+    "permissions": ["transactions.view_any", "wallets.view_any"]
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Role created successfully.",
+    "data": {
+      "role": {
+        "id": 5,
+        "name": "AUDITOR",
+        "description": "Audit transactions and review logs only",
+        "panel": "admin",
+        "is_system": false,
+        "permissions": [ ... ]
+      }
+    }
+  }
+  ```
+- **Error Codes:**
+  - `403 Forbidden`: Anti-escalation violation (e.g. attempting to grant permissions actor does not possess).
+  - `422 Unprocessable Content`: Role name invalid format or duplicate.
+
+---
+
+### 7.4 Get Role Details
+- **Method & Route:** `GET /api/v1/roles/{role}`
+- **Access:** Admin staff (`roles.view`)
+- **Response (200 OK):** Detailed role model including eager-loaded `permissions`.
+
+---
+
+### 7.5 Update Role Meta
+- **Method & Route:** `PUT /api/v1/roles/{role}`
+- **Access:** Admin staff with `roles.manage`
+- **Request Body:**
+  ```json
+  {
+    "name": "AUDITOR_SENIOR",
+    "description": "Senior audit staff"
+  }
+  ```
+- **Response (200 OK):** Updated role resource.
+- **Error Codes:**
+  - `403 Forbidden`: Attempting to rename a system role (`is_system = true`).
+
+---
+
+### 7.6 Sync Role Permissions
+- **Method & Route:** `PUT /api/v1/roles/{role}/permissions`
+- **Access:** Admin staff with `roles.manage` (Subject to anti-escalation)
+- **Description:** Atomically synchronizes permissions for a role with audit logging.
+- **Request Body:**
+  ```json
+  {
+    "permissions": ["transactions.view_any"]
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Role permissions updated successfully.",
+    "data": {
+      "role": { "id": 5, "name": "AUDITOR", "permissions": [ ... ] }
+    }
+  }
+  ```
+- **Error Codes:**
+  - `403 Forbidden`: Escalation attempt (`added ∪ removed ⊈ actor_permissions`), self-modification attempt, or modifying system role without super-admin.
+
+---
+
+### 7.7 Delete Role
+- **Method & Route:** `DELETE /api/v1/roles/{role}`
+- **Access:** Admin staff with `roles.manage`
+- **Response (204 No Content)**
+- **Error Codes:**
+  - `403 Forbidden`: Attempting to delete a system role (`is_system = true`) or a role the actor currently holds.
+  - `409 Conflict`: Role is currently assigned to one or more users (`users_count > 0`).
+

@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Transaction;
 use App\Models\User;
+use Modules\Roles\Enums\Permission;
 use Modules\Wallets\Services\WalletService;
 
 class TransactionPolicy
@@ -13,7 +14,7 @@ class TransactionPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isStaffWithAdminAccess();
+        return $user->can('transactions.view_any');
     }
 
     /**
@@ -21,7 +22,7 @@ class TransactionPolicy
      */
     public function view(User $user, Transaction $transaction): bool
     {
-        if ($user->isStaffWithAdminAccess()) {
+        if ($user->can('transactions.view_any')) {
             return true;
         }
 
@@ -45,11 +46,11 @@ class TransactionPolicy
     }
 
     /**
-     * Determine whether the user can initiate a cash-in.
+     * Determine whether the agent can initiate a cash-in.
      */
     public function cashIn(User $user): bool
     {
-        return $user->isUser();
+        return $user->isAgent();
     }
 
     /**
@@ -74,5 +75,24 @@ class TransactionPolicy
     public function agentWithdrawal(User $user): bool
     {
         return $user->isAgent();
+    }
+
+    /**
+     * Determine whether the user can issue float to an agent.
+     */
+    public function issueFloat(User $user): bool
+    {
+        return $user->can(Permission::AgentsIssueFloat->value);
+    }
+
+    /**
+     * Determine whether the user can approve or reject a pending agent bank withdrawal.
+     *
+     * An agent who also holds staff access can never review their own withdrawal.
+     */
+    public function reviewWithdrawal(User $user, Transaction $transaction): bool
+    {
+        return $user->can(Permission::AgentsApproveWithdrawal->value)
+            && $transaction->agent_id !== $user->id;
     }
 }

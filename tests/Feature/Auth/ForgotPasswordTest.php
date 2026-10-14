@@ -97,7 +97,7 @@ test('repeat forgot password request invalidates previous active OTP', function 
         'email' => 'admin@example.com',
         'password' => Hash::make('password123'),
     ]);
-    $admin->roles()->attach(Role::where('name', 'MODERATOR')->first()->id, ['assigned_at' => now()]);
+    $admin->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
 
     $this->postJson('/api/v1/auth/forgot-password', [
         'email' => $admin->email,

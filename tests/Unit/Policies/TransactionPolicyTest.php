@@ -4,7 +4,6 @@ use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Policies\TransactionPolicy;
-use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -12,7 +11,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->seed(RoleSeeder::class);
+    $this->seedRolesAndPermissions();
     $this->policy = new TransactionPolicy;
 });
 
@@ -31,7 +30,7 @@ function createUserWithRole(string $roleName, ?array $abilities = null): User
     }
 
     $abilities ??= match ($roleName) {
-        'ADMIN', 'SUPER_ADMIN', 'MODERATOR' => ['admin'],
+        'ADMIN', 'SUPER_ADMIN' => ['admin'],
         'AGENT' => ['agent'],
         default => ['user'],
     };
@@ -41,16 +40,14 @@ function createUserWithRole(string $roleName, ?array $abilities = null): User
     return $user;
 }
 
-test('viewAny is allowed for admin, super admin, and moderator, denied for regular user and agent', function () {
+test('viewAny is allowed for admin and super admin, denied for regular user and agent', function () {
     $admin = createUserWithRole('ADMIN');
     $superAdmin = createUserWithRole('SUPER_ADMIN');
-    $moderator = createUserWithRole('MODERATOR');
     $user = createUserWithRole('USER');
     $agent = createUserWithRole('AGENT');
 
     expect($this->policy->viewAny($admin))->toBeTrue()
         ->and($this->policy->viewAny($superAdmin))->toBeTrue()
-        ->and($this->policy->viewAny($moderator))->toBeTrue()
         ->and($this->policy->viewAny($user))->toBeFalse()
         ->and($this->policy->viewAny($agent))->toBeFalse();
 });
@@ -119,24 +116,26 @@ test('view is allowed for users participating via wallet slots', function () {
         ->and($this->policy->view($outsider, $transaction))->toBeFalse();
 });
 
-test('user operations (topUp, cashIn, cashOut, transfer) are only permitted for USER role', function () {
+test('user operations (topUp, cashOut, transfer) are only permitted for USER role', function () {
     $user = createUserWithRole('USER');
     $agent = createUserWithRole('AGENT');
     $admin = createUserWithRole('ADMIN');
 
-    foreach (['topUp', 'cashIn', 'cashOut', 'transfer'] as $ability) {
+    foreach (['topUp', 'cashOut', 'transfer'] as $ability) {
         expect($this->policy->$ability($user))->toBeTrue("Expected {$ability} to be true for USER")
             ->and($this->policy->$ability($agent))->toBeFalse("Expected {$ability} to be false for AGENT")
             ->and($this->policy->$ability($admin))->toBeFalse("Expected {$ability} to be false for ADMIN");
     }
 });
 
-test('agentWithdrawal is only permitted for AGENT role', function () {
+test('agent operations (cashIn, agentWithdrawal) are only permitted for AGENT role', function () {
     $agent = createUserWithRole('AGENT');
     $user = createUserWithRole('USER');
     $admin = createUserWithRole('ADMIN');
 
-    expect($this->policy->agentWithdrawal($agent))->toBeTrue()
-        ->and($this->policy->agentWithdrawal($user))->toBeFalse()
-        ->and($this->policy->agentWithdrawal($admin))->toBeFalse();
+    foreach (['cashIn', 'agentWithdrawal'] as $ability) {
+        expect($this->policy->$ability($agent))->toBeTrue("Expected {$ability} to be true for AGENT")
+            ->and($this->policy->$ability($user))->toBeFalse("Expected {$ability} to be false for USER")
+            ->and($this->policy->$ability($admin))->toBeFalse("Expected {$ability} to be false for ADMIN");
+    }
 });

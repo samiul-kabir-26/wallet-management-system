@@ -12,7 +12,7 @@ class WalletPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $user->can('wallets.view_any');
     }
 
     /**
@@ -20,7 +20,7 @@ class WalletPolicy
      */
     public function view(User $user, Wallet $wallet): bool
     {
-        return $user->id === $wallet->user_id || $user->isAdmin();
+        return $user->id === $wallet->user_id || $user->can('wallets.view_any');
     }
 
     /**
@@ -28,7 +28,7 @@ class WalletPolicy
      */
     public function block(User $user, Wallet $wallet): bool
     {
-        return $user->isAdmin();
+        return $user->can('wallets.block');
     }
 
     /**
@@ -36,6 +36,6 @@ class WalletPolicy
      */
     public function unblock(User $user, Wallet $wallet): bool
     {
-        return $user->isAdmin();
+        return $user->can('wallets.unblock');
     }
 }

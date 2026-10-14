@@ -46,7 +46,7 @@ class RegisterRequest extends FormRequest
     {
         return [
             'phone_number.regex' => 'The phone number must be a valid 11-digit Bangladeshi mobile number.',
-            'phone_number.unique' => 'This phone number is already registered.',
+            'phone_number.unique' => 'This phone number already has an account. Each number can hold one wallet type, so please sign in or use a different number.',
             'pin.digits_between' => 'The PIN must be between 5 and 10 digits.',
             'pin.confirmed' => 'The PIN confirmation does not match.',
             'role.in' => 'The selected role is invalid. Allowed roles are USER or AGENT.',

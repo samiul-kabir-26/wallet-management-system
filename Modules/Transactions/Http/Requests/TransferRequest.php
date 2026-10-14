@@ -4,6 +4,7 @@ namespace Modules\Transactions\Http\Requests;
 
 use App\Models\Transaction;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class TransferRequest extends FormRequest
 {
@@ -12,8 +13,8 @@ class TransferRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        if ($this->has('recipientId') && ! $this->has('recipient_id')) {
-            $this->merge(['recipient_id' => $this->input('recipientId')]);
+        if ($this->has('recipientPhone') && ! $this->has('recipient_phone')) {
+            $this->merge(['recipient_phone' => $this->input('recipientPhone')]);
         }
     }
 
@@ -32,20 +33,35 @@ class TransferRequest extends FormRequest
      */
     public function rules(): array
     {
+        $min = config('transactions.limits.transfer.min', 10.00);
+        $max = config('transactions.limits.transfer.max', 25000.00);
+
         return [
-            'recipient_id' => [
+            'recipient_phone' => [
                 'required',
-                'integer',
-                'exists:users,id',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    if ((int) $value === (int) $this->user()?->id) {
-                        $fail('You cannot transfer money to yourself.');
-                    }
-                },
+                'string',
+                'regex:/^01[3-9]\d{8}$/',
+                Rule::exists('users', 'phone_number')->where('is_deleted', false),
             ],
-            'amount' => ['required', 'numeric', 'gt:0'],
+            'amount' => ['required', 'decimal:0,2', "min:{$min}", "max:{$max}"],
+            'pin' => ['required', 'string', 'digits_between:5,10'],
             'description' => ['nullable', 'string', 'max:500'],
             'idempotency_key' => ['required', 'string', 'max:255'],
+        ];
+    }
+
+    /**
+     * Get custom messages for validator errors.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'recipient_phone.regex' => 'The phone number must be a valid 11-digit Bangladeshi mobile number.',
+            'recipient_phone.exists' => 'Recipient user not found.',
+            'pin.required' => 'The PIN is required.',
+            'pin.digits_between' => 'The PIN must be between 5 and 10 digits.',
         ];
     }
 }

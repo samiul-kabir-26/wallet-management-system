@@ -6,12 +6,14 @@ use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Modules\Authentication\Exceptions\AccountHasNoPinException;
 use Modules\Authentication\Exceptions\AccountInactiveException;
 use Modules\Authentication\Exceptions\InsufficientRoleException;
+use Modules\Authentication\Exceptions\PinResetLinkInvalidException;
 use Modules\Authentication\Exceptions\UserNotFoundException;
+use Modules\Authentication\Notifications\PinResetLinkNotification;
 
 class PinResetService
 {
@@ -25,8 +27,8 @@ class PinResetService
      */
     public function initiate(User $staffMember, string $phoneNumber, string $email): string
     {
-        // 1. Authorize: MODERATOR, ADMIN, or SUPER_ADMIN
-        if (! $staffMember->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR'])) {
+        // 1. Authorize: requires pin_reset.initiate permission
+        if (! $staffMember->can('pin_reset.initiate')) {
             throw new InsufficientRoleException;
         }
 
@@ -46,15 +48,7 @@ class PinResetService
             throw new AccountInactiveException;
         }
 
-        // 5. Generate signed recovery link (valid for 15 minutes)
-        $expiryMinutes = (int) config('auth_settings.pin_reset.expiry_minutes', 15);
-        $signedUrl = URL::temporarySignedRoute(
-            'auth.reset-pin',
-            now()->addMinutes($expiryMinutes),
-            ['user' => $target->id],
-        );
-
-        // 6. Atomically attach email and write immutable audit log
+        // 5. Atomically attach email and write immutable audit log
         DB::transaction(function () use ($staffMember, $target, $email): void {
             $target->forceFill([
                 'email' => $email,
@@ -72,13 +66,35 @@ class PinResetService
             ]);
         });
 
-        // 7. Stub email delivery (logged for development and testing)
-        Log::info("PIN reset link sent to [{$email}]", [
-            'target_id' => $target->id,
-            'url' => $signedUrl,
-        ]);
+        // 6. Generate the one-time signed recovery link and deliver it to the attached email
+        $expiryMinutes = (int) config('auth_settings.pin_reset.expiry_minutes', 15);
+        $signedUrl = self::makeResetUrl($target, $expiryMinutes);
+
+        $target->notify(new PinResetLinkNotification($signedUrl, $expiryMinutes));
 
         return $signedUrl;
+    }
+
+    /**
+     * Build a signed PIN reset URL bound to the user's current PIN hash.
+     *
+     * The fingerprint changes as soon as the PIN is replaced, so the link works only once.
+     */
+    public static function makeResetUrl(User $user, int $expiryMinutes): string
+    {
+        return URL::temporarySignedRoute(
+            'auth.reset-pin',
+            now()->addMinutes($expiryMinutes),
+            ['user' => $user->id, 'fingerprint' => self::pinFingerprint($user)],
+        );
+    }
+
+    /**
+     * Derive a non-reversible fingerprint of the user's current PIN hash.
+     */
+    public static function pinFingerprint(User $user): string
+    {
+        return hash_hmac('sha256', (string) $user->pin, (string) config('app.key'));
     }
 
     /**
@@ -86,8 +102,9 @@ class PinResetService
      *
      * @throws AccountInactiveException
      * @throws AccountHasNoPinException
+     * @throws PinResetLinkInvalidException
      */
-    public function resetPin(User $user, string $pin): void
+    public function resetPin(User $user, string $pin, string $fingerprint): void
     {
         // 1. Ensure target account is active
         if ($user->is_active !== 'ACTIVE') {
@@ -99,9 +116,34 @@ class PinResetService
             throw new AccountHasNoPinException;
         }
 
-        // 3. Hash and store new PIN (no general token issued per spec)
-        $user->forceFill([
-            'pin' => Hash::make($pin),
-        ])->save();
+        // 3. Lock the row so two submissions of the same link cannot both pass the fingerprint check
+        DB::transaction(function () use ($user, $pin, $fingerprint): void {
+            $lockedUser = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+
+            if (! hash_equals(self::pinFingerprint($lockedUser), $fingerprint)) {
+                throw new PinResetLinkInvalidException;
+            }
+
+            // Hash and store new PIN (no general token issued per spec)
+            $lockedUser->forceFill([
+                'pin' => Hash::make($pin),
+            ])->save();
+
+            // Any session opened with the old PIN must not survive the reset
+            $lockedUser->tokens()->delete();
+
+            AuditLog::create([
+                'actor_id' => $lockedUser->id,
+                'action' => 'PIN_RESET_COMPLETED',
+                'auditable_type' => $lockedUser->getMorphClass(),
+                'auditable_id' => $lockedUser->id,
+                'metadata' => [
+                    'phone_number' => $lockedUser->phone_number,
+                ],
+            ]);
+        });
+
+        // A human-verified reset lifts any brute-force lockout on the old PIN
+        RateLimiter::clear(PinVerifier::getThrottleKey($user->id));
     }
 }

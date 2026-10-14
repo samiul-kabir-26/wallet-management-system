@@ -28,6 +28,12 @@ class WalletResource extends JsonResource
         return [
             'id' => $this->resource->id,
             'user_id' => $this->resource->user_id,
+            'owner' => $this->whenLoaded('user', fn (): ?array => $this->resource->user === null ? null : [
+                'id' => $this->resource->user->id,
+                'name' => $this->resource->user->name,
+                'phone_number' => $this->resource->user->phone_number,
+                'email' => $this->resource->user->email,
+            ]),
             'kind' => $this->resource->kind,
             'balance' => (float) $this->resource->balance,
             'currency' => $this->resource->currency,

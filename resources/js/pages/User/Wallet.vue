@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia';
 import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { parseApiError } from '@/composables/useApiError';
-import { money } from '@/composables/validators';
+import { money, pin } from '@/composables/validators';
 import { api } from '@/services/api';
 import { useToastStore } from '@/stores/toast';
 import { useWalletStore } from '@/stores/wallet';
@@ -21,16 +21,20 @@ const walletStore = useWalletStore();
 const { wallet, loading } = storeToRefs(walletStore);
 const topUpLoading = ref(false);
 
-const { handleSubmit, resetForm, setErrors } = useForm<{ amount: string }>({
-    validationSchema: { amount: money('Amount') },
-    initialValues: { amount: '' },
+const { handleSubmit, resetForm, setErrors } = useForm<{ amount: string; pin: string }>({
+    validationSchema: {
+        amount: money('Amount'),
+        pin,
+    },
+    initialValues: { amount: '', pin: '' },
 });
 
 const handleTopUp = handleSubmit(async (values) => {
     topUpLoading.value = true;
     try {
         await api.post('/transactions/top-up', {
-            amount: Number(values.amount),
+            amount: Number(values.amount).toFixed(2),
+            pin: values.pin,
             idempotency_key: crypto.randomUUID(),
         });
         toast.success(`Successfully added ৳${Number(values.amount).toFixed(2)} to your wallet!`);
@@ -38,8 +42,11 @@ const handleTopUp = handleSubmit(async (values) => {
         await walletStore.fetchWallet();
     } catch (err: unknown) {
         const { message, fieldErrors } = parseApiError(err, 'Top-up failed.');
-        if (fieldErrors.amount) {
-            setErrors({ amount: fieldErrors.amount });
+        const mapped: Record<string, string> = {};
+        if (fieldErrors.amount) mapped.amount = fieldErrors.amount;
+        if (fieldErrors.pin) mapped.pin = fieldErrors.pin;
+        if (Object.keys(mapped).length > 0) {
+            setErrors(mapped);
         }
         toast.error(message);
     } finally {
@@ -104,6 +111,15 @@ onMounted(async () => {
 
                         <form class="space-y-3" novalidate @submit.prevent="handleTopUp">
                             <TextField name="amount" label="Amount (BDT)" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="500.00" />
+                            <TextField
+                                name="pin"
+                                label="Your 5-Digit PIN"
+                                type="password"
+                                inputmode="numeric"
+                                maxlength="10"
+                                placeholder="•••••"
+                                autocomplete="current-password"
+                            />
                             <button
                                 type="submit"
                                 :disabled="topUpLoading || wallet?.is_blocked"
@@ -125,7 +141,7 @@ onMounted(async () => {
                     <!-- Daily Cap -->
                     <div class="space-y-2">
                         <div class="flex justify-between text-xs font-semibold">
-                            <span>Daily Limit: ৳{{ Number(wallet?.caps?.daily_limit ?? 10000).toFixed(2) }}</span>
+                            <span>Daily Limit: ৳{{ Number(wallet?.caps?.daily_limit ?? 0).toFixed(2) }}</span>
                             <span class="text-indigo-600 dark:text-indigo-400">{{ dailyPercentage }}% Used</span>
                         </div>
                         <div class="h-2 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
@@ -145,7 +161,7 @@ onMounted(async () => {
                     <!-- Monthly Cap -->
                     <div class="space-y-2 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                         <div class="flex justify-between text-xs font-semibold">
-                            <span>Monthly Limit: ৳{{ Number(wallet?.caps?.monthly_limit ?? 50000).toFixed(2) }}</span>
+                            <span>Monthly Limit: ৳{{ Number(wallet?.caps?.monthly_limit ?? 0).toFixed(2) }}</span>
                             <span class="text-indigo-600 dark:text-indigo-400">{{ monthlyPercentage }}% Used</span>
                         </div>
                         <div class="h-2 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">

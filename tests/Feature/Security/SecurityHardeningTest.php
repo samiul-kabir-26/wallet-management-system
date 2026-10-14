@@ -150,6 +150,7 @@ test('transaction creation logs financial audit info event', function () {
     Sanctum::actingAs($user, ['user']);
 
     $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 50.00,
         'idempotency_key' => 'log-audit-key-1',
     ])->assertStatus(201);

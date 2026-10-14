@@ -27,7 +27,7 @@ class TransactionResource extends JsonResource
     public function toArray(Request $request): array
     {
         $user = $request->user();
-        $isStaff = $user !== null && $user->isStaffWithAdminAccess();
+        $isStaff = $user !== null && $user->can('transactions.view_any');
 
         $hasViewerWallet = $request->attributes->has('viewer_wallet_id');
         $viewerWalletId = $request->attributes->get('viewer_wallet_id');
@@ -62,6 +62,7 @@ class TransactionResource extends JsonResource
             'description' => $this->resource->description,
             'status' => $this->resource->status,
             'idempotency_key' => $this->resource->idempotency_key,
+            'external_reference' => $this->resource->external_reference,
             'sender_wallet_balance_after' => $this->when(
                 $showSender,
                 fn () => $this->resource->sender_wallet_balance_after !== null
@@ -81,8 +82,33 @@ class TransactionResource extends JsonResource
                     : null
             ),
             'meta' => $this->resource->meta,
+            'parties' => $this->when($isStaff, fn (): array => [
+                'sender' => $this->partySummary('sender'),
+                'recipient' => $this->partySummary('recipient'),
+                'agent' => $this->partySummary('agent'),
+            ]),
             'created_at' => $this->resource->created_at,
             'updated_at' => $this->resource->updated_at,
+        ];
+    }
+
+    /**
+     * Name and phone of one party, for staff views; null when that party is absent or not eager loaded.
+     *
+     * @return array{id: int, name: string, phone_number: string|null}|null
+     */
+    private function partySummary(string $relation): ?array
+    {
+        if (! $this->resource->relationLoaded($relation)) {
+            return null;
+        }
+
+        $party = $this->resource->getRelation($relation);
+
+        return $party === null ? null : [
+            'id' => $party->id,
+            'name' => $party->name,
+            'phone_number' => $party->phone_number,
         ];
     }
 }

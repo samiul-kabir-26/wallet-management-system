@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia';
 import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { parseApiError } from '@/composables/useApiError';
-import { money } from '@/composables/validators';
+import { money, pin } from '@/composables/validators';
 import { api } from '@/services/api';
 import { useToastStore } from '@/stores/toast';
 import { useWalletStore } from '@/stores/wallet';
@@ -22,9 +22,12 @@ const { wallet, loading: walletLoading } = storeToRefs(walletStore);
 const loading = ref(false);
 const confirmOpen = ref(false);
 
-const { handleSubmit, resetForm, setErrors, values } = useForm<{ amount: string }>({
-    validationSchema: { amount: money('Withdrawal amount') },
-    initialValues: { amount: '' },
+const { handleSubmit, resetForm, setErrors, values } = useForm<{ amount: string; pin: string }>({
+    validationSchema: {
+        amount: money('Withdrawal amount'),
+        pin,
+    },
+    initialValues: { amount: '', pin: '' },
 });
 
 const onValid = handleSubmit(() => {
@@ -36,17 +39,19 @@ const submit = async () => {
     try {
         const res = await api.post('/transactions/agent/withdrawal', {
             amount: Number(values.amount),
+            pin: values.pin,
             idempotency_key: crypto.randomUUID(),
         });
-        toast.success(`Bank withdrawal of ৳${Number(values.amount).toFixed(2)} initiated (Tx #${res.data.data?.transaction?.id ?? ''}).`);
+        toast.success(`Withdrawal request of ৳${Number(values.amount).toFixed(2)} submitted (Tx #${res.data.data?.transaction?.id ?? ''}). It will show as PENDING until an admin approves it.`);
         confirmOpen.value = false;
         resetForm();
         await walletStore.fetchWallet();
     } catch (err: unknown) {
         const { message, fieldErrors } = parseApiError(err, 'Withdrawal failed. Check balance and agent status.');
-        if (fieldErrors.amount) {
-            setErrors({ amount: fieldErrors.amount });
-        }
+        const mapped: Record<string, string> = {};
+        if (fieldErrors.amount) mapped.amount = fieldErrors.amount;
+        if (fieldErrors.pin) mapped.pin = fieldErrors.pin;
+        setErrors(mapped);
         confirmOpen.value = false;
         toast.error(message);
     } finally {
@@ -68,7 +73,7 @@ onMounted(() => {
                     Agent Bank Withdrawal
                 </h1>
                 <p class="text-sm text-zinc-500 dark:text-zinc-400">
-                    Disburse earned commissions and wallet funds directly to your bank account
+                    Request a transfer of your wallet funds to your bank account. Requests are reviewed by an admin.
                 </p>
             </div>
 
@@ -90,6 +95,15 @@ onMounted(() => {
             <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
                 <form class="space-y-4" novalidate @submit.prevent="onValid">
                     <TextField name="amount" label="Withdrawal Amount (BDT)" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="500.00" />
+                    <TextField
+                        name="pin"
+                        label="Agent PIN"
+                        type="password"
+                        inputmode="numeric"
+                        maxlength="10"
+                        autocomplete="off"
+                        placeholder="Enter 5-10 digit PIN"
+                    />
                     <button
                         type="submit"
                         :disabled="loading"
@@ -104,11 +118,17 @@ onMounted(() => {
             :open="confirmOpen"
             title="Confirm Bank Withdrawal"
             :loading="loading"
-            confirm-label="Withdraw to Bank"
+            confirm-label="Submit Request"
             @cancel="confirmOpen = false"
             @confirm="submit"
         >
-            You are about to withdraw <strong>৳{{ Number(values.amount || 0).toFixed(2) }}</strong> from your wallet to your bank account.
+            <p>
+                You are about to request a withdrawal of <strong>৳{{ Number(values.amount || 0).toFixed(2) }}</strong> to your bank account.
+            </p>
+            <p class="mt-2 text-xs text-zinc-500">
+                The amount is held from your balance straight away and the request stays <strong>PENDING</strong> until an admin
+                confirms the bank transfer. If it is rejected, the full amount is returned to your wallet.
+            </p>
         </ConfirmModal>
     </AgentLayout>
 </template>

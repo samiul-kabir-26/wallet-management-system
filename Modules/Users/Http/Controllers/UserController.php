@@ -3,17 +3,24 @@
 namespace Modules\Users\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
+use App\Models\Role;
 use App\Models\User;
+use App\Models\Wallet;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Modules\Users\Http\Requests\ApproveAgentRequest;
 use Modules\Users\Http\Requests\AssignRoleRequest;
+use Modules\Users\Http\Requests\LookupRecipientRequest;
 use Modules\Users\Http\Requests\RegisterUserRequest;
 use Modules\Users\Http\Requests\SuspendAgentRequest;
 use Modules\Users\Http\Requests\UpdateUserRequest;
 use Modules\Users\Resources\AgentResource;
+use Modules\Users\Resources\AuditLogResource;
+use Modules\Users\Resources\LoginActivityResource;
+use Modules\Users\Resources\RecipientLookupResource;
 use Modules\Users\Resources\UserResource;
 use Modules\Users\Services\UserService;
 
@@ -33,7 +40,7 @@ class UserController extends Controller
         $this->authorize('viewAny', User::class);
 
         $validated = $request->validate([
-            'role' => ['sometimes', 'string', Rule::in(['SUPER_ADMIN', 'ADMIN', 'MODERATOR', 'AGENT', 'USER'])],
+            'role' => ['sometimes', 'string', Rule::exists('roles', 'name')],
             'is_active' => ['sometimes', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
             'is_verified' => ['sometimes', 'boolean'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
@@ -43,7 +50,7 @@ class UserController extends Controller
         $perPage = (int) ($validated['per_page'] ?? 15);
 
         $query = User::query()
-            ->with('roles')
+            ->with(['roles', 'agentInfo'])
             ->where('is_deleted', false)
             ->latest('id');
 
@@ -61,20 +68,10 @@ class UserController extends Controller
 
         $paginator = $query->paginate($perPage);
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'users' => UserResource::collection($paginator),
-                'pagination' => [
-                    'total' => $paginator->total(),
-                    'per_page' => $paginator->perPage(),
-                    'current_page' => $paginator->currentPage(),
-                    'last_page' => $paginator->lastPage(),
-                    'from' => $paginator->firstItem(),
-                    'to' => $paginator->lastItem(),
-                ],
-            ],
-        ]);
+        return $this->paginatedResponse(
+            $paginator,
+            UserResource::collection($paginator),
+        );
     }
 
     /**
@@ -82,12 +79,6 @@ class UserController extends Controller
      */
     public function register(RegisterUserRequest $request): JsonResponse
     {
-        // Escalation check: Only SUPER_ADMIN can register an account with role=ADMIN.
-        // Runs safely AFTER FormRequest validation has confirmed 'role' is valid.
-        if ($request->validated('role') === 'ADMIN') {
-            $this->authorize('createAdmin', User::class);
-        }
-
         $user = $this->userService->register(
             data: $request->validated(),
             actor: $request->user(),
@@ -198,5 +189,104 @@ class UserController extends Controller
                 'user' => new UserResource($updatedUser),
             ],
         ]);
+    }
+
+    /**
+     * Look up a user by phone number and return a masked name and eligibility.
+     */
+    public function lookup(LookupRecipientRequest $request): JsonResponse
+    {
+        $user = User::with(['roles', 'wallets'])
+            ->where('phone_number', $request->validated('phone_number'))
+            ->where('is_deleted', false)
+            ->first();
+
+        if (! $user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => (new RecipientLookupResource($user))->resolve($request),
+        ]);
+    }
+
+    /**
+     * Mark the user's phone number as verified after an out-of-band identity check.
+     */
+    public function verifyPhone(Request $request, User $user): JsonResponse
+    {
+        $this->authorize('verifyPhone', $user);
+
+        $verifiedUser = $this->userService->verifyPhone($user, $request->user());
+        $verifiedUser->load(['roles', 'agentInfo']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Phone number marked as verified.',
+            'data' => [
+                'user' => new UserResource($verifiedUser),
+            ],
+        ]);
+    }
+
+    /**
+     * List the login attempts recorded against the user, newest first.
+     */
+    public function loginActivity(Request $request, User $user): JsonResponse
+    {
+        $this->authorize('viewActivity', $user);
+
+        $validated = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        $paginator = $user->loginActivities()
+            ->latest('id')
+            ->paginate((int) ($validated['per_page'] ?? 15));
+
+        return $this->paginatedResponse(
+            $paginator,
+            LoginActivityResource::collection($paginator),
+        );
+    }
+
+    /**
+     * List audit entries performed by the user or recorded against the user, newest first.
+     */
+    public function auditTrail(Request $request, User $user): JsonResponse
+    {
+        $this->authorize('viewActivity', $user);
+
+        $validated = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        $walletIds = $user->wallets()->pluck('id');
+
+        // Actions the user performed, actions taken on the account, and actions taken on its wallets
+        $paginator = AuditLog::query()
+            ->with('actor:id,name')
+            ->where(function ($query) use ($user, $walletIds): void {
+                $query->where('actor_id', $user->id)
+                    ->orWhere(fn ($q) => $q
+                        ->where('auditable_type', $user->getMorphClass())
+                        ->where('auditable_id', $user->id))
+                    ->orWhere(fn ($q) => $q
+                        ->where('auditable_type', (new Wallet)->getMorphClass())
+                        ->whereIn('auditable_id', $walletIds));
+            })
+            ->latest('id')
+            ->paginate((int) ($validated['per_page'] ?? 15));
+
+        return $this->paginatedResponse(
+            $paginator,
+            AuditLogResource::collection($paginator),
+        );
     }
 }

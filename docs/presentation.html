@@ -116,12 +116,12 @@
 
 <!-- 5 -->
 <section class="slide">
-  <h2><small>Roles</small>Five roles, three panels</h2>
+  <h2><small>Roles</small>Built-in & custom roles across three panels</h2>
   <table>
     <tr><th>Role</th><th>Register users</th><th>Register agents</th><th>Register admins</th><th>Approve agents</th><th>View any txn</th><th>Settings</th><th>Start PIN reset</th></tr>
     <tr><td>SUPER_ADMIN</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td></tr>
     <tr><td>ADMIN</td><td class="y">✔</td><td class="y">✔</td><td class="n">✘</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td><td class="y">✔</td></tr>
-    <tr><td>MODERATOR</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="y">✔</td><td class="n">✘</td><td class="y">✔</td></tr>
+    <tr><td>Custom (e.g. AUDITOR)</td><td class="n">⚙</td><td class="n">⚙</td><td class="n">⚙</td><td class="n">⚙</td><td class="y">⚙</td><td class="n">⚙</td><td class="y">⚙</td></tr>
     <tr><td>AGENT</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td></tr>
     <tr><td>USER</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td><td class="n">✘</td></tr>
   </table>
@@ -133,7 +133,7 @@
   <h2><small>Authentication</small>Three login routes, three credentials</h2>
   <table>
     <tr><th>Route</th><th>Credentials</th><th>2nd factor</th><th>Requires</th><th>Token ability</th></tr>
-    <tr><td><code>/auth/admin/login</code></td><td>email or phone + password</td><td>6-digit OTP</td><td>SUPER_ADMIN / ADMIN / MODERATOR</td><td><span class="tag">admin</span></td></tr>
+    <tr><td><code>/auth/admin/login</code></td><td>email or phone + password</td><td>6-digit OTP</td><td>Staff (SUPER_ADMIN, ADMIN, or custom)</td><td><span class="tag">admin</span></td></tr>
     <tr><td><code>/auth/agent/login</code></td><td>phone + PIN</td><td>—</td><td>AGENT + approved</td><td><span class="tag b">agent</span></td></tr>
     <tr><td><code>/auth/user/login</code></td><td>phone + PIN</td><td>—</td><td>USER</td><td><span class="tag w">user</span></td></tr>
   </table>

@@ -1,0 +1,25 @@
+export const PERMISSIONS = [
+    'users.view_any',
+    'users.view',
+    'users.create',
+    'users.update',
+    'users.assign_role',
+    'users.grant_admin_access',
+    'users.verify_phone',
+    'users.view_activity',
+    'agents.approve',
+    'agents.suspend',
+    'agents.issue_float',
+    'agents.approve_withdrawal',
+    'wallets.view_any',
+    'wallets.block',
+    'wallets.unblock',
+    'transactions.view_any',
+    'settings.update',
+    'settings.manage_session_timeouts',
+    'pin_reset.initiate',
+    'roles.view',
+    'roles.manage',
+] as const;
+
+export type PermissionName = (typeof PERMISSIONS)[number];

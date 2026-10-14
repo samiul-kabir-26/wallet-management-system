@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
+import { useAuthStore } from '@/stores/auth';
 import { useForm } from 'vee-validate';
 import { rate } from '@/composables/validators';
 import { api } from '@/services/api';
@@ -10,13 +11,17 @@ import Badge from '@/components/Badge.vue';
 import Modal from '@/components/Modal.vue';
 import TextField from '@/components/Forms/TextField.vue';
 import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
+import IssueFloatModal from '@/components/Modals/IssueFloatModal.vue';
 import Skeleton from '@/components/Skeleton.vue';
+import Pagination from '@/components/Pagination.vue';
 import { useToastStore } from '@/stores/toast';
-import type { User } from '@/types/models';
+import type { Pagination as PaginationType, User } from '@/types/models';
 
-useAuthGuard('ADMIN');
+useAuthGuard('ADMIN', 'agents.approve');
 
+const authStore = useAuthStore();
 const agents = ref<User[]>([]);
+const pagination = ref<PaginationType | null>(null);
 const loading = ref(true);
 const toast = useToastStore();
 
@@ -26,20 +31,26 @@ const selectedAgent = ref<User | null>(null);
 const approveLoading = ref(false);
 const suspendTarget = ref<User | null>(null);
 const suspendLoading = ref(false);
+const floatTarget = ref<User | null>(null);
+
+const handleFloatIssued = async () => {
+    floatTarget.value = null;
+    await fetchAgents(pagination.value?.current_page ?? 1);
+};
 
 const { handleSubmit, setValues, values } = useForm<{ commissionRate: string }>({
     validationSchema: { commissionRate: rate('Commission rate') },
     initialValues: { commissionRate: '0.015' },
 });
 
-const fetchAgents = async () => {
+const fetchAgents = async (page = 1) => {
     loading.value = true;
     try {
         const res = await api.get('/users/all-users', {
-            params: { per_page: 50 },
+            params: { role: 'AGENT', page, per_page: 15 },
         });
-        const allUsers: User[] = res.data.data?.items ?? [];
-        agents.value = allUsers.filter((u) => u.roles.includes('AGENT'));
+        agents.value = res.data.data?.items ?? [];
+        pagination.value = res.data.data?.pagination ?? null;
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
         toast.error(apiError.response?.data?.message || 'Failed to fetch agents.');
@@ -63,7 +74,7 @@ const handleApproveAgent = handleSubmit(async (formValues) => {
         });
         toast.success(`Agent ${selectedAgent.value.name} successfully approved!`);
         showApproveModal.value = false;
-        await fetchAgents();
+        await fetchAgents(pagination.value?.current_page ?? 1);
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
         toast.error(apiError.response?.data?.message || 'Failed to approve agent.');
@@ -80,7 +91,7 @@ const handleSuspendAgent = async () => {
         await api.patch(`/users/${agent.id}/suspend-agent`);
         toast.success(`Agent ${agent.name} has been suspended.`);
         suspendTarget.value = null;
-        await fetchAgents();
+        await fetchAgents(pagination.value?.current_page ?? 1);
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
         toast.error(apiError.response?.data?.message || 'Failed to suspend agent.');
@@ -137,8 +148,8 @@ onMounted(() => {
                                     {{ a.phone_number }}
                                 </td>
                                 <td class="px-6 py-4">
-                                    <Badge :variant="a.agent_info?.status === 'APPROVED' ? 'success' : a.agent_info?.status === 'SUSPENDED' ? 'danger' : 'warning'">
-                                        {{ a.agent_info?.status ?? 'PENDING' }}
+                                    <Badge :variant="a.agent_info?.status === 'APPROVED' ? 'success' : a.agent_info?.status === 'SUSPENDED' ? 'danger' : a.agent_info?.status === 'PENDING' ? 'warning' : 'neutral'">
+                                        {{ a.agent_info?.status ?? '—' }}
                                     </Badge>
                                 </td>
                                 <td class="px-6 py-4 text-xs font-semibold text-amber-600 dark:text-amber-400">
@@ -147,9 +158,9 @@ onMounted(() => {
                                 <td class="px-6 py-4 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                                     ৳{{ Number(a.agent_info?.total_commission ?? 0).toFixed(2) }}
                                 </td>
-                                <td class="px-6 py-4 text-right space-x-2">
+                                <td v-if="authStore.can('agents.approve') || authStore.can('agents.suspend') || authStore.can('agents.issue_float')" class="px-6 py-4 text-right space-x-2">
                                     <button
-                                        v-if="a.agent_info?.status !== 'APPROVED'"
+                                        v-if="a.agent_info?.status === 'PENDING' && authStore.can('agents.approve')"
                                         type="button"
                                         class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 shadow-xs"
                                         @click="openApproveModal(a)"
@@ -157,18 +168,31 @@ onMounted(() => {
                                         Approve
                                     </button>
                                     <button
-                                        v-if="a.agent_info?.status === 'APPROVED'"
+                                        v-if="a.agent_info?.status === 'APPROVED' && authStore.can('agents.suspend')"
                                         type="button"
                                         class="rounded-md bg-rose-50 border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-400"
                                         @click="suspendTarget = a"
                                     >
                                         Suspend
                                     </button>
+                                    <button
+                                        v-if="a.agent_info?.status === 'APPROVED' && authStore.can('agents.issue_float')"
+                                        type="button"
+                                        class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 shadow-xs"
+                                        @click="floatTarget = a"
+                                    >
+                                        Issue Float
+                                    </button>
+                                </td>
+                                <td v-else class="px-6 py-4 text-right text-xs text-zinc-400">
+                                    -
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+
+                <Pagination :pagination="pagination" :loading="loading" @change-page="fetchAgents" />
             </div>
 
             <!-- Approve Agent Modal -->
@@ -203,6 +227,8 @@ onMounted(() => {
                     </div>
                 </form>
             </Modal>
+
+            <IssueFloatModal :agent="floatTarget" @close="floatTarget = null" @issued="handleFloatIssued" />
 
             <ConfirmModal
                 :open="!!suspendTarget"

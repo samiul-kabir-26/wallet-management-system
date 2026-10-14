@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
+import { useAuthStore } from '@/stores/auth';
 import { api } from '@/services/api';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import Badge from '@/components/Badge.vue';
@@ -11,10 +12,11 @@ import Alert from '@/components/Alert.vue';
 import Skeleton from '@/components/Skeleton.vue';
 import RegisterStaffForm from '@/components/Forms/RegisterStaffForm.vue';
 import { useToastStore } from '@/stores/toast';
-import type { Pagination as PaginationType, User } from '@/types/models';
+import type { Pagination as PaginationType, RoleModel, User } from '@/types/models';
 
-useAuthGuard('ADMIN');
+useAuthGuard('ADMIN', 'users.view_any');
 
+const authStore = useAuthStore();
 const users = ref<User[]>([]);
 const pagination = ref<PaginationType | null>(null);
 const loading = ref(true);
@@ -26,9 +28,24 @@ const showRegisterModal = ref(false);
 // Elevate User modal
 const showElevateModal = ref(false);
 const elevateUser = ref<User | null>(null);
-const elevateRole = ref<'ADMIN' | 'MODERATOR'>('ADMIN');
+const elevateRole = ref<string>('ADMIN');
+const elevateEmail = ref<string>('');
+const elevateError = ref<string | null>(null);
+const availableAdminRoles = ref<RoleModel[]>([]);
 const elevateLoading = ref(false);
-const inviteUrl = ref<string | null>(null);
+const elevateSuccess = ref(false);
+
+const fetchAdminRoles = async () => {
+    try {
+        const res = await api.get('/roles', { params: { panel: 'admin', per_page: 100 } });
+        availableAdminRoles.value = res.data.data?.items ?? [];
+        if (availableAdminRoles.value.length > 0 && !availableAdminRoles.value.some((r) => r.name === elevateRole.value)) {
+            elevateRole.value = availableAdminRoles.value[0].name;
+        }
+    } catch {
+        availableAdminRoles.value = [{ id: 0, name: 'ADMIN', description: 'Administrator', panel: 'admin', is_system: true }];
+    }
+};
 
 const fetchUsers = async (page = 1) => {
     loading.value = true;
@@ -53,24 +70,35 @@ const handleStaffRegistered = async () => {
 
 const openElevateModal = (u: User) => {
     elevateUser.value = u;
-    inviteUrl.value = null;
+    elevateEmail.value = u.email ?? '';
+    elevateError.value = null;
+    elevateSuccess.value = false;
     showElevateModal.value = true;
 };
 
 const handleElevateUser = async () => {
     if (!elevateUser.value) return;
+    if (!elevateEmail.value.trim()) {
+        elevateError.value = 'A valid staff email address is required.';
+        return;
+    }
     elevateLoading.value = true;
+    elevateError.value = null;
     try {
-        const res = await api.patch(`/users/${elevateUser.value.id}/grant-admin-access`, {
+        await api.patch(`/users/${elevateUser.value.id}/grant-admin-access`, {
             role: elevateRole.value,
+            email: elevateEmail.value.trim(),
         });
 
-        inviteUrl.value = res.data.data?.invitation_link ?? 'Invitation issued successfully.';
+        elevateSuccess.value = true;
         toast.success(`Admin access granted to ${elevateUser.value.name}!`);
         await fetchUsers(pagination.value?.current_page ?? 1);
     } catch (err: unknown) {
-        const apiError = err as { response?: { data?: { message?: string } } };
-        toast.error(apiError.response?.data?.message || 'Failed to grant admin access.');
+        const apiError = err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
+        const errData = apiError.response?.data;
+        const msg = errData?.message || (errData?.errors ? Object.values(errData.errors).flat().join(' ') : 'Failed to grant admin access.');
+        elevateError.value = msg;
+        toast.error(msg);
     } finally {
         elevateLoading.value = false;
     }
@@ -78,6 +106,7 @@ const handleElevateUser = async () => {
 
 onMounted(() => {
     fetchUsers();
+    fetchAdminRoles();
 });
 </script>
 
@@ -95,6 +124,7 @@ onMounted(() => {
                     </p>
                 </div>
                 <button
+                    v-if="authStore.can('users.create')"
                     type="button"
                     class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 transition"
                     @click="showRegisterModal = true"
@@ -124,7 +154,15 @@ onMounted(() => {
                                 <td class="px-6 py-4 font-mono text-xs text-zinc-500">#{{ u.id }}</td>
                                 <td class="px-6 py-4 font-semibold text-zinc-900 dark:text-zinc-100">{{ u.name }}</td>
                                 <td class="px-6 py-4 text-xs text-zinc-600 dark:text-zinc-400">
-                                    <div>{{ u.phone_number ?? 'No phone' }}</div>
+                                    <div>
+                                        {{ u.phone_number ?? 'No phone' }}
+                                        <span
+                                            v-if="u.phone_number"
+                                            :class="u.is_verified ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'"
+                                        >
+                                            · {{ u.is_verified ? 'verified' : 'unverified' }}
+                                        </span>
+                                    </div>
                                     <div class="text-zinc-400">{{ u.email ?? '' }}</div>
                                 </td>
                                 <td class="px-6 py-4">
@@ -137,9 +175,16 @@ onMounted(() => {
                                         {{ u.is_active ?? 'ACTIVE' }}
                                     </Badge>
                                 </td>
-                                <td class="px-6 py-4 text-right">
+                                <td class="px-6 py-4 text-right space-x-3 whitespace-nowrap">
+                                    <Link
+                                        v-if="authStore.can('users.view')"
+                                        :href="`/admin/users/${u.id}`"
+                                        class="text-xs font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+                                    >
+                                        View Profile
+                                    </Link>
                                     <button
-                                        v-if="!u.roles.includes('ADMIN') && !u.roles.includes('SUPER_ADMIN')"
+                                        v-if="authStore.can('users.grant_admin_access') && !u.roles.includes('ADMIN') && !u.roles.includes('SUPER_ADMIN')"
                                         type="button"
                                         class="text-xs font-semibold text-rose-600 hover:text-rose-500 dark:text-rose-400"
                                         @click="openElevateModal(u)"
@@ -162,18 +207,15 @@ onMounted(() => {
 
             <!-- Elevate to Admin Modal (Case B) -->
             <Modal :show="showElevateModal" title="Grant Administrative Access" @close="showElevateModal = false">
-                <div v-if="inviteUrl" class="space-y-4">
+                <div v-if="elevateSuccess" class="space-y-4">
                     <Alert type="success" message="Admin invitation created successfully!" />
                     <p class="text-xs text-zinc-600 dark:text-zinc-400">
-                        Share this one-time signed invite URL with the user. They must set their temporary password upon acceptance:
+                        A secure one-time invitation link and temporary credentials have been sent to the user's email inbox (<strong>{{ elevateEmail }}</strong>). The user must accept the invite to set their administrative password.
                     </p>
-                    <div class="p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-xs font-mono break-all text-zinc-800 dark:text-zinc-200">
-                        {{ inviteUrl }}
-                    </div>
                     <div class="flex justify-end">
                         <button
                             type="button"
-                            class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                            class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
                             @click="showElevateModal = false"
                         >
                             Done
@@ -182,11 +224,31 @@ onMounted(() => {
                 </div>
 
                 <div v-else class="space-y-4">
+                    <Alert v-if="elevateError" type="error" :message="elevateError" />
+
                     <p class="text-sm text-zinc-600 dark:text-zinc-400">
                         Are you sure you want to elevate
                         <span class="font-semibold text-zinc-900 dark:text-zinc-100">{{ elevateUser?.name }}</span>
                         ({{ elevateUser?.phone_number }}) to administrative staff?
                     </p>
+
+                    <Alert
+                        v-if="elevateUser && !elevateUser.is_verified"
+                        type="warning"
+                        message="This user's phone number is not verified yet. Open their profile and use 'Mark Phone Verified' after confirming their identity, then grant access."
+                    />
+
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Staff Email Address</label>
+                        <input
+                            v-model="elevateEmail"
+                            type="email"
+                            placeholder="staff@wallet.local"
+                            class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                            required
+                        />
+                        <p class="mt-1 text-xs text-zinc-500">The temporary password and one-time invitation link will be associated with this email address.</p>
+                    </div>
 
                     <div>
                         <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Assign Role</label>
@@ -194,8 +256,9 @@ onMounted(() => {
                             v-model="elevateRole"
                             class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                         >
-                            <option value="ADMIN">ADMIN</option>
-                            <option value="MODERATOR">MODERATOR</option>
+                            <option v-for="r in availableAdminRoles" :key="r.id" :value="r.name">
+                                {{ r.name }}{{ r.description ? ` (${r.description})` : '' }}
+                            </option>
                         </select>
                     </div>
 

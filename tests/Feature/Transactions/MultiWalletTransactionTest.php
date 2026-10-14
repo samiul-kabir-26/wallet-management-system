@@ -39,11 +39,12 @@ test('a person holding both wallets: cash-in moves money only between the user U
     $userUserWallet = Wallet::factory()->for($user)->balance(100.00)->create();
     $userAgentWallet = Wallet::factory()->agent()->for($user)->balance(500.00)->create();
 
-    Sanctum::actingAs($user, ['user']);
+    Sanctum::actingAs($agent, ['agent']);
 
-    $response = $this->postJson('/api/v1/transactions/cash-in', [
-        'agent_phone' => $agent->phone_number,
+    $response = $this->postJson('/api/v1/transactions/agent/cash-in', [
+        'customer_phone' => $user->phone_number,
         'amount' => 200.00,
+        'pin' => '12345',
         'idempotency_key' => 'multi-wallet-cashin-01',
     ]);
 
@@ -83,8 +84,9 @@ test('transfer to an agent-only recipient without a user wallet is rejected', fu
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'transfer-agent-only-recipient',
     ]);
 
@@ -112,6 +114,7 @@ test('blocking one wallet leaves the other wallet usable for the same user', fun
     // 1. As user, top-up fails because USER wallet is blocked
     Sanctum::actingAs($user, ['user']);
     $topUpResponse = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 100.00,
         'idempotency_key' => 'blocked-user-wallet-topup',
     ]);
@@ -121,6 +124,7 @@ test('blocking one wallet leaves the other wallet usable for the same user', fun
     Sanctum::actingAs($user, ['agent']);
     $withdrawResponse = $this->postJson('/api/v1/transactions/agent/withdrawal', [
         'amount' => 300.00,
+        'pin' => '12345',
         'idempotency_key' => 'active-agent-wallet-withdraw',
     ]);
     $withdrawResponse->assertStatus(201)

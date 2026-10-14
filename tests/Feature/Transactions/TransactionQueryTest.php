@@ -4,12 +4,11 @@ use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
-use Database\Seeders\RoleSeeder;
 use Database\Seeders\SystemSettingsSeeder;
 use Laravel\Sanctum\Sanctum;
 
 beforeEach(function () {
-    $this->seed(RoleSeeder::class);
+    $this->seedRolesAndPermissions();
     $this->seed(SystemSettingsSeeder::class);
 });
 
@@ -99,10 +98,10 @@ test('user can only view their own transactions in history', function () {
 
     $response->assertStatus(200)
         ->assertJsonPath('success', true)
-        ->assertJsonCount(2, 'data.transactions')
+        ->assertJsonCount(2, 'data.items')
         ->assertJsonPath('data.pagination.total', 2);
 
-    $transactionIds = collect($response->json('data.transactions'))->pluck('id')->all();
+    $transactionIds = collect($response->json('data.items'))->pluck('id')->all();
     $tx1 = Transaction::where('idempotency_key', 'tx-1')->first();
     $tx2 = Transaction::where('idempotency_key', 'tx-2')->first();
     $tx3 = Transaction::where('idempotency_key', 'tx-3')->first();
@@ -153,8 +152,8 @@ test('history can be filtered by transaction type and status', function () {
     $response = $this->getJson('/api/v1/transactions/history?type=TOP_UP');
 
     $response->assertStatus(200)
-        ->assertJsonCount(1, 'data.transactions')
-        ->assertJsonPath('data.transactions.0.type', 'TOP_UP');
+        ->assertJsonCount(1, 'data.items')
+        ->assertJsonPath('data.items.0.type', 'TOP_UP');
 });
 
 test('history supports pagination parameters', function () {
@@ -188,7 +187,7 @@ test('history supports pagination parameters', function () {
         ->assertJsonPath('data.pagination.per_page', 2)
         ->assertJsonPath('data.pagination.current_page', 1)
         ->assertJsonPath('data.pagination.last_page', 3)
-        ->assertJsonCount(2, 'data.transactions');
+        ->assertJsonCount(2, 'data.items');
 });
 
 test('transaction participant can view transaction details', function () {
@@ -326,7 +325,7 @@ test('admin can view all transactions via admin audit endpoint', function () {
     $response->assertStatus(200)
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.pagination.total', 2)
-        ->assertJsonCount(2, 'data.transactions');
+        ->assertJsonCount(2, 'data.items');
 });
 
 test('non-admin is forbidden from admin audit endpoint', function () {
@@ -440,6 +439,6 @@ test('admin without admin token ability only sees participated transactions in h
     $response = $this->getJson('/api/v1/transactions/history');
 
     $response->assertStatus(200)
-        ->assertJsonCount(1, 'data.transactions')
-        ->assertJsonPath('data.transactions.0.user_id', $admin->id);
+        ->assertJsonCount(1, 'data.items')
+        ->assertJsonPath('data.items.0.user_id', $admin->id);
 });

@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import AuthLayout from '@/layouts/AuthLayout.vue';
 import Modal from '@/components/Modal.vue';
+import Alert from '@/components/Alert.vue';
 import PinLoginForm from '@/components/Forms/PinLoginForm.vue';
 import AdminLoginForm from '@/components/Forms/AdminLoginForm.vue';
 import OtpVerificationForm from '@/components/Forms/OtpVerificationForm.vue';
@@ -11,6 +12,8 @@ import OtpVerificationForm from '@/components/Forms/OtpVerificationForm.vue';
 const mode = ref<'user_agent' | 'admin'>('user_agent');
 const otpIdentifier = ref('');
 const showOtpModal = ref(false);
+const signedOutForInactivity =
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('reason') === 'idle';
 
 const handleOtpSent = (identifier: string) => {
     otpIdentifier.value = identifier;
@@ -21,6 +24,9 @@ const handleOtpSent = (identifier: string) => {
 <template>
     <Head title="Sign In - WalletMS" />
     <AuthLayout title="Welcome back" subtitle="Sign in to your digital wallet account">
+        <div v-if="signedOutForInactivity" class="mb-4">
+            <Alert type="info" message="You were signed out after a period of inactivity. Please sign in again." />
+        </div>
         <div class="mb-6 flex rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800">
             <button
                 type="button"

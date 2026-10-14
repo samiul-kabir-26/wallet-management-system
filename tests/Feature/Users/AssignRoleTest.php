@@ -1,28 +1,29 @@
 <?php
 
 use App\Models\AuditLog;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Wallet;
-use Database\Seeders\RoleSeeder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Laravel\Sanctum\Sanctum;
+use Modules\Roles\Enums\RolePanel;
+use Modules\Users\Exceptions\UserRequiresPasswordForStaffRoleException;
 use Modules\Users\Services\UserService;
 
 beforeEach(function () {
-    $this->seed(RoleSeeder::class);
+    $this->seedRolesAndPermissions();
     $this->userService = app(UserService::class);
 });
 
-test('assignRole rejects roles other than AGENT and USER', function () {
-    $user = User::factory()->create();
+test('assignRole rejects non-existent roles and staff roles when target has no password', function () {
+    $userWithoutPassword = User::factory()->withoutPassword()->create();
     $admin = User::factory()->create();
 
-    expect(fn () => $this->userService->assignRole($user, 'SUPER_ADMIN', $admin))
-        ->toThrow(InvalidArgumentException::class)
-        ->and(fn () => $this->userService->assignRole($user, 'ADMIN', $admin))
-        ->toThrow(InvalidArgumentException::class)
-        ->and(fn () => $this->userService->assignRole($user, 'MODERATOR', $admin))
-        ->toThrow(InvalidArgumentException::class);
+    expect(fn () => $this->userService->assignRole($userWithoutPassword, 'NON_EXISTENT_ROLE', $admin))
+        ->toThrow(ModelNotFoundException::class)
+        ->and(fn () => $this->userService->assignRole($userWithoutPassword, 'ADMIN', $admin))
+        ->toThrow(UserRequiresPasswordForStaffRoleException::class);
 });
 
 test('assignRole assigns AGENT role to existing USER, initializes AGENT wallet at 0.00 balance, and writes AuditLog', function () {
@@ -183,30 +184,98 @@ test('admin can assign USER role to existing agent via endpoint', function () {
         ->and($log->metadata['role'])->toBe('USER');
 });
 
-test('assignRole endpoint rejects invalid roles with 422', function () {
+test('assignRole endpoint rejects invalid roles and staff assignment without password with 422', function () {
     $admin = User::factory()->create();
     $adminRole = Role::where('name', 'ADMIN')->firstOrFail();
     $admin->roles()->attach($adminRole->id, ['assigned_at' => now()]);
 
-    $user = User::factory()->create();
+    $userWithoutPassword = User::factory()->withoutPassword()->create();
 
     Sanctum::actingAs($admin, ['admin']);
 
-    $this->postJson("/api/v1/users/{$user->id}/assign-role", ['role' => 'SUPER_ADMIN'])
+    // Non-existent roles fail validation
+    $this->postJson("/api/v1/users/{$userWithoutPassword->id}/assign-role", ['role' => 'BOGUS'])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['role']);
 
-    $this->postJson("/api/v1/users/{$user->id}/assign-role", ['role' => 'ADMIN'])
+    $this->postJson("/api/v1/users/{$userWithoutPassword->id}/assign-role", ['role' => 'MODERATOR'])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['role']);
 
-    $this->postJson("/api/v1/users/{$user->id}/assign-role", ['role' => 'MODERATOR'])
+    // Admin role to user without password fails with 422
+    $this->postJson("/api/v1/users/{$userWithoutPassword->id}/assign-role", ['role' => 'ADMIN'])
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['role']);
+        ->assertJson([
+            'success' => false,
+            'message' => 'Cannot assign a staff role to a user without a password. Grant admin access via invite instead.',
+        ]);
+});
 
-    $this->postJson("/api/v1/users/{$user->id}/assign-role", ['role' => 'BOGUS'])
-        ->assertStatus(422)
-        ->assertJsonValidationErrors(['role']);
+test('super admin can assign custom admin-panel role to existing staff member with password', function () {
+    $superAdmin = User::factory()->create();
+    $superAdmin->roles()->attach(Role::where('name', 'SUPER_ADMIN')->first()->id, ['assigned_at' => now()]);
+
+    $customRole = Role::create([
+        'name' => 'AUDITOR',
+        'panel' => RolePanel::Admin,
+        'description' => 'Auditor staff role',
+        'is_system' => false,
+    ]);
+
+    $existingStaff = User::factory()->create([
+        'email' => 'staff_auditor@example.com',
+        'password' => Hash::make('StaffPassword123!'),
+    ]);
+    $existingStaff->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
+
+    Sanctum::actingAs($superAdmin, ['admin']);
+
+    $response = $this->postJson("/api/v1/users/{$existingStaff->id}/assign-role", [
+        'role' => 'AUDITOR',
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('message', 'Role assigned successfully');
+
+    $existingStaff->refresh();
+    expect($existingStaff->hasRole('AUDITOR'))->toBeTrue()
+        ->and($existingStaff->hasRole('ADMIN'))->toBeTrue()
+        ->and($existingStaff->email)->toBe('staff_auditor@example.com')
+        ->and(Hash::check('StaffPassword123!', $existingStaff->password))->toBeTrue();
+
+    // Verify audit log
+    $log = AuditLog::where('action', 'ROLE_ASSIGNED')
+        ->where('auditable_id', $existingStaff->id)
+        ->where('metadata->role', 'AUDITOR')
+        ->first();
+
+    expect($log)->not->toBeNull()
+        ->and($log->actor_id)->toBe($superAdmin->id);
+});
+
+test('non-super admin cannot escalate by assigning a staff role exceeding their permissions', function () {
+    $managerRole = Role::create([
+        'name' => 'STAFF_LEAD',
+        'panel' => RolePanel::Admin,
+        'description' => 'Staff lead',
+        'is_system' => false,
+    ]);
+    $assignPerm = Permission::where('name', 'users.assign_role')->firstOrFail();
+    $managerRole->permissions()->attach([$assignPerm->id]);
+
+    $manager = User::factory()->create();
+    $manager->roles()->attach($managerRole->id, ['assigned_at' => now()]);
+
+    $existingStaff = User::factory()->create();
+    $existingStaff->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
+
+    Sanctum::actingAs($manager, ['admin']);
+
+    // Attempting to assign SUPER_ADMIN or ADMIN (which has more permissions) must fail with 403
+    $this->postJson("/api/v1/users/{$existingStaff->id}/assign-role", [
+        'role' => 'ADMIN',
+    ])->assertStatus(403);
 });
 
 test('non-admin callers are forbidden from assigning roles with 403', function () {
@@ -224,11 +293,15 @@ test('non-admin callers are forbidden from assigning roles with 403', function (
     $this->postJson("/api/v1/users/{$target->id}/assign-role", ['role' => 'USER'])
         ->assertStatus(403);
 
-    // Moderator with 'admin' ability (only read-only / PIN reset, not role assignment)
-    $moderator = User::factory()->create();
-    $modRole = Role::where('name', 'MODERATOR')->firstOrFail();
-    $moderator->roles()->attach($modRole->id, ['assigned_at' => now()]);
-    Sanctum::actingAs($moderator, ['admin']);
+    // Staff user with 'admin' ability but lacking users.assign_role permission
+    $staff = User::factory()->create();
+    $supportRole = Role::create([
+        'name' => 'SUPPORT_STAFF',
+        'panel' => RolePanel::Admin,
+        'is_system' => false,
+    ]);
+    $staff->roles()->attach($supportRole->id, ['assigned_at' => now()]);
+    Sanctum::actingAs($staff, ['admin']);
     $this->postJson("/api/v1/users/{$target->id}/assign-role", ['role' => 'AGENT'])
         ->assertStatus(403);
 });

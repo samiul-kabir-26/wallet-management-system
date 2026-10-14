@@ -7,14 +7,12 @@ use App\Models\SystemSetting;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
-use Database\Seeders\RoleSeeder;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
-use Modules\Transactions\Jobs\ResetDailyCaps;
-use Modules\Transactions\Jobs\ResetMonthlyCaps;
+use Modules\Transactions\Jobs\ResetStaleCaps;
 
 beforeEach(function () {
-    $this->seed(RoleSeeder::class);
+    $this->seedRolesAndPermissions();
 
     // Ensure standard system fee (5%) and commission defaults (2%) are set
     SystemSetting::updateOrCreate(['key' => 'system_fee_rate'], ['value' => 0.05]);
@@ -98,6 +96,7 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     Sanctum::actingAs($user1, ['user']);
     $topUpResponse = $this->postJson('/api/v1/transactions/top-up', [
         'amount' => 5000.00,
+        'pin' => '12345',
         'idempotency_key' => 'flow-topup-001',
     ]);
     $topUpResponse->assertStatus(201)
@@ -112,8 +111,9 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     // 7. User 1 Transfers 1,000 BDT to User 2
     // -------------------------------------------------------------
     $transferResponse = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $user2Id,
+        'recipient_phone' => $user2->phone_number,
         'amount' => 1000.00,
+        'pin' => '12345',
         'idempotency_key' => 'flow-transfer-001',
     ]);
     $transferResponse->assertStatus(201)
@@ -138,6 +138,7 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $cashOutResponse = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 2000.00,
+        'pin' => '12345',
         'idempotency_key' => 'flow-cashout-001',
     ]);
     $cashOutResponse->assertStatus(201)
@@ -172,6 +173,7 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     Sanctum::actingAs($agent, ['agent']);
     $withdrawResponse = $this->postJson('/api/v1/transactions/agent/withdrawal', [
         'amount' => 1500.00,
+        'pin' => '12345',
         'idempotency_key' => 'flow-withdraw-001',
     ]);
     $withdrawResponse->assertStatus(201)
@@ -188,8 +190,8 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $historyResponse = $this->getJson('/api/v1/transactions/history');
     $historyResponse->assertOk()
         ->assertJsonPath('success', true);
-    // TOP_UP, TRANSFER, CASH_OUT, COMMISSION_PAYOUT (initiated by User 1)
-    expect(count($historyResponse->json('data.transactions')))->toBe(4);
+    // TOP_UP, TRANSFER, CASH_OUT (COMMISSION_PAYOUT is scoped to agent wallet only)
+    expect(count($historyResponse->json('data.items')))->toBe(3);
 
     // -------------------------------------------------------------
     // 11. Admin views all transactions across the system
@@ -198,25 +200,23 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $adminAllResponse = $this->getJson('/api/v1/transactions/admin/all');
     $adminAllResponse->assertOk();
     // Total transactions: TOP_UP (1) + TRANSFER (1) + CASH_OUT (1) + COMMISSION_PAYOUT (1) + AGENT_WITHDRAWAL (1) = 5
-    expect(count($adminAllResponse->json('data.transactions')))->toBe(5);
+    expect(count($adminAllResponse->json('data.items')))->toBe(5);
 
     // -------------------------------------------------------------
-    // 12. Midnight Background Cap Reset
+    // 12. Next business day: stale counters roll over
     // -------------------------------------------------------------
     expect((float) $user1Cap->daily_used)->toBe(3000.00);
 
-    // Execute Daily Cap Reset Job
-    app(ResetDailyCaps::class)->handle();
+    $today = now(config('transactions.business_timezone'));
+    $tomorrow = $today->copy()->addDay();
+    $this->travelTo($tomorrow);
+
+    ResetStaleCaps::dispatchSync();
 
     $user1Cap->refresh();
     expect((float) $user1Cap->daily_used)->toBe(0.00)
-        ->and((float) $user1Cap->monthly_used)->toBe(3000.00); // Monthly remains intact
-
-    // Execute Monthly Cap Reset Job
-    app(ResetMonthlyCaps::class)->handle();
-
-    $user1Cap->refresh();
-    expect((float) $user1Cap->monthly_used)->toBe(0.00);
+        // Monthly usage survives a day change, unless that day also starts a new month
+        ->and((float) $user1Cap->monthly_used)->toBe($today->isSameMonth($tomorrow) ? 3000.00 : 0.00);
 });
 
 test('transaction rolls back completely and leaves wallet balances unchanged on mid-flight failure', function () {
@@ -235,8 +235,9 @@ test('transaction rolls back completely and leaves wallet balances unchanged on 
 
     // Attempting a transfer that exceeds sender balance (e.g. 5,000 BDT)
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 5000.00,
+        'pin' => '12345',
         'idempotency_key' => 'rollback-test-key-1',
     ]);
 
@@ -266,6 +267,7 @@ test('submitting identical idempotency key returns identical transaction and pre
 
     $payload = [
         'amount' => 200.00,
+        'pin' => '12345',
         'idempotency_key' => 'idem-duplicate-check-key',
     ];
 

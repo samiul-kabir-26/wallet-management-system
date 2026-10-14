@@ -4,15 +4,22 @@ namespace Modules\Transactions\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
+use App\Models\User;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Modules\Transactions\Http\Requests\AgentCashInRequest;
 use Modules\Transactions\Http\Requests\AgentWithdrawalRequest;
-use Modules\Transactions\Http\Requests\CashInRequest;
+use Modules\Transactions\Http\Requests\ApproveWithdrawalRequest;
 use Modules\Transactions\Http\Requests\CashOutRequest;
+use Modules\Transactions\Http\Requests\IssueFloatRequest;
+use Modules\Transactions\Http\Requests\RejectWithdrawalRequest;
 use Modules\Transactions\Http\Requests\TopUpRequest;
 use Modules\Transactions\Http\Requests\TransferRequest;
+use Modules\Transactions\Resources\CapResource;
 use Modules\Transactions\Resources\TransactionResource;
+use Modules\Transactions\Services\CapService;
+use Modules\Transactions\Services\FeeCalculator;
 use Modules\Transactions\Services\TransactionService;
 use Modules\Wallets\Services\WalletService;
 
@@ -26,6 +33,54 @@ class TransactionController extends Controller
     ) {}
 
     /**
+     * Show the authenticated user's daily and monthly cap usage as it applies right now.
+     */
+    public function myCaps(Request $request, CapService $capService): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        // Older accounts may predate cap rows; refresh() loads the database defaults after creation
+        $cap = $user->cap ?? $user->cap()->create()->refresh();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'caps' => new CapResource($capService->usageSnapshot($cap)),
+            ],
+        ]);
+    }
+
+    /**
+     * Preview what a cash-out or transfer will cost, using the same fee rules the transaction applies.
+     */
+    public function quote(Request $request, FeeCalculator $feeCalculator): JsonResponse
+    {
+        $validated = $request->validate([
+            'type' => ['required', 'string', 'in:CASH_OUT,TRANSFER'],
+            'amount' => ['required', 'numeric', 'gt:0', 'max:99999999.99'],
+        ]);
+
+        $amount = number_format((float) $validated['amount'], 2, '.', '');
+        $fee = $validated['type'] === 'CASH_OUT'
+            ? $feeCalculator->calculate($amount)
+            : ['rate' => '0.0000', 'amount' => '0.00'];
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'quote' => [
+                    'type' => $validated['type'],
+                    'amount' => (float) $amount,
+                    'fee_rate' => (float) $fee['rate'],
+                    'fee_amount' => (float) $fee['amount'],
+                    'total' => (float) bcadd($amount, $fee['amount'], 2),
+                ],
+            ],
+        ]);
+    }
+
+    /**
      * Top-up the authenticated user's wallet.
      */
     public function topUp(TopUpRequest $request): JsonResponse
@@ -34,6 +89,7 @@ class TransactionController extends Controller
             user: $request->user(),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
+            pin: (string) $request->validated('pin'),
             description: $request->validated('description'),
         );
 
@@ -55,12 +111,13 @@ class TransactionController extends Controller
             agent: $request->user(),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
+            pin: (string) $request->validated('pin'),
             description: $request->validated('description'),
         );
 
         return response()->json([
             'success' => true,
-            'message' => 'Withdrawal completed successfully.',
+            'message' => 'Withdrawal request submitted and awaiting approval.',
             'data' => [
                 'transaction' => new TransactionResource($transaction),
             ],
@@ -68,15 +125,16 @@ class TransactionController extends Controller
     }
 
     /**
-     * Perform cash-in via an approved agent.
+     * Perform cash-in to a customer by an approved agent.
      */
-    public function cashIn(CashInRequest $request): JsonResponse
+    public function agentCashIn(AgentCashInRequest $request): JsonResponse
     {
         $transaction = $this->transactionService->cashIn(
-            user: $request->user(),
-            agentPhone: $request->validated('agent_phone'),
+            agent: $request->user(),
+            customerPhone: $request->validated('customer_phone'),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
+            pin: (string) $request->validated('pin'),
             description: $request->validated('description'),
         );
 
@@ -99,6 +157,7 @@ class TransactionController extends Controller
             agentPhone: $request->validated('agent_phone'),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
+            pin: (string) $request->validated('pin'),
             description: $request->validated('description'),
         );
 
@@ -118,9 +177,10 @@ class TransactionController extends Controller
     {
         $transaction = $this->transactionService->transfer(
             sender: $request->user(),
-            recipientId: (int) $request->validated('recipient_id'),
+            recipientPhone: (string) $request->validated('recipient_phone'),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
+            pin: (string) $request->validated('pin'),
             description: $request->validated('description'),
         );
 
@@ -140,7 +200,7 @@ class TransactionController extends Controller
     {
         $validated = $request->validate([
             'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT'],
-            'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,CANCELLED,REVERSED'],
+            'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,REJECTED'],
             'from_date' => ['sometimes', 'date'],
             'to_date' => ['sometimes', 'date'],
             'date_from' => ['sometimes', 'date'],
@@ -150,7 +210,7 @@ class TransactionController extends Controller
         ]);
 
         $actor = $request->user();
-        $isStaff = $actor->isStaffWithAdminAccess();
+        $isStaff = $actor->can('transactions.view_any');
         $perPage = (int) ($validated['per_page'] ?? 15);
 
         if ($isStaff) {
@@ -171,20 +231,10 @@ class TransactionController extends Controller
             );
         }
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'transactions' => TransactionResource::collection($paginator),
-                'pagination' => [
-                    'total' => $paginator->total(),
-                    'per_page' => $paginator->perPage(),
-                    'current_page' => $paginator->currentPage(),
-                    'last_page' => $paginator->lastPage(),
-                    'from' => $paginator->firstItem(),
-                    'to' => $paginator->lastItem(),
-                ],
-            ],
-        ]);
+        return $this->paginatedResponse(
+            $paginator,
+            TransactionResource::collection($paginator),
+        );
     }
 
     /**
@@ -195,7 +245,7 @@ class TransactionController extends Controller
         $this->authorize('view', $transaction);
 
         $actor = $request->user();
-        $isStaff = $actor->isStaffWithAdminAccess();
+        $isStaff = $actor->can('transactions.view_any');
 
         if (! $isStaff) {
             $wallet = $this->walletService->findWalletForToken($actor);
@@ -220,8 +270,10 @@ class TransactionController extends Controller
         $this->authorize('viewAny', Transaction::class);
 
         $validated = $request->validate([
-            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT'],
-            'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,CANCELLED,REVERSED'],
+            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE'],
+            'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,REJECTED'],
+            'search' => ['sometimes', 'string', 'max:100'],
+            'party_id' => ['sometimes', 'integer', 'exists:users,id'],
             'user_id' => ['sometimes', 'integer', 'exists:users,id'],
             'sender_id' => ['sometimes', 'integer', 'exists:users,id'],
             'recipient_id' => ['sometimes', 'integer', 'exists:users,id'],
@@ -240,18 +292,83 @@ class TransactionController extends Controller
             perPage: $perPage,
         );
 
+        return $this->paginatedResponse(
+            $paginator,
+            TransactionResource::collection($paginator),
+        );
+    }
+
+    /**
+     * Issue e-money float to an approved agent by an authorized admin.
+     */
+    public function adminIssueFloat(IssueFloatRequest $request): JsonResponse
+    {
+        $agentId = $request->validated('agent_id');
+        if (! $agentId && $request->filled('agent_phone')) {
+            $agent = User::where('phone_number', $request->validated('agent_phone'))
+                ->where('is_deleted', false)
+                ->firstOrFail();
+        } else {
+            $agent = User::where('id', $agentId)
+                ->where('is_deleted', false)
+                ->firstOrFail();
+        }
+
+        $transaction = $this->transactionService->issueFloat(
+            admin: $request->user(),
+            agent: $agent,
+            amount: $request->validated('amount'),
+            externalReference: $request->validated('external_reference'),
+            idempotencyKey: $request->validated('idempotency_key'),
+            description: $request->validated('description'),
+        );
+
         return response()->json([
             'success' => true,
+            'message' => 'Float issued successfully.',
             'data' => [
-                'transactions' => TransactionResource::collection($paginator),
-                'pagination' => [
-                    'total' => $paginator->total(),
-                    'per_page' => $paginator->perPage(),
-                    'current_page' => $paginator->currentPage(),
-                    'last_page' => $paginator->lastPage(),
-                    'from' => $paginator->firstItem(),
-                    'to' => $paginator->lastItem(),
-                ],
+                'transaction' => new TransactionResource($transaction),
+            ],
+        ], 201);
+    }
+
+    /**
+     * Approve a pending agent bank withdrawal after the payout was sent.
+     */
+    public function approveWithdrawal(ApproveWithdrawalRequest $request, Transaction $transaction): JsonResponse
+    {
+        $approved = $this->transactionService->approveWithdrawal(
+            withdrawal: $transaction,
+            reviewer: $request->user(),
+            externalReference: $request->validated('external_reference'),
+            note: $request->validated('note'),
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Withdrawal approved.',
+            'data' => [
+                'transaction' => new TransactionResource($approved),
+            ],
+        ]);
+    }
+
+    /**
+     * Reject a pending agent bank withdrawal and refund the held amount.
+     */
+    public function rejectWithdrawal(RejectWithdrawalRequest $request, Transaction $transaction): JsonResponse
+    {
+        $rejected = $this->transactionService->rejectWithdrawal(
+            withdrawal: $transaction,
+            reviewer: $request->user(),
+            reason: $request->validated('reason'),
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Withdrawal rejected and funds returned to the agent wallet.',
+            'data' => [
+                'transaction' => new TransactionResource($rejected),
             ],
         ]);
     }

@@ -2,20 +2,28 @@
 
 namespace Modules\Authentication\Services;
 
+use App\Models\AuditLog;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Modules\Authentication\Exceptions\AccountInactiveException;
 use Modules\Authentication\Exceptions\InsufficientRoleException;
 use Modules\Authentication\Exceptions\InvalidCredentialsException;
 use Modules\Authentication\Exceptions\UnverifiedAccountException;
+use Modules\Authentication\Exceptions\UserAlreadyHasStaffAccessException;
+use Modules\Authentication\Notifications\AdminInviteNotification;
+use Modules\Roles\Exceptions\PermissionEscalationException;
+use Modules\Roles\Services\RoleService;
 
 class AccountInviteService
 {
+    public function __construct(
+        protected RoleService $roleService,
+    ) {}
+
     /**
      * Change a user's password, verify current password, and mark password as changed.
      *
@@ -48,36 +56,74 @@ class AccountInviteService
      *
      * @throws InsufficientRoleException
      * @throws UnverifiedAccountException
+     * @throws UserAlreadyHasStaffAccessException
+     * @throws PermissionEscalationException
      */
-    public function grant(User $caller, User $target, string $email, ?string $tempPassword = null): string
-    {
-        // 1. Authorize: Caller must be a SUPER_ADMIN
-        if (! $caller->hasRole('SUPER_ADMIN')) {
+    public function grant(
+        User $caller,
+        User $target,
+        string $email,
+        string $roleName = 'ADMIN',
+        ?string $tempPassword = null
+    ): string {
+        // 1. Authorize: Caller cannot grant admin access to themselves
+        if ($caller->id === $target->id) {
+            throw new InsufficientRoleException('You cannot grant admin access to yourself.');
+        }
+
+        // Caller must have users.grant_admin_access permission
+        if (! $caller->can('users.grant_admin_access')) {
             throw new InsufficientRoleException;
         }
 
-        // 2. Business rule: Target user's phone must be verified
+        // 2. Target check: Target must NOT already have a password or an admin-panel role
+        if ($target->password !== null || $target->roles()->where('panel', 'admin')->exists()) {
+            throw new UserAlreadyHasStaffAccessException('This user already has staff access; use role assignment instead.');
+        }
+
+        // 3. Business rule: Target user's phone must be verified
         if (! $target->is_verified) {
             throw new UnverifiedAccountException;
         }
 
+        // 4. Anti-escalation check (D6 / R5): actor can only assign roles whose permissions they possess
+        $role = Role::where('name', $roleName)->where('panel', 'admin')->firstOrFail();
+        $this->roleService->assertCanAssignRole($caller, $role);
+
         $passwordLength = (int) config('auth_settings.invites.temp_password_length', 16);
         $password = $tempPassword ?? Str::password($passwordLength);
 
-        // 3. Atomically update credentials, clear password_changed_at, and attach ADMIN role
-        DB::transaction(function () use ($caller, $target, $email, $password): void {
-            $target->forceFill([
+        // 5. Atomically update credentials, clear password_changed_at, attach role, and record audit log
+        DB::transaction(function () use ($caller, $target, $email, $password, $role): void {
+            /** @var User $lockedTarget */
+            $lockedTarget = User::where('id', $target->id)->lockForUpdate()->firstOrFail();
+
+            if ($lockedTarget->password !== null || $lockedTarget->roles()->where('panel', 'admin')->exists()) {
+                throw new UserAlreadyHasStaffAccessException('This user already has staff access; use role assignment instead.');
+            }
+
+            $lockedTarget->forceFill([
                 'email' => $email,
                 'password' => Hash::make($password),
                 'password_changed_at' => null, // Marks password as temporary / not owned
             ])->save();
 
-            $adminRole = Role::where('name', 'ADMIN')->firstOrFail();
-
-            $target->roles()->syncWithoutDetaching([
-                $adminRole->id => [
+            $lockedTarget->roles()->syncWithoutDetaching([
+                $role->id => [
                     'assigned_at' => now(),
                     'assigned_by' => $caller->id,
+                ],
+            ]);
+
+            AuditLog::create([
+                'actor_id' => $caller->id,
+                'action' => 'user.admin_access_granted',
+                'auditable_type' => $lockedTarget->getMorphClass(),
+                'auditable_id' => $lockedTarget->id,
+                'metadata' => [
+                    'role' => $role->name,
+                    'email' => $email,
+                    'method' => 'invite',
                 ],
             ]);
         });
@@ -90,12 +136,8 @@ class AccountInviteService
             ['user' => $target->id],
         );
 
-        // 5. Stub email delivery (logged for local dev and testing)
-        Log::info("Admin invite sent to [{$email}]", [
-            'target_id' => $target->id,
-            'url' => $signedUrl,
-            'temp_password' => $password,
-        ]);
+        // 5. Deliver the invitation to the newly attached email
+        $target->refresh()->notify(new AdminInviteNotification($signedUrl, $password, $expiryHours));
 
         return $signedUrl;
     }

@@ -33,6 +33,8 @@ Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(
 
 // Session routes
 Route::middleware(['auth:sanctum'])->group(function (): void {
+    Route::get('/me', [AuthController::class, 'me']);
     Route::post('/refresh-token', [AuthController::class, 'refreshToken']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/logout-all', [AuthController::class, 'logoutAll']);
 });

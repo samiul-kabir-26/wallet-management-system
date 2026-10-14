@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Role;
 use Illuminate\Database\Seeder;
+use Modules\Roles\Enums\RolePanel;
 
 class RoleSeeder extends Seeder
 {
@@ -12,22 +13,47 @@ class RoleSeeder extends Seeder
      */
     public function run(): void
     {
+        $now = now();
+
         $roles = [
-            'SUPER_ADMIN',
-            'ADMIN',
-            'MODERATOR',
-            'AGENT',
-            'USER',
+            [
+                'name' => 'SUPER_ADMIN',
+                'description' => 'Super Administrator',
+                'panel' => RolePanel::Admin->value,
+                'is_system' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'name' => 'ADMIN',
+                'description' => 'Administrator',
+                'panel' => RolePanel::Admin->value,
+                'is_system' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'name' => 'AGENT',
+                'description' => 'Agent',
+                'panel' => RolePanel::Agent->value,
+                'is_system' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'name' => 'USER',
+                'description' => 'User',
+                'panel' => RolePanel::User->value,
+                'is_system' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
         ];
 
-        Role::insert(
-            array_map(
-                fn ($role) => [
-                    'name' => $role,
-                    'description' => str_replace('_', ' ', $role),
-                ],
-                $roles
-            )
+        Role::upsert(
+            $roles,
+            ['name'],
+            ['description', 'panel', 'is_system', 'updated_at']
         );
     }
 }

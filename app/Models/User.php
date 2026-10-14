@@ -13,7 +13,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Laravel\Sanctum\HasApiTokens;
+use Modules\Roles\Enums\Permission as PermissionEnum;
+use Modules\Roles\Enums\RolePanel;
 
 /**
  * @property int $id
@@ -136,6 +139,18 @@ class User extends Authenticatable
         return $this->hasMany(AuthProvider::class);
     }
 
+    public function loginActivities(): HasMany
+    {
+        return $this->hasMany(LoginActivity::class);
+    }
+
+    /**
+     * In-memory memoized role names for the current instance.
+     *
+     * @var Collection<int, string>|null
+     */
+    protected ?Collection $roleNamesMemo = null;
+
     /**
      * Determine if the user holds the given role(s).
      *
@@ -149,7 +164,13 @@ class User extends Authenticatable
             return $this->roles->whereIn('name', $roles)->isNotEmpty();
         }
 
-        return $this->roles()->whereIn('name', $roles)->exists();
+        if ($this->roleNamesMemo !== null) {
+            return $this->roleNamesMemo->intersect($roles)->isNotEmpty();
+        }
+
+        $this->roleNamesMemo = $this->roles()->pluck('name');
+
+        return $this->roleNamesMemo->intersect($roles)->isNotEmpty();
     }
 
     /**
@@ -185,6 +206,40 @@ class User extends Authenticatable
     }
 
     /**
+     * Determine if the user is eligible to receive wallet transfers.
+     */
+    public function canReceiveTransfers(?User $sender = null): bool
+    {
+        if ($this->is_deleted) {
+            return false;
+        }
+
+        if ($sender !== null && (int) $this->id === (int) $sender->id) {
+            return false;
+        }
+
+        $hasUserRole = $this->relationLoaded('roles')
+            ? $this->roles->contains('name', 'USER')
+            : $this->isUser();
+
+        if (! $hasUserRole) {
+            return false;
+        }
+
+        $userWallet = $this->relationLoaded('wallets')
+            ? $this->wallets->firstWhere('kind', Wallet::KIND_USER)
+            : ($this->relationLoaded('userWallet')
+                ? $this->userWallet
+                : $this->userWallet()->first());
+
+        if (! $userWallet || $userWallet->is_blocked) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Determine the wallet kind associated with the current token ability, if any.
      *
      * Returns Wallet::KIND_AGENT for agent ability, Wallet::KIND_USER for user ability,
@@ -200,11 +255,90 @@ class User extends Authenticatable
     }
 
     /**
-     * Determine if the user holds an administrative staff role (SUPER_ADMIN, ADMIN, MODERATOR).
+     * In-memory memoized effective permissions for the current instance.
+     *
+     * @var Collection<int, string>|null
+     */
+    protected ?Collection $effectivePermissionsMemo = null;
+
+    /**
+     * Resolve the effective permission names for this user.
+     *
+     * Memoized per model instance (D9).
+     *
+     * @return Collection<int, string>
+     */
+    public function permissions(): Collection
+    {
+        if ($this->effectivePermissionsMemo !== null) {
+            return $this->effectivePermissionsMemo;
+        }
+
+        if ($this->isSuperAdmin()) {
+            return $this->effectivePermissionsMemo = collect(PermissionEnum::cases())
+                ->map(fn (PermissionEnum $p): string => $p->value)
+                ->values();
+        }
+
+        if ($this->relationLoaded('roles') && $this->roles->every(fn (Role $r): bool => $r->relationLoaded('permissions'))) {
+            return $this->effectivePermissionsMemo = $this->roles
+                ->flatMap(fn (Role $role): Collection => $role->permissions->pluck('name'))
+                ->filter(fn (string $name): bool => ! (PermissionEnum::tryFrom($name)?->isSuperAdminOnly() ?? false))
+                ->unique()
+                ->values();
+        }
+
+        return $this->effectivePermissionsMemo = Permission::query()
+            ->whereHas('roles', function ($query): void {
+                $query->whereIn('roles.id', $this->roles()->select('roles.id'));
+            })
+            ->pluck('name')
+            ->filter(fn (string $name): bool => ! (PermissionEnum::tryFrom($name)?->isSuperAdminOnly() ?? false))
+            ->unique()
+            ->values();
+    }
+
+    /**
+     * Determine if the user holds the given permission.
+     */
+    public function hasPermission(PermissionEnum|string $permission): bool
+    {
+        $name = $permission instanceof PermissionEnum ? $permission->value : $permission;
+
+        return $this->permissions()->contains($name);
+    }
+
+    /**
+     * Flush the effective permissions memoization (useful in tests and role assignments).
+     */
+    public function flushPermissionsMemo(): void
+    {
+        $this->effectivePermissionsMemo = null;
+        $this->roleNamesMemo = null;
+    }
+
+    /**
+     * Determine if the user holds any role belonging to the admin panel.
+     */
+    public function hasAdminPanelRole(): bool
+    {
+        if ($this->relationLoaded('roles')) {
+            return $this->roles->contains(function (Role $role): bool {
+                $panel = $role->panel instanceof RolePanel ? $role->panel->value : $role->panel;
+
+                return $panel === RolePanel::Admin->value;
+            });
+        }
+
+        return $this->roles()->where('panel', RolePanel::Admin->value)->exists();
+    }
+
+    /**
+     * Determine if the user holds an administrative staff role (derives from panel = admin).
      */
     public function isStaff(): bool
     {
-        return $this->hasRole(['SUPER_ADMIN', 'ADMIN', 'MODERATOR']);
+        return $this->hasAdminPanelRole();
     }
 
     /**

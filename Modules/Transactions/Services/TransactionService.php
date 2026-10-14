@@ -3,6 +3,7 @@
 namespace Modules\Transactions\Services;
 
 use App\Models\AgentInfo;
+use App\Models\AuditLog;
 use App\Models\Cap;
 use App\Models\Transaction;
 use App\Models\User;
@@ -13,10 +14,15 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Modules\Authentication\Exceptions\UserNotFoundException;
+use Modules\Authentication\Services\PinVerifier;
 use Modules\Transactions\Exceptions\DailyCapsExceededException;
+use Modules\Transactions\Exceptions\IdempotencyConflictException;
+use Modules\Transactions\Exceptions\InvalidAmountException;
 use Modules\Transactions\Exceptions\InvalidRecipientException;
 use Modules\Transactions\Exceptions\MonthlyCapsExceededException;
+use Modules\Transactions\Exceptions\WithdrawalNotPendingException;
 use Modules\Users\Exceptions\AgentNotApprovedException;
 use Modules\Users\Exceptions\UserNotAnAgentException;
 use Modules\Wallets\Exceptions\InsufficientBalanceException;
@@ -31,6 +37,7 @@ class TransactionService
         protected FeeCalculator $feeCalculator,
         protected CommissionCalculator $commissionCalculator,
         protected CapService $capService,
+        protected PinVerifier $pinVerifier,
     ) {}
 
     /**
@@ -51,21 +58,72 @@ class TransactionService
     }
 
     /**
+     * Assert that the existing transaction found by idempotency key matches request parameters.
+     *
+     * @throws IdempotencyConflictException
+     */
+    private function assertIdempotentParametersMatch(
+        Transaction $existing,
+        string $expectedType,
+        string $expectedAmount,
+        ?int $expectedRecipientId = null,
+        ?int $expectedAgentId = null,
+        ?string $expectedExternalReference = null,
+    ): void {
+        $amountMatches = bccomp((string) $existing->amount, (string) $expectedAmount, 2) === 0;
+        $typeMatches = $existing->type === $expectedType;
+
+        $counterpartyMatches = true;
+        if ($expectedRecipientId !== null) {
+            $counterpartyMatches = (int) $existing->recipient_id === (int) $expectedRecipientId;
+        }
+        if ($expectedAgentId !== null) {
+            $counterpartyMatches = $counterpartyMatches && (int) $existing->agent_id === (int) $expectedAgentId;
+        }
+        if ($expectedExternalReference !== null) {
+            $counterpartyMatches = $counterpartyMatches && $existing->external_reference === $expectedExternalReference;
+        }
+
+        if (! $typeMatches || ! $amountMatches || ! $counterpartyMatches) {
+            throw new IdempotencyConflictException('Idempotency key reused with different parameters.');
+        }
+    }
+
+    /**
+     * Guard that the formatted transaction amount is strictly greater than 0.00.
+     *
+     * @throws InvalidAmountException
+     */
+    protected function assertValidAmount(string $formattedAmount): void
+    {
+        if (bccomp($formattedAmount, '0.00', 2) <= 0) {
+            throw new InvalidAmountException('Transaction amount must be greater than 0.00.');
+        }
+    }
+
+    /**
      * Top-up user's own wallet balance.
      */
-    public function topUp(User $user, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
+    public function topUp(User $user, string|float $amount, string $idempotencyKey, string $pin, ?string $description = null): Transaction
     {
+        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
+
         $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
         if ($existing) {
+            $this->assertIdempotentParametersMatch($existing, 'TOP_UP', $formattedAmount);
+
             return $existing;
         }
 
-        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->pinVerifier->verify($user, $pin);
 
         try {
             return DB::transaction(function () use ($user, $formattedAmount, $idempotencyKey, $description): Transaction {
                 $existing = $this->findByIdempotencyKey($user, $idempotencyKey, lock: true);
                 if ($existing) {
+                    $this->assertIdempotentParametersMatch($existing, 'TOP_UP', $formattedAmount);
+
                     return $existing;
                 }
 
@@ -99,6 +157,8 @@ class TransactionService
         } catch (UniqueConstraintViolationException|QueryException $e) {
             $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
             if ($existing) {
+                $this->assertIdempotentParametersMatch($existing, 'TOP_UP', $formattedAmount);
+
                 return $existing;
             }
 
@@ -107,12 +167,15 @@ class TransactionService
     }
 
     /**
-     * Agent withdraws accumulated funds from their own wallet.
+     * Agent requests a bank withdrawal from their own wallet.
+     *
+     * The amount is debited immediately so it cannot be spent twice, and the transaction stays
+     * PENDING until staff approve (bank payout sent) or reject (funds returned) it.
      *
      * @throws UserNotAnAgentException
      * @throws AgentNotApprovedException
      */
-    public function agentWithdrawal(User $agent, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
+    public function agentWithdrawal(User $agent, string|float $amount, string $idempotencyKey, string $pin, ?string $description = null): Transaction
     {
         if (! $agent->isAgent()) {
             throw new UserNotAnAgentException;
@@ -122,17 +185,24 @@ class TransactionService
             throw new AgentNotApprovedException;
         }
 
+        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
+
         $existing = $this->findByIdempotencyKey($agent, $idempotencyKey);
         if ($existing) {
+            $this->assertIdempotentParametersMatch($existing, 'AGENT_WITHDRAWAL', $formattedAmount);
+
             return $existing;
         }
 
-        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->pinVerifier->verify($agent, $pin);
 
         try {
             return DB::transaction(function () use ($agent, $formattedAmount, $idempotencyKey, $description): Transaction {
                 $existing = $this->findByIdempotencyKey($agent, $idempotencyKey, lock: true);
                 if ($existing) {
+                    $this->assertIdempotentParametersMatch($existing, 'AGENT_WITHDRAWAL', $formattedAmount);
+
                     return $existing;
                 }
 
@@ -152,7 +222,8 @@ class TransactionService
                     'agent_commission_rate' => '0.0000',
                     'currency' => $updatedWallet->currency ?? 'BDT',
                     'description' => $description,
-                    'status' => 'COMPLETED',
+                    // Funds are held (already debited) until staff confirm the bank payout
+                    'status' => 'PENDING',
                     'idempotency_key' => $idempotencyKey,
                     'sender_wallet_balance_after' => $updatedWallet->balance,
                     'recipient_wallet_balance_after' => null,
@@ -166,6 +237,8 @@ class TransactionService
         } catch (UniqueConstraintViolationException|QueryException $e) {
             $existing = $this->findByIdempotencyKey($agent, $idempotencyKey);
             if ($existing) {
+                $this->assertIdempotentParametersMatch($existing, 'AGENT_WITHDRAWAL', $formattedAmount);
+
                 return $existing;
             }
 
@@ -185,13 +258,8 @@ class TransactionService
      * @throws WalletBlockedException
      * @throws InsufficientBalanceException
      */
-    public function cashIn(User $user, string $agentPhone, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
+    public function cashIn(User $agent, string $customerPhone, string|float $amount, string $idempotencyKey, string $pin, ?string $description = null): Transaction
     {
-        $agent = User::with('agentInfo')->where('phone_number', $agentPhone)->first();
-        if (! $agent) {
-            throw new UserNotFoundException('Agent user not found.');
-        }
-
         if (! $agent->isAgent()) {
             throw new UserNotAnAgentException;
         }
@@ -200,79 +268,101 @@ class TransactionService
             throw new AgentNotApprovedException;
         }
 
-        $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
-        if ($existing) {
-            return $existing;
+        $customer = User::where('phone_number', $customerPhone)->where('is_deleted', false)->first();
+        if (! $customer) {
+            throw new UserNotFoundException('Customer user not found.');
+        }
+
+        if ($customer->id === $agent->id) {
+            throw new InvalidRecipientException('You cannot cash-in to your own account.');
+        }
+
+        if (! $customer->isUser()) {
+            throw new InvalidRecipientException('Customer must have a user account.');
         }
 
         $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
+
+        $existing = $this->findByIdempotencyKey($agent, $idempotencyKey);
+        if ($existing) {
+            $this->assertIdempotentParametersMatch($existing, 'CASH_IN', $formattedAmount, expectedRecipientId: $customer->id, expectedAgentId: $agent->id);
+
+            return $existing;
+        }
+
+        $this->pinVerifier->verify($agent, $pin);
 
         try {
-            return DB::transaction(function () use ($user, $agent, $formattedAmount, $idempotencyKey, $description): Transaction {
-                $existing = $this->findByIdempotencyKey($user, $idempotencyKey, lock: true);
+            return DB::transaction(function () use ($agent, $customer, $formattedAmount, $idempotencyKey, $description): Transaction {
+                $existing = $this->findByIdempotencyKey($agent, $idempotencyKey, lock: true);
                 if ($existing) {
+                    $this->assertIdempotentParametersMatch($existing, 'CASH_IN', $formattedAmount, expectedRecipientId: $customer->id, expectedAgentId: $agent->id);
+
                     return $existing;
                 }
 
                 // Deterministically lock both wallets ordered by wallet id
                 $wallets = $this->walletService->lockWalletsForUsers([
-                    ['user_id' => $user->id, 'kind' => Wallet::KIND_USER],
+                    ['user_id' => $customer->id, 'kind' => Wallet::KIND_USER],
                     ['user_id' => $agent->id, 'kind' => Wallet::KIND_AGENT],
                 ]);
 
-                $userWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $user->id && $w->kind === Wallet::KIND_USER);
+                $customerWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $customer->id && $w->kind === Wallet::KIND_USER);
                 $agentWallet = $wallets->first(fn ($w) => (int) $w->user_id === (int) $agent->id && $w->kind === Wallet::KIND_AGENT);
 
-                if (! $userWallet || ! $agentWallet) {
+                if (! $customerWallet || ! $agentWallet) {
                     throw new WalletNotFoundException;
                 }
 
-                if ($userWallet->is_blocked || $agentWallet->is_blocked) {
+                if ($customerWallet->is_blocked || $agentWallet->is_blocked) {
                     throw new WalletBlockedException;
                 }
 
                 $agentBalance = number_format((float) $agentWallet->balance, 2, '.', '');
                 if (bccomp($agentBalance, $formattedAmount, 2) === -1) {
-                    throw new InsufficientBalanceException('Agent has insufficient wallet balance for cash-in.');
+                    throw new InsufficientBalanceException('Agent has insufficient float balance for cash-in.');
                 }
 
-                $userBalance = number_format((float) $userWallet->balance, 2, '.', '');
-                $newUserBalance = bcadd($userBalance, $formattedAmount, 2);
-                $userWallet->balance = $newUserBalance;
-                $userWallet->save();
+                $customerBalance = number_format((float) $customerWallet->balance, 2, '.', '');
+                $newCustomerBalance = bcadd($customerBalance, $formattedAmount, 2);
+                $customerWallet->balance = $newCustomerBalance;
+                $customerWallet->save();
 
                 $newAgentBalance = bcsub($agentBalance, $formattedAmount, 2);
                 $agentWallet->balance = $newAgentBalance;
                 $agentWallet->save();
 
                 return Transaction::create([
-                    'user_id' => $user->id,
+                    'user_id' => $customer->id,
                     'sender_id' => null,
-                    'recipient_id' => $user->id,
+                    'recipient_id' => $customer->id,
                     'agent_id' => $agent->id,
-                    'initiated_by' => $user->id,
+                    'initiated_by' => $agent->id,
                     'type' => 'CASH_IN',
                     'amount' => $formattedAmount,
                     'system_fee_amount' => '0.00',
                     'system_fee_rate' => '0.0000',
                     'agent_commission_amount' => '0.00',
                     'agent_commission_rate' => '0.0000',
-                    'currency' => $userWallet->currency ?? 'BDT',
+                    'currency' => $customerWallet->currency ?? 'BDT',
                     'description' => $description,
                     'status' => 'COMPLETED',
                     'idempotency_key' => $idempotencyKey,
                     'sender_wallet_balance_after' => null,
-                    'recipient_wallet_balance_after' => $newUserBalance,
+                    'recipient_wallet_balance_after' => $newCustomerBalance,
                     'agent_wallet_balance_after' => $newAgentBalance,
                     'sender_wallet_id' => null,
-                    'recipient_wallet_id' => $userWallet->id,
+                    'recipient_wallet_id' => $customerWallet->id,
                     'agent_wallet_id' => $agentWallet->id,
                     'meta' => null,
                 ]);
             });
         } catch (UniqueConstraintViolationException|QueryException $e) {
-            $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
+            $existing = $this->findByIdempotencyKey($agent, $idempotencyKey);
             if ($existing) {
+                $this->assertIdempotentParametersMatch($existing, 'CASH_IN', $formattedAmount, expectedRecipientId: $customer->id, expectedAgentId: $agent->id);
+
                 return $existing;
             }
 
@@ -294,9 +384,9 @@ class TransactionService
      * @throws WalletBlockedException
      * @throws InsufficientBalanceException
      */
-    public function cashOut(User $user, string $agentPhone, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
+    public function cashOut(User $user, string $agentPhone, string|float $amount, string $idempotencyKey, string $pin, ?string $description = null): Transaction
     {
-        $agent = User::with('agentInfo')->where('phone_number', $agentPhone)->first();
+        $agent = User::with('agentInfo')->where('phone_number', $agentPhone)->where('is_deleted', false)->first();
         if (! $agent) {
             throw new UserNotFoundException('Agent user not found.');
         }
@@ -309,12 +399,17 @@ class TransactionService
             throw new AgentNotApprovedException;
         }
 
+        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
+
         $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
         if ($existing) {
+            $this->assertIdempotentParametersMatch($existing, 'CASH_OUT', $formattedAmount, expectedAgentId: $agent->id);
+
             return $existing;
         }
 
-        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->pinVerifier->verify($user, $pin);
 
         $fee = $this->feeCalculator->calculate($formattedAmount);
         $commission = $this->commissionCalculator->calculate($formattedAmount, $agent->agentInfo, $fee['amount']);
@@ -336,15 +431,20 @@ class TransactionService
             ): Transaction {
                 $existing = $this->findByIdempotencyKey($user, $idempotencyKey, lock: true);
                 if ($existing) {
+                    $this->assertIdempotentParametersMatch($existing, 'CASH_OUT', $formattedAmount, expectedAgentId: $agent->id);
+
                     return $existing;
                 }
 
                 // 1. Lock user's Cap row inside transaction
                 $lockedCap = Cap::where('user_id', $user->id)->lockForUpdate()->first();
                 if (! $lockedCap) {
-                    $lockedCap = Cap::factory()->for($user)->create();
-                    $lockedCap = Cap::where('id', $lockedCap->id)->lockForUpdate()->first();
+                    $createdCap = $user->cap()->create();
+                    $lockedCap = Cap::where('id', $createdCap->id)->lockForUpdate()->first();
                 }
+
+                // Roll counters over if the business day or month changed since they were last anchored
+                $this->capService->resetStalePeriods($lockedCap);
 
                 // 2. Assert within caps (throws DailyCapsExceededException or MonthlyCapsExceededException)
                 $this->capService->assertWithinCaps($lockedCap, $formattedAmount);
@@ -458,6 +558,8 @@ class TransactionService
         } catch (UniqueConstraintViolationException|QueryException $e) {
             $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
             if ($existing) {
+                $this->assertIdempotentParametersMatch($existing, 'CASH_OUT', $formattedAmount, expectedAgentId: $agent->id);
+
                 return $existing;
             }
 
@@ -476,27 +578,40 @@ class TransactionService
      * @throws DailyCapsExceededException
      * @throws MonthlyCapsExceededException
      */
-    public function transfer(User $sender, int $recipientId, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
+    public function transfer(User $sender, string $recipientPhone, string|float $amount, string $idempotencyKey, string $pin, ?string $description = null): Transaction
     {
-        $recipient = User::find($recipientId);
-        if (! $recipient) {
+        $recipient = User::where('phone_number', $recipientPhone)->where('is_deleted', false)->first();
+        if (! $recipient || $recipient->is_deleted) {
             throw new UserNotFoundException('Recipient user not found.');
         }
 
-        if ($recipient->id === $sender->id) {
-            throw new InvalidRecipientException('You cannot transfer money to yourself.');
-        }
+        if (! $recipient->canReceiveTransfers($sender)) {
+            if ($recipient->id === $sender->id) {
+                throw new InvalidRecipientException('You cannot transfer money to yourself.');
+            }
 
-        if (! $recipient->isUser()) {
-            throw new InvalidRecipientException('Recipient must have a user account.');
-        }
+            if (! $recipient->isUser()) {
+                throw new InvalidRecipientException('Recipient must have a user account.');
+            }
 
-        $existing = $this->findByIdempotencyKey($sender, $idempotencyKey);
-        if ($existing) {
-            return $existing;
+            if (! $recipient->userWallet || $recipient->userWallet->is_blocked) {
+                throw new WalletBlockedException;
+            }
+
+            throw new InvalidRecipientException('Recipient cannot receive transfers.');
         }
 
         $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
+
+        $existing = $this->findByIdempotencyKey($sender, $idempotencyKey);
+        if ($existing) {
+            $this->assertIdempotentParametersMatch($existing, 'TRANSFER', $formattedAmount, expectedRecipientId: $recipient->id);
+
+            return $existing;
+        }
+
+        $this->pinVerifier->verify($sender, $pin);
 
         try {
             return DB::transaction(function () use (
@@ -508,15 +623,20 @@ class TransactionService
             ): Transaction {
                 $existing = $this->findByIdempotencyKey($sender, $idempotencyKey, lock: true);
                 if ($existing) {
+                    $this->assertIdempotentParametersMatch($existing, 'TRANSFER', $formattedAmount, expectedRecipientId: $recipient->id);
+
                     return $existing;
                 }
 
                 // 1. Lock sender's Cap row inside transaction (strict table lock order: Cap -> Wallets)
                 $lockedCap = Cap::where('user_id', $sender->id)->lockForUpdate()->first();
                 if (! $lockedCap) {
-                    $lockedCap = Cap::factory()->for($sender)->create();
-                    $lockedCap = Cap::where('id', $lockedCap->id)->lockForUpdate()->first();
+                    $createdCap = $sender->cap()->create();
+                    $lockedCap = Cap::where('id', $createdCap->id)->lockForUpdate()->first();
                 }
+
+                // Roll counters over if the business day or month changed since they were last anchored
+                $this->capService->resetStalePeriods($lockedCap);
 
                 // 2. Assert within caps (sender outward caps)
                 $this->capService->assertWithinCaps($lockedCap, $formattedAmount);
@@ -590,6 +710,8 @@ class TransactionService
         } catch (UniqueConstraintViolationException|QueryException $e) {
             $existing = $this->findByIdempotencyKey($sender, $idempotencyKey);
             if ($existing) {
+                $this->assertIdempotentParametersMatch($existing, 'TRANSFER', $formattedAmount, expectedRecipientId: $recipient->id);
+
                 return $existing;
             }
 
@@ -643,7 +765,49 @@ class TransactionService
             $query->where('agent_id', (int) $filters['agent_id']);
         }
 
+        if (! empty($filters['party_id'])) {
+            $partyId = (int) $filters['party_id'];
+            $query->where(fn (Builder $q) => $q
+                ->where('user_id', $partyId)
+                ->orWhere('sender_id', $partyId)
+                ->orWhere('recipient_id', $partyId)
+                ->orWhere('agent_id', $partyId));
+        }
+
+        if (! empty($filters['search'])) {
+            $this->applySearch($query, trim((string) $filters['search']));
+        }
+
         return $query->latest('id')->paginate($perPage);
+    }
+
+    /**
+     * Match a free-text term against the transaction ID, external reference, and the name,
+     * phone number or email of any party to the transaction.
+     */
+    protected function applySearch(Builder $query, string $term): void
+    {
+        $like = '%'.addcslashes($term, '%_\\').'%';
+        $transactionId = ltrim($term, '#');
+
+        $matchingUserIds = User::query()
+            ->select('id')
+            ->where(fn (Builder $q) => $q
+                ->where('name', 'like', $like)
+                ->orWhere('phone_number', 'like', $like)
+                ->orWhere('email', 'like', $like));
+
+        $query->where(function (Builder $q) use ($like, $transactionId, $matchingUserIds): void {
+            $q->whereIn('user_id', $matchingUserIds)
+                ->orWhereIn('sender_id', $matchingUserIds)
+                ->orWhereIn('recipient_id', $matchingUserIds)
+                ->orWhereIn('agent_id', $matchingUserIds)
+                ->orWhere('external_reference', 'like', $like);
+
+            if (ctype_digit($transactionId)) {
+                $q->orWhere('id', (int) $transactionId);
+            }
+        });
     }
 
     /**
@@ -668,5 +832,292 @@ class TransactionService
         if (! empty($toDate)) {
             $query->where('created_at', '<=', Carbon::parse($toDate)->endOfDay());
         }
+    }
+
+    /**
+     * Issue e-money float to an approved agent by an authorized admin.
+     *
+     * @throws InvalidRecipientException
+     * @throws UserNotAnAgentException
+     * @throws AgentNotApprovedException
+     * @throws WalletNotFoundException
+     * @throws WalletBlockedException
+     * @throws InvalidAmountException
+     * @throws IdempotencyConflictException
+     */
+    public function issueFloat(
+        User $admin,
+        User $agent,
+        string|float $amount,
+        string $externalReference,
+        string $idempotencyKey,
+        ?string $description = null
+    ): Transaction {
+        if ($admin->id === $agent->id) {
+            throw new InvalidRecipientException('Cannot issue float to yourself.');
+        }
+
+        if ($agent->is_deleted) {
+            throw new UserNotFoundException('Agent user not found.');
+        }
+
+        if (! $agent->isAgent()) {
+            throw new UserNotAnAgentException;
+        }
+
+        if (! $agent->agentInfo || $agent->agentInfo->status !== 'APPROVED') {
+            throw new AgentNotApprovedException;
+        }
+
+        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
+
+        $existing = $this->findByIdempotencyKey($admin, $idempotencyKey);
+        if ($existing) {
+            $this->assertIdempotentParametersMatch(
+                existing: $existing,
+                expectedType: 'FLOAT_ISSUE',
+                expectedAmount: $formattedAmount,
+                expectedRecipientId: $agent->id,
+                expectedAgentId: $agent->id,
+                expectedExternalReference: $externalReference,
+            );
+
+            return $existing;
+        }
+
+        try {
+            return DB::transaction(function () use ($admin, $agent, $formattedAmount, $externalReference, $idempotencyKey, $description): Transaction {
+                $existing = $this->findByIdempotencyKey($admin, $idempotencyKey, lock: true);
+                if ($existing) {
+                    $this->assertIdempotentParametersMatch(
+                        existing: $existing,
+                        expectedType: 'FLOAT_ISSUE',
+                        expectedAmount: $formattedAmount,
+                        expectedRecipientId: $agent->id,
+                        expectedAgentId: $agent->id,
+                        expectedExternalReference: $externalReference,
+                    );
+
+                    return $existing;
+                }
+
+                $wallets = $this->walletService->lockWalletsForUsers([
+                    ['user_id' => $agent->id, 'kind' => Wallet::KIND_AGENT],
+                ]);
+
+                $agentWallet = $wallets->first();
+                if (! $agentWallet) {
+                    throw new WalletNotFoundException;
+                }
+
+                if ($agentWallet->is_blocked) {
+                    throw new WalletBlockedException;
+                }
+
+                $currentBalance = number_format((float) $agentWallet->balance, 2, '.', '');
+                $newBalance = bcadd($currentBalance, $formattedAmount, 2);
+                $agentWallet->balance = $newBalance;
+                $agentWallet->save();
+
+                $transaction = Transaction::create([
+                    'user_id' => $agent->id,
+                    'sender_id' => null,
+                    'recipient_id' => $agent->id,
+                    'agent_id' => $agent->id,
+                    'initiated_by' => $admin->id,
+                    'type' => 'FLOAT_ISSUE',
+                    'amount' => $formattedAmount,
+                    'system_fee_amount' => '0.00',
+                    'system_fee_rate' => '0.0000',
+                    'agent_commission_amount' => '0.00',
+                    'agent_commission_rate' => '0.0000',
+                    'currency' => $agentWallet->currency ?? 'BDT',
+                    'description' => $description,
+                    'status' => 'COMPLETED',
+                    'idempotency_key' => $idempotencyKey,
+                    'external_reference' => $externalReference,
+                    'sender_wallet_balance_after' => null,
+                    'recipient_wallet_balance_after' => $newBalance,
+                    'agent_wallet_balance_after' => $newBalance,
+                    'sender_wallet_id' => null,
+                    'recipient_wallet_id' => $agentWallet->id,
+                    'agent_wallet_id' => $agentWallet->id,
+                    'meta' => [
+                        'bank_deposit_reference' => $externalReference,
+                    ],
+                ]);
+
+                AuditLog::create([
+                    'actor_id' => $admin->id,
+                    'action' => 'FLOAT_ISSUED',
+                    'auditable_type' => $agent->getMorphClass(),
+                    'auditable_id' => $agent->id,
+                    'metadata' => [
+                        'transaction_id' => $transaction->id,
+                        'external_reference' => $externalReference,
+                        'amount' => $formattedAmount,
+                        'agent_wallet_id' => $agentWallet->id,
+                        'balance_before' => $currentBalance,
+                        'balance_after' => $newBalance,
+                        'description' => $description,
+                    ],
+                ]);
+
+                return $transaction;
+            });
+        } catch (UniqueConstraintViolationException|QueryException $e) {
+            $existing = $this->findByIdempotencyKey($admin, $idempotencyKey);
+            if ($existing) {
+                $this->assertIdempotentParametersMatch(
+                    existing: $existing,
+                    expectedType: 'FLOAT_ISSUE',
+                    expectedAmount: $formattedAmount,
+                    expectedRecipientId: $agent->id,
+                    expectedAgentId: $agent->id,
+                    expectedExternalReference: $externalReference,
+                );
+
+                return $existing;
+            }
+
+            // A concurrent request under a different idempotency key claimed the same bank reference.
+            if ($e instanceof UniqueConstraintViolationException && str_contains($e->getMessage(), 'external_reference')) {
+                throw ValidationException::withMessages([
+                    'external_reference' => ['This external reference has already been used.'],
+                ]);
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Approve a pending agent bank withdrawal once the bank payout has been sent.
+     *
+     * The funds were already debited when the agent made the request, so only the status changes.
+     *
+     * @throws WithdrawalNotPendingException
+     * @throws ValidationException
+     */
+    public function approveWithdrawal(Transaction $withdrawal, User $reviewer, string $externalReference, ?string $note = null): Transaction
+    {
+        try {
+            return DB::transaction(function () use ($withdrawal, $reviewer, $externalReference, $note): Transaction {
+                $locked = $this->lockPendingWithdrawal($withdrawal);
+
+                $locked->forceFill([
+                    'status' => 'COMPLETED',
+                    'external_reference' => $externalReference,
+                    'meta' => array_merge($locked->meta ?? [], [
+                        'review' => [
+                            'decision' => 'APPROVED',
+                            'reviewed_by' => $reviewer->id,
+                            'reviewed_at' => now()->toIso8601String(),
+                            'bank_transfer_reference' => $externalReference,
+                            'note' => $note,
+                        ],
+                    ]),
+                ])->save();
+
+                AuditLog::create([
+                    'actor_id' => $reviewer->id,
+                    'action' => 'WITHDRAWAL_APPROVED',
+                    'auditable_type' => (new User)->getMorphClass(),
+                    'auditable_id' => $locked->agent_id,
+                    'metadata' => [
+                        'transaction_id' => $locked->id,
+                        'amount' => $locked->amount,
+                        'external_reference' => $externalReference,
+                        'note' => $note,
+                    ],
+                ]);
+
+                return $locked;
+            });
+        } catch (UniqueConstraintViolationException $e) {
+            // A concurrent review claimed the same bank reference after validation passed
+            if (str_contains($e->getMessage(), 'external_reference')) {
+                throw ValidationException::withMessages([
+                    'external_reference' => ['This external reference has already been used.'],
+                ]);
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Reject a pending agent bank withdrawal and return the held funds to the agent wallet.
+     *
+     * The refund ignores a wallet block: the money never left the platform, so returning it is
+     * not a new movement the block is meant to stop. A REJECTED row nets to zero in the ledger.
+     *
+     * @throws WithdrawalNotPendingException
+     * @throws WalletNotFoundException
+     */
+    public function rejectWithdrawal(Transaction $withdrawal, User $reviewer, string $reason): Transaction
+    {
+        return DB::transaction(function () use ($withdrawal, $reviewer, $reason): Transaction {
+            $locked = $this->lockPendingWithdrawal($withdrawal);
+
+            $wallet = Wallet::whereKey($locked->sender_wallet_id)->lockForUpdate()->first();
+            if (! $wallet) {
+                throw new WalletNotFoundException;
+            }
+
+            $balanceBefore = number_format((float) $wallet->balance, 2, '.', '');
+            $balanceAfter = bcadd($balanceBefore, number_format((float) $locked->amount, 2, '.', ''), 2);
+            $wallet->balance = $balanceAfter;
+            $wallet->save();
+
+            $locked->forceFill([
+                'status' => 'REJECTED',
+                'meta' => array_merge($locked->meta ?? [], [
+                    'review' => [
+                        'decision' => 'REJECTED',
+                        'reviewed_by' => $reviewer->id,
+                        'reviewed_at' => now()->toIso8601String(),
+                        'reason' => $reason,
+                        'refunded_wallet_id' => $wallet->id,
+                        'refund_balance_after' => $balanceAfter,
+                    ],
+                ]),
+            ])->save();
+
+            AuditLog::create([
+                'actor_id' => $reviewer->id,
+                'action' => 'WITHDRAWAL_REJECTED',
+                'auditable_type' => (new User)->getMorphClass(),
+                'auditable_id' => $locked->agent_id,
+                'metadata' => [
+                    'transaction_id' => $locked->id,
+                    'amount' => $locked->amount,
+                    'reason' => $reason,
+                    'wallet_id' => $wallet->id,
+                    'balance_before' => $balanceBefore,
+                    'balance_after' => $balanceAfter,
+                ],
+            ]);
+
+            return $locked;
+        });
+    }
+
+    /**
+     * Lock an agent withdrawal row and guard that it is still awaiting review.
+     *
+     * @throws WithdrawalNotPendingException
+     */
+    private function lockPendingWithdrawal(Transaction $withdrawal): Transaction
+    {
+        /** @var Transaction $locked */
+        $locked = Transaction::whereKey($withdrawal->id)->lockForUpdate()->firstOrFail();
+
+        if ($locked->type !== 'AGENT_WITHDRAWAL' || $locked->status !== 'PENDING') {
+            throw new WithdrawalNotPendingException;
+        }
+
+        return $locked;
     }
 }

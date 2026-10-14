@@ -2,6 +2,7 @@
 defineProps<{
     show: boolean;
     title?: string;
+    maxWidth?: string;
 }>();
 
 const emit = defineEmits<{
@@ -16,7 +17,7 @@ const emit = defineEmits<{
         @click.self="emit('close')"
     >
         <div
-            class="relative w-full max-w-lg transform overflow-hidden rounded-xl bg-white p-6 text-left shadow-2xl transition-all dark:bg-zinc-900 dark:border dark:border-zinc-800"
+            :class="['relative w-full transform overflow-hidden rounded-xl bg-white p-6 text-left shadow-2xl transition-all dark:bg-zinc-900 dark:border dark:border-zinc-800', maxWidth ?? 'max-w-lg']"
         >
             <div class="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
                 <h3 v-if="title" class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">

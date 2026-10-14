@@ -3,11 +3,11 @@
 use App\Models\Role;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
-use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Laravel\Sanctum\Sanctum;
+use Modules\Authentication\Notifications\AdminInviteNotification;
 
 beforeEach(function () {
     $this->seed(RoleSeeder::class);
@@ -22,28 +22,26 @@ test('complete case B lifecycle: grant access -> accept invite -> change passwor
         'email' => null,
         'is_verified' => true,
         'password' => null,
+        'pin' => null,
         'password_changed_at' => null,
     ]);
 
-    // 2. Intercept email delivery log to capture the real signed URL and temporary password
-    $capturedInvite = [];
-    Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$capturedInvite) {
-        if (isset($event->context['url'], $event->context['temp_password'])) {
-            $capturedInvite = $event->context;
-        }
-    });
+    // 2. Fake notifications to capture the real signed URL and temporary password from the invite email
+    Notification::fake();
 
     // 3. Step 1: SUPER_ADMIN grants admin access via API
     Sanctum::actingAs($superAdmin, ['admin']);
 
     $grantResponse = $this->patchJson("/api/v1/users/{$target->id}/grant-admin-access", [
         'email' => 'newadmin@domain.com',
+        'role' => 'ADMIN',
     ]);
     $grantResponse->assertOk();
 
-    expect($capturedInvite)->toHaveKeys(['url', 'temp_password']);
-    $signedUrl = $capturedInvite['url'];
-    $tempPassword = $capturedInvite['temp_password'];
+    $invite = Notification::sent($target, AdminInviteNotification::class)->first();
+    expect($invite)->not->toBeNull();
+    $signedUrl = $invite->url;
+    $tempPassword = $invite->temporaryPassword;
 
     // Clear actingAs / guard cache before testing bearer tokens
     Auth::forgetGuards();

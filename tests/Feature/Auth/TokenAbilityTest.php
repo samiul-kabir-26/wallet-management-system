@@ -98,7 +98,7 @@ test('admin-issued token is accepted by admin-only endpoint', function () {
         'email' => 'dual.role@example.com',
         'phone_number' => '01711223344',
         'password' => Hash::make('AdminPass123!'),
-        'pin' => Hash::make('12345'),
+        'pin' => null,
         'password_changed_at' => now(),
     ]);
 
@@ -174,7 +174,7 @@ test('agent whose agent_info status is PENDING cannot log in on agent route', fu
     $response->assertStatus(403)
         ->assertExactJson([
             'success' => false,
-            'message' => 'You do not have permission to access this portal.',
+            'message' => 'Your agent account is awaiting approval.',
             'errors' => [],
         ]);
 });
