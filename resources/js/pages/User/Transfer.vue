@@ -4,7 +4,7 @@ import { Head } from '@inertiajs/vue3';
 import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { parseApiError } from '@/composables/useApiError';
-import { money, phone, positiveInteger } from '@/composables/validators';
+import { money, phone, pin } from '@/composables/validators';
 import { api } from '@/services/api';
 import { useToastStore } from '@/stores/toast';
 import UserLayout from '@/layouts/UserLayout.vue';
@@ -21,11 +21,15 @@ const confirmOpen = ref(false);
 const submitting = ref(false);
 const feeRate = ref<number | null>(null);
 
-const tabConfig: Record<Tab, { label: string; endpoint: string; counterparty: 'recipientId' | 'agentPhone'; title: string; button: string; color: string }> = {
+const recipientName = ref<string | null>(null);
+const lookingUpRecipient = ref(false);
+const recipientLookupError = ref<string | null>(null);
+
+const tabConfig: Record<Tab, { label: string; endpoint: string; counterparty: 'recipientPhone' | 'agentPhone'; title: string; button: string; color: string }> = {
     transfer: {
         label: 'Send Money (P2P)',
         endpoint: '/transactions/transfer',
-        counterparty: 'recipientId',
+        counterparty: 'recipientPhone',
         title: 'Confirm Transfer',
         button: 'Send Money Now',
         color: 'bg-indigo-600 hover:bg-indigo-500',
@@ -50,24 +54,62 @@ const tabConfig: Record<Tab, { label: string; endpoint: string; counterparty: 'r
 
 const current = computed(() => tabConfig[activeTab.value]);
 
-const validationSchema = computed(() => ({
-    [current.value.counterparty]:
-        current.value.counterparty === 'recipientId'
-            ? positiveInteger('Recipient user ID')
-            : phone,
-    amount: money('Amount'),
-}));
+const validationSchema = computed(() => {
+    const rules: Record<string, unknown> = {
+        [current.value.counterparty]: phone,
+        amount: money('Amount'),
+    };
+    if (activeTab.value !== 'cash_in') {
+        rules.pin = pin;
+    }
+    return rules;
+});
 
-const { handleSubmit, setErrors, resetForm, values } = useForm<{ recipientId: string; agentPhone: string; amount: string }>({
+const { handleSubmit, setErrors, resetForm, values } = useForm<{ recipientPhone: string; agentPhone: string; amount: string; pin: string }>({
     validationSchema,
-    initialValues: { recipientId: '', agentPhone: '', amount: '' },
+    initialValues: { recipientPhone: '', agentPhone: '', amount: '', pin: '' },
 });
 
 const serverErrors = ref<Record<string, string>>({});
 
+let lookupTimer: ReturnType<typeof setTimeout> | null = null;
+watch(() => values.recipientPhone, (newPhone) => {
+    recipientName.value = null;
+    recipientLookupError.value = null;
+    if (lookupTimer) {
+        clearTimeout(lookupTimer);
+    }
+
+    if (activeTab.value !== 'transfer' || !newPhone) {
+        return;
+    }
+
+    if (!/^01[3-9]\d{8}$/.test(newPhone)) {
+        return;
+    }
+
+    lookupTimer = setTimeout(async () => {
+        lookingUpRecipient.value = true;
+        try {
+            const res = await api.get('/users/lookup', { params: { phone_number: newPhone } });
+            recipientName.value = res.data.data?.name ?? null;
+        } catch {
+            recipientName.value = null;
+            recipientLookupError.value = 'Recipient not found';
+        } finally {
+            lookingUpRecipient.value = false;
+        }
+    }, 300);
+});
+
 watch(activeTab, () => {
     resetForm();
     serverErrors.value = {};
+    recipientName.value = null;
+    recipientLookupError.value = null;
+    if (lookupTimer) {
+        clearTimeout(lookupTimer);
+    }
 });
 
 const estimatedFee = computed(() => {
@@ -78,7 +120,7 @@ const estimatedFee = computed(() => {
     return amount * feeRate.value;
 });
 
-const counterpartyLabel = computed(() => (current.value.counterparty === 'recipientId' ? 'Recipient' : 'Agent'));
+const counterpartyLabel = computed(() => (current.value.counterparty === 'recipientPhone' ? 'Recipient' : 'Agent'));
 
 const onValid = handleSubmit(() => {
     confirmOpen.value = true;
@@ -92,23 +134,29 @@ const submit = async () => {
             amount: Number(values.amount),
             idempotency_key: crypto.randomUUID(),
         };
-        if (current.value.counterparty === 'recipientId') {
-            body.recipient_id = Number(values.recipientId);
+        if (current.value.counterparty === 'recipientPhone') {
+            body.recipient_phone = values.recipientPhone;
         } else {
             body.agent_phone = values.agentPhone;
+        }
+        if (activeTab.value !== 'cash_in') {
+            body.pin = values.pin;
         }
         const res = await api.post(current.value.endpoint, body);
         const txId = res.data.data?.transaction?.id ?? '';
         toast.success(`${current.value.label.split(' (')[0]} of ৳${Number(values.amount).toFixed(2)} completed (Tx #${txId}).`);
         confirmOpen.value = false;
+        recipientName.value = null;
+        recipientLookupError.value = null;
         resetForm();
     } catch (err: unknown) {
         const { message, fieldErrors } = parseApiError(err, 'Transaction failed.');
         confirmOpen.value = false;
         const mapped: Record<string, string> = {};
-        if (fieldErrors.recipient_id) mapped.recipientId = fieldErrors.recipient_id;
+        if (fieldErrors.recipient_phone) mapped.recipientPhone = fieldErrors.recipient_phone;
         if (fieldErrors.agent_phone) mapped.agentPhone = fieldErrors.agent_phone;
         if (fieldErrors.amount) mapped.amount = fieldErrors.amount;
+        if (fieldErrors.pin) mapped.pin = fieldErrors.pin;
         setErrors(mapped);
         toast.error(message);
     } finally {
@@ -173,15 +221,28 @@ onMounted(async () => {
                         Cash-In is free of charge. You receive the exact amount loaded by the agent.
                     </div>
 
-                    <TextField
-                        v-if="current.counterparty === 'recipientId'"
-                        name="recipientId"
-                        label="Recipient User ID"
-                        type="number"
-                        min="1"
-                        inputmode="numeric"
-                        placeholder="e.g. 2"
-                    />
+                    <div v-if="current.counterparty === 'recipientPhone'" class="space-y-1">
+                        <TextField
+                            name="recipientPhone"
+                            label="Recipient Phone Number"
+                            type="tel"
+                            inputmode="tel"
+                            autocomplete="tel"
+                            placeholder="01712345678"
+                        />
+                        <div v-if="lookingUpRecipient" class="text-xs text-zinc-500 animate-pulse">
+                            Checking recipient...
+                        </div>
+                        <div v-else-if="recipientName" class="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                            <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Recipient: {{ recipientName }}
+                        </div>
+                        <div v-else-if="recipientLookupError" class="text-xs text-rose-500">
+                            {{ recipientLookupError }}
+                        </div>
+                    </div>
                     <TextField
                         v-else
                         name="agentPhone"
@@ -198,6 +259,17 @@ onMounted(async () => {
                             Estimated fee: ৳{{ estimatedFee.toFixed(2) }} (total deduction: ৳{{ (Number(values.amount) + estimatedFee).toFixed(2) }})
                         </p>
                     </div>
+
+                    <TextField
+                        v-if="activeTab !== 'cash_in'"
+                        name="pin"
+                        label="Security PIN"
+                        type="password"
+                        inputmode="numeric"
+                        maxlength="10"
+                        autocomplete="off"
+                        placeholder="Enter 5-10 digit PIN"
+                    />
 
                     <button
                         type="submit"
@@ -221,8 +293,12 @@ onMounted(async () => {
         >
             <dl class="space-y-2">
                 <div class="flex justify-between">
-                    <dt class="text-zinc-500">{{ counterpartyLabel }} {{ current.counterparty === 'recipientId' ? 'user ID' : 'phone number' }}</dt>
-                    <dd class="font-semibold">{{ current.counterparty === 'recipientId' ? `#${values.recipientId}` : values.agentPhone }}</dd>
+                    <dt class="text-zinc-500">{{ counterpartyLabel }} phone number</dt>
+                    <dd class="font-semibold">{{ current.counterparty === 'recipientPhone' ? values.recipientPhone : values.agentPhone }}</dd>
+                </div>
+                <div v-if="current.counterparty === 'recipientPhone' && recipientName" class="flex justify-between">
+                    <dt class="text-zinc-500">Recipient Name</dt>
+                    <dd class="font-semibold text-zinc-900 dark:text-zinc-100">{{ recipientName }}</dd>
                 </div>
                 <div class="flex justify-between">
                     <dt class="text-zinc-500">Amount</dt>

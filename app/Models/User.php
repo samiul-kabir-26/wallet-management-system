@@ -201,6 +201,40 @@ class User extends Authenticatable
     }
 
     /**
+     * Determine if the user is eligible to receive wallet transfers.
+     */
+    public function canReceiveTransfers(?User $sender = null): bool
+    {
+        if ($this->is_deleted) {
+            return false;
+        }
+
+        if ($sender !== null && (int) $this->id === (int) $sender->id) {
+            return false;
+        }
+
+        $hasUserRole = $this->relationLoaded('roles')
+            ? $this->roles->contains('name', 'USER')
+            : $this->isUser();
+
+        if (! $hasUserRole) {
+            return false;
+        }
+
+        $userWallet = $this->relationLoaded('wallets')
+            ? $this->wallets->firstWhere('kind', Wallet::KIND_USER)
+            : ($this->relationLoaded('userWallet')
+                ? $this->userWallet
+                : $this->userWallet()->first());
+
+        if (! $userWallet || $userWallet->is_blocked) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Determine the wallet kind associated with the current token ability, if any.
      *
      * Returns Wallet::KIND_AGENT for agent ability, Wallet::KIND_USER for user ability,

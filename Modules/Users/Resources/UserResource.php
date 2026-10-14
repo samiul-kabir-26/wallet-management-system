@@ -36,7 +36,7 @@ class UserResource extends JsonResource
             'is_verified' => (bool) $this->resource->is_verified,
             'wallets' => $this->whenLoaded('wallets'),
             'caps' => $this->whenLoaded('cap'),
-            'agent_info' => $this->whenLoaded('agentInfo'),
+            'agent_info' => $this->whenLoaded('agentInfo', fn () => $this->resource->agentInfo ? new AgentResource($this->resource->agentInfo) : null),
             'created_at' => $this->resource->created_at,
             'updated_at' => $this->resource->updated_at,
         ];

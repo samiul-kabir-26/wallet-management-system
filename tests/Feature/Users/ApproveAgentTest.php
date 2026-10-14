@@ -119,17 +119,89 @@ test('commission_rate greater than 1 fails validation with 422', function () {
         ->assertJsonValidationErrors(['commission_rate']);
 });
 
-test('approving an already APPROVED agent returns 409 conflict', function () {
+test('approving an already APPROVED agent returns 409 conflict and preserves approved_at and approved_by', function () {
     $admin = createActorForAgentApproval('ADMIN');
-    $agent = createAgentWithStatus('APPROVED');
+    $originalApprover = createActorForAgentApproval('ADMIN');
+    $approvedAt = now()->subDays(2)->startOfSecond();
+
+    $agent = createActorForAgentApproval('AGENT');
+    $agent->agentInfo()->create([
+        'status' => 'APPROVED',
+        'commission_rate' => 0.0150,
+        'approved_by' => $originalApprover->id,
+        'approved_at' => $approvedAt,
+    ]);
 
     Sanctum::actingAs($admin, ['admin']);
 
-    $response = $this->patchJson("/api/v1/users/{$agent->id}/approve-agent", []);
+    $response = $this->patchJson("/api/v1/users/{$agent->id}/approve-agent", [
+        'commission_rate' => 0.03,
+    ]);
 
     $response->assertStatus(409)
         ->assertJsonPath('success', false)
         ->assertJsonPath('message', 'Agent is not pending approval.');
+
+    $agentInfo = AgentInfo::where('user_id', $agent->id)->firstOrFail();
+    expect($agentInfo->status)->toBe('APPROVED')
+        ->and($agentInfo->approved_by)->toBe($originalApprover->id)
+        ->and($agentInfo->approved_at->timestamp)->toBe($approvedAt->timestamp)
+        ->and((float) $agentInfo->commission_rate)->toBe(0.0150);
+});
+
+test('list users endpoint with role=AGENT includes agent_info and reflects APPROVED status', function () {
+    $admin = createActorForAgentApproval('ADMIN');
+    $approvedAgent = createAgentWithStatus('APPROVED');
+    $pendingAgent = createAgentWithStatus('PENDING');
+
+    Sanctum::actingAs($admin, ['admin']);
+
+    $response = $this->getJson('/api/v1/users/all-users?role=AGENT');
+
+    $response->assertOk()
+        ->assertJsonPath('success', true);
+
+    $items = collect($response->json('data.items'));
+    expect($items)->not->toBeEmpty();
+
+    foreach ($items as $item) {
+        expect($item)->toHaveKey('agent_info')
+            ->and($item['agent_info'])->not->toBeNull()
+            ->and($item['agent_info'])->toHaveKey('status');
+    }
+
+    $foundApproved = $items->firstWhere('id', $approvedAgent->id);
+    expect($foundApproved['agent_info']['status'])->toBe('APPROVED');
+
+    $foundPending = $items->firstWhere('id', $pendingAgent->id);
+    expect($foundPending['agent_info']['status'])->toBe('PENDING');
+});
+
+test('approve-then-list round trip updates agent status to APPROVED with commission rate in list endpoint', function () {
+    $admin = createActorForAgentApproval('ADMIN');
+    $agent = createAgentWithStatus('PENDING');
+
+    Sanctum::actingAs($admin, ['admin']);
+
+    // 1. Initial list shows agent is PENDING
+    $initialList = $this->getJson('/api/v1/users/all-users?role=AGENT');
+    $initialList->assertOk();
+    $initialAgentItem = collect($initialList->json('data.items'))->firstWhere('id', $agent->id);
+    expect($initialAgentItem['agent_info']['status'])->toBe('PENDING');
+
+    // 2. Approve agent with 2.5% commission rate
+    $approveRes = $this->patchJson("/api/v1/users/{$agent->id}/approve-agent", [
+        'commission_rate' => 0.025,
+    ]);
+    $approveRes->assertOk();
+
+    // 3. List endpoint reflects APPROVED status and commission rate
+    $afterList = $this->getJson('/api/v1/users/all-users?role=AGENT');
+    $afterList->assertOk();
+    $afterAgentItem = collect($afterList->json('data.items'))->firstWhere('id', $agent->id);
+
+    expect($afterAgentItem['agent_info']['status'])->toBe('APPROVED')
+        ->and((float) $afterAgentItem['agent_info']['commission_rate'])->toBe(0.025);
 });
 
 test('USER or AGENT role cannot approve an agent', function () {

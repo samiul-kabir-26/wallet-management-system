@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia';
 import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { parseApiError } from '@/composables/useApiError';
-import { money } from '@/composables/validators';
+import { money, pin } from '@/composables/validators';
 import { api } from '@/services/api';
 import { useToastStore } from '@/stores/toast';
 import { useWalletStore } from '@/stores/wallet';
@@ -22,9 +22,12 @@ const { wallet, loading: walletLoading } = storeToRefs(walletStore);
 const loading = ref(false);
 const confirmOpen = ref(false);
 
-const { handleSubmit, resetForm, setErrors, values } = useForm<{ amount: string }>({
-    validationSchema: { amount: money('Withdrawal amount') },
-    initialValues: { amount: '' },
+const { handleSubmit, resetForm, setErrors, values } = useForm<{ amount: string; pin: string }>({
+    validationSchema: {
+        amount: money('Withdrawal amount'),
+        pin,
+    },
+    initialValues: { amount: '', pin: '' },
 });
 
 const onValid = handleSubmit(() => {
@@ -36,6 +39,7 @@ const submit = async () => {
     try {
         const res = await api.post('/transactions/agent/withdrawal', {
             amount: Number(values.amount),
+            pin: values.pin,
             idempotency_key: crypto.randomUUID(),
         });
         toast.success(`Bank withdrawal of ৳${Number(values.amount).toFixed(2)} initiated (Tx #${res.data.data?.transaction?.id ?? ''}).`);
@@ -44,9 +48,10 @@ const submit = async () => {
         await walletStore.fetchWallet();
     } catch (err: unknown) {
         const { message, fieldErrors } = parseApiError(err, 'Withdrawal failed. Check balance and agent status.');
-        if (fieldErrors.amount) {
-            setErrors({ amount: fieldErrors.amount });
-        }
+        const mapped: Record<string, string> = {};
+        if (fieldErrors.amount) mapped.amount = fieldErrors.amount;
+        if (fieldErrors.pin) mapped.pin = fieldErrors.pin;
+        setErrors(mapped);
         confirmOpen.value = false;
         toast.error(message);
     } finally {
@@ -90,6 +95,15 @@ onMounted(() => {
             <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
                 <form class="space-y-4" novalidate @submit.prevent="onValid">
                     <TextField name="amount" label="Withdrawal Amount (BDT)" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="500.00" />
+                    <TextField
+                        name="pin"
+                        label="Agent PIN"
+                        type="password"
+                        inputmode="numeric"
+                        maxlength="10"
+                        autocomplete="off"
+                        placeholder="Enter 5-10 digit PIN"
+                    />
                     <button
                         type="submit"
                         :disabled="loading"

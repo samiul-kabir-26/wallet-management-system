@@ -24,8 +24,22 @@ class AgentWithdrawalRequest extends FormRequest
     {
         return [
             'amount' => ['required', 'numeric', 'gt:0'],
+            'pin' => ['required', 'string', 'digits_between:5,10'],
             'description' => ['nullable', 'string', 'max:500'],
             'idempotency_key' => ['required', 'string', 'max:255'],
+        ];
+    }
+
+    /**
+     * Get custom messages for validator errors.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'pin.required' => 'The PIN is required.',
+            'pin.digits_between' => 'The PIN must be between 5 and 10 digits.',
         ];
     }
 }

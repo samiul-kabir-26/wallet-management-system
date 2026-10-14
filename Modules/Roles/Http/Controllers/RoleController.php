@@ -47,20 +47,10 @@ class RoleController extends Controller
         $perPage = (int) ($validated['per_page'] ?? 15);
         $paginator = $query->latest('id')->paginate($perPage);
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'roles' => RoleResource::collection($paginator),
-                'pagination' => [
-                    'total' => $paginator->total(),
-                    'per_page' => $paginator->perPage(),
-                    'current_page' => $paginator->currentPage(),
-                    'last_page' => $paginator->lastPage(),
-                    'from' => $paginator->firstItem(),
-                    'to' => $paginator->lastItem(),
-                ],
-            ],
-        ]);
+        return $this->paginatedResponse(
+            $paginator,
+            RoleResource::collection($paginator),
+        );
     }
 
     /**

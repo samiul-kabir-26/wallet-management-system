@@ -96,20 +96,20 @@ test('admin can view all wallets via /admin/all with pagination and filters', fu
         ->assertJsonPath('success', true)
         ->assertJsonStructure([
             'data' => [
-                'wallets',
-                'pagination' => ['total', 'per_page', 'current_page', 'last_page'],
+                'items',
+                'pagination' => ['total', 'per_page', 'current_page', 'last_page', 'from', 'to'],
             ],
         ]);
 
     // 2. Filter by is_blocked=true
     $blockedResponse = $this->getJson('/api/v1/wallets/admin/all?is_blocked=true');
     $blockedResponse->assertOk()
-        ->assertJsonPath('data.wallets.0.id', $wallet2->id);
+        ->assertJsonPath('data.items.0.id', $wallet2->id);
 
     // 3. Filter by user_id
     $userFilteredResponse = $this->getJson("/api/v1/wallets/admin/all?user_id={$user1->id}");
     $userFilteredResponse->assertOk()
-        ->assertJsonPath('data.wallets.0.id', $wallet1->id);
+        ->assertJsonPath('data.items.0.id', $wallet1->id);
 });
 
 test('regular user cannot access admin list all wallets endpoint', function () {

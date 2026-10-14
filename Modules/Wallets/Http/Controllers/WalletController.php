@@ -65,18 +65,10 @@ class WalletController extends Controller
 
         $paginator = $this->walletService->listWallets($validated, $perPage);
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'wallets' => WalletResource::collection($paginator),
-                'pagination' => [
-                    'total' => $paginator->total(),
-                    'per_page' => $paginator->perPage(),
-                    'current_page' => $paginator->currentPage(),
-                    'last_page' => $paginator->lastPage(),
-                ],
-            ],
-        ]);
+        return $this->paginatedResponse(
+            $paginator,
+            WalletResource::collection($paginator),
+        );
     }
 
     /**

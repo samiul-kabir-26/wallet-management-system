@@ -57,8 +57,9 @@ test('service operations populate exact wallet slots in database', function () {
 
     // 2. TRANSFER
     $transferRes = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 50.00,
+        'pin' => '12345',
         'idempotency_key' => 'slot-transfer-'.uniqid(),
     ])->assertStatus(201);
     $transferTx = Transaction::findOrFail($transferRes->json('data.transaction.id'));
@@ -81,6 +82,7 @@ test('service operations populate exact wallet slots in database', function () {
     $cashOutRes = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 40.00,
+        'pin' => '12345',
         'idempotency_key' => 'slot-cashout-'.uniqid(),
     ])->assertStatus(201);
     $cashOutTx = Transaction::findOrFail($cashOutRes->json('data.transaction.id'));
@@ -97,6 +99,7 @@ test('service operations populate exact wallet slots in database', function () {
     Sanctum::actingAs($agent, ['agent']);
     $withdrawRes = $this->postJson('/api/v1/transactions/agent/withdrawal', [
         'amount' => 10.00,
+        'pin' => '12345',
         'idempotency_key' => 'slot-withdraw-'.uniqid(),
     ])->assertStatus(201);
     $withdrawTx = Transaction::findOrFail($withdrawRes->json('data.transaction.id'));
@@ -236,7 +239,7 @@ test('matrix: visibility in history and detail view across viewer types and toke
     // --- 1. Alice (customer with 'user' token) ---
     Sanctum::actingAs($alice, ['user']);
     $aliceHistory = $this->getJson('/api/v1/transactions/history')->assertStatus(200);
-    $aliceIds = collect($aliceHistory->json('data.transactions'))->pluck('id')->all();
+    $aliceIds = collect($aliceHistory->json('data.items'))->pluck('id')->all();
     expect($aliceIds)->toEqualCanonicalizing([$txTopUp->id, $txTransfer->id, $txCashIn->id]);
     $this->getJson("/api/v1/transactions/{$txTopUp->id}")->assertStatus(200);
     $this->getJson("/api/v1/transactions/{$txTransfer->id}")->assertStatus(200);
@@ -247,7 +250,7 @@ test('matrix: visibility in history and detail view across viewer types and toke
     // --- 2. Bob (customer with 'user' token) ---
     Sanctum::actingAs($bob, ['user']);
     $bobHistory = $this->getJson('/api/v1/transactions/history')->assertStatus(200);
-    $bobIds = collect($bobHistory->json('data.transactions'))->pluck('id')->all();
+    $bobIds = collect($bobHistory->json('data.items'))->pluck('id')->all();
     expect($bobIds)->toEqualCanonicalizing([$txTransfer->id]);
     $this->getJson("/api/v1/transactions/{$txTransfer->id}")->assertStatus(200);
     $this->getJson("/api/v1/transactions/{$txTopUp->id}")->assertStatus(403);
@@ -255,7 +258,7 @@ test('matrix: visibility in history and detail view across viewer types and toke
     // --- 3. Agent (with 'agent' token) ---
     Sanctum::actingAs($agent, ['agent']);
     $agentHistory = $this->getJson('/api/v1/transactions/history')->assertStatus(200);
-    $agentIds = collect($agentHistory->json('data.transactions'))->pluck('id')->all();
+    $agentIds = collect($agentHistory->json('data.items'))->pluck('id')->all();
     expect($agentIds)->toEqualCanonicalizing([$txCashOut->id]);
     $this->getJson("/api/v1/transactions/{$txCashOut->id}")->assertStatus(200);
     $this->getJson("/api/v1/transactions/{$txTopUp->id}")->assertStatus(403);
@@ -263,7 +266,7 @@ test('matrix: visibility in history and detail view across viewer types and toke
     // --- 4. Dual-role user with 'user' token ---
     Sanctum::actingAs($dual, ['user']);
     $dualUserHistory = $this->getJson('/api/v1/transactions/history')->assertStatus(200);
-    $dualUserIds = collect($dualUserHistory->json('data.transactions'))->pluck('id')->all();
+    $dualUserIds = collect($dualUserHistory->json('data.items'))->pluck('id')->all();
     expect($dualUserIds)->toEqualCanonicalizing([$txCashOut->id]);
     $this->getJson("/api/v1/transactions/{$txCashOut->id}")->assertStatus(200);
     $this->getJson("/api/v1/transactions/{$txAgentWithdrawal->id}")->assertStatus(403);
@@ -273,7 +276,7 @@ test('matrix: visibility in history and detail view across viewer types and toke
     // --- 5. Dual-role user with 'agent' token ---
     Sanctum::actingAs($dual, ['agent']);
     $dualAgentHistory = $this->getJson('/api/v1/transactions/history')->assertStatus(200);
-    $dualAgentIds = collect($dualAgentHistory->json('data.transactions'))->pluck('id')->all();
+    $dualAgentIds = collect($dualAgentHistory->json('data.items'))->pluck('id')->all();
     expect($dualAgentIds)->toEqualCanonicalizing([$txCashIn->id, $txAgentWithdrawal->id, $txCommission->id]);
     $this->getJson("/api/v1/transactions/{$txCashIn->id}")->assertStatus(200);
     $this->getJson("/api/v1/transactions/{$txAgentWithdrawal->id}")->assertStatus(200);
@@ -283,14 +286,14 @@ test('matrix: visibility in history and detail view across viewer types and toke
     // --- 6. Stranger with 'user' token ---
     Sanctum::actingAs($stranger, ['user']);
     $strangerHistory = $this->getJson('/api/v1/transactions/history')->assertStatus(200);
-    expect($strangerHistory->json('data.transactions'))->toBeEmpty();
+    expect($strangerHistory->json('data.items'))->toBeEmpty();
     $this->getJson("/api/v1/transactions/{$txTopUp->id}")->assertStatus(403);
     $this->getJson("/api/v1/transactions/{$txTransfer->id}")->assertStatus(403);
 
     // --- 7. Admin with 'admin' token ---
     Sanctum::actingAs($admin, ['admin']);
     $adminHistory = $this->getJson('/api/v1/transactions/history')->assertStatus(200);
-    $adminIds = collect($adminHistory->json('data.transactions'))->pluck('id')->all();
+    $adminIds = collect($adminHistory->json('data.items'))->pluck('id')->all();
     expect($adminIds)->toEqualCanonicalizing([
         $txTopUp->id,
         $txTransfer->id,
@@ -342,7 +345,7 @@ test('counterparty balances are absent for non-admin viewers and present for adm
 
     // 2. Sender views history
     $senderHistRes = $this->getJson('/api/v1/transactions/history')->assertStatus(200);
-    $senderHistData = $senderHistRes->json('data.transactions.0');
+    $senderHistData = $senderHistRes->json('data.items.0');
     expect(array_key_exists('sender_wallet_balance_after', $senderHistData))->toBeTrue()
         ->and(array_key_exists('recipient_wallet_balance_after', $senderHistData))->toBeFalse();
 
@@ -426,7 +429,7 @@ test('viewer whose token kind has no wallet receives empty history list', functi
     $response->assertStatus(200)
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.pagination.total', 0)
-        ->assertJsonCount(0, 'data.transactions');
+        ->assertJsonCount(0, 'data.items');
 });
 
 test('operation responses for cash-in and cash-out return only caller balance after', function () {
@@ -459,6 +462,7 @@ test('operation responses for cash-in and cash-out return only caller balance af
     $cashOutRes = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 50.00,
+        'pin' => '12345',
         'idempotency_key' => 'op-mask-cashout-'.uniqid(),
     ])->assertStatus(201);
 
@@ -494,8 +498,9 @@ test('operation responses for top-up, transfer, and withdrawal carry only viewer
 
     // Transfer response carries only sender_wallet_balance_after
     $transferRes = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 25.00,
+        'pin' => '12345',
         'idempotency_key' => 'op-transfer-'.uniqid(),
     ])->assertStatus(201);
     $transferTx = $transferRes->json('data.transaction');
@@ -507,6 +512,7 @@ test('operation responses for top-up, transfer, and withdrawal carry only viewer
     Sanctum::actingAs($agent, ['agent']);
     $withRes = $this->postJson('/api/v1/transactions/agent/withdrawal', [
         'amount' => 30.00,
+        'pin' => '12345',
         'idempotency_key' => 'op-withdraw-'.uniqid(),
     ])->assertStatus(201);
     $withTx = $withRes->json('data.transaction');
@@ -598,7 +604,7 @@ test('viewer with token ability but no wallet gets empty history, 403 on show, a
         ->assertStatus(200)
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.pagination.total', 0)
-        ->assertJsonCount(0, 'data.transactions');
+        ->assertJsonCount(0, 'data.items');
 
     // 2. Show returns 403
     $this->getJson("/api/v1/transactions/{$txs->first()->id}")

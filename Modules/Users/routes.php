@@ -14,6 +14,7 @@ Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(
 
 // Profile detail and update routes (Admin, Agent, User - UserPolicy enforces self or admin)
 Route::middleware(['auth:sanctum', 'ability:admin,agent,user', 'password.changed'])->group(function (): void {
+    Route::get('/lookup', [UserController::class, 'lookup'])->middleware('throttle:30,1');
     Route::get('/{user}', [UserController::class, 'show']);
     Route::patch('/{user}', [UserController::class, 'update']);
 });

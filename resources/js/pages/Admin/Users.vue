@@ -38,7 +38,7 @@ const elevateSuccess = ref(false);
 const fetchAdminRoles = async () => {
     try {
         const res = await api.get('/roles', { params: { panel: 'admin', per_page: 100 } });
-        availableAdminRoles.value = res.data.data?.roles ?? [];
+        availableAdminRoles.value = res.data.data?.items ?? [];
         if (availableAdminRoles.value.length > 0 && !availableAdminRoles.value.some((r) => r.name === elevateRole.value)) {
             elevateRole.value = availableAdminRoles.value[0].name;
         }

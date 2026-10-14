@@ -8,11 +8,14 @@ use App\Models\User;
 use App\Models\Wallet;
 use Database\Seeders\RoleSeeder;
 use Database\Seeders\SystemSettingsSeeder;
+use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Sanctum\Sanctum;
+use Modules\Authentication\Services\PinVerifier;
 
 beforeEach(function () {
     $this->seed(RoleSeeder::class);
     $this->seed(SystemSettingsSeeder::class);
+    RateLimiter::clear(PinVerifier::getThrottleKey(1));
 });
 
 function createActorForCashOut(string $roleName): User
@@ -54,6 +57,7 @@ test('user can successfully cash-out via approved agent, writing CASH_OUT and li
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 1000.00,
+        'pin' => '12345',
         'description' => 'Cash-out withdrawal at counter',
         'idempotency_key' => 'cash-out-key-001',
     ]);
@@ -120,6 +124,7 @@ test('submitting same idempotency_key on cash-out returns existing transaction a
     $payload = [
         'agent_phone' => $agent->phone_number,
         'amount' => 500.00,
+        'pin' => '12345',
         'idempotency_key' => 'cash-out-idem-key',
     ];
 
@@ -157,6 +162,7 @@ test('cash-out fails when daily cap is exceeded and creates zero transaction row
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 600.00,
+        'pin' => '12345',
         'idempotency_key' => 'exceed-daily-cap',
     ]);
 
@@ -187,6 +193,7 @@ test('cash-out fails when monthly cap is exceeded and creates zero transaction r
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 600.00,
+        'pin' => '12345',
         'idempotency_key' => 'exceed-monthly-cap',
     ]);
 
@@ -214,6 +221,7 @@ test('cash-out fails when user balance cannot cover amount plus system fee', fun
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 1000.00,
+        'pin' => '12345',
         'idempotency_key' => 'insufficient-balance-cash-out',
     ]);
 
@@ -240,6 +248,7 @@ test('cash-out fails if user wallet is blocked', function () {
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 500.00,
+        'pin' => '12345',
         'idempotency_key' => 'user-blocked-cash-out',
     ]);
 
@@ -267,6 +276,7 @@ test('cash-out fails if agent wallet is blocked', function () {
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 500.00,
+        'pin' => '12345',
         'idempotency_key' => 'agent-blocked-cash-out',
     ]);
 
@@ -292,6 +302,7 @@ test('cash-out fails if agent is not approved', function () {
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 500.00,
+        'pin' => '12345',
         'idempotency_key' => 'pending-agent-cash-out',
     ]);
 
@@ -313,6 +324,7 @@ test('cash-out fails if target user is not an agent', function () {
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $otherUser->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'cash-out-not-an-agent',
     ]);
 
@@ -331,6 +343,7 @@ test('user cannot cash out to themselves', function () {
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $user->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'cash-out-self',
     ]);
 
@@ -347,6 +360,7 @@ test('cash-out fails with not-found error when agent phone does not exist', func
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => '01999999999',
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'cash-out-nonexistent-phone',
     ]);
 
@@ -366,6 +380,7 @@ test('cash-out fails with 422 when agent phone is malformed', function (string $
     $response = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $invalidPhone,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'cash-out-malformed-phone',
     ]);
 
@@ -380,7 +395,7 @@ test('cash-out fails with 422 when agent phone is malformed', function (string $
     'with letters' => '0171234567a',
 ]);
 
-test('replaying idempotency key on cash-out with different agent_phone returns existing transaction', function () {
+test('replaying idempotency key on cash-out with different parameters returns 409 conflict', function () {
     $user = createActorForCashOut('USER');
     $userWallet = Wallet::factory()->for($user)->balance(2000.00)->create();
     $userCap = Cap::factory()->for($user)->usage(0.00, 0.00)->create();
@@ -393,18 +408,32 @@ test('replaying idempotency key on cash-out with different agent_phone returns e
     $response1 = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent1->phone_number,
         'amount' => 500.00,
+        'pin' => '12345',
         'idempotency_key' => 'cash-out-replay-diff-phone',
     ]);
     $response1->assertStatus(201);
 
+    // Same key, different agent phone -> 409
     $response2 = $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent2->phone_number,
         'amount' => 500.00,
+        'pin' => '12345',
         'idempotency_key' => 'cash-out-replay-diff-phone',
     ]);
-    $response2->assertSuccessful()
-        ->assertJsonPath('data.transaction.id', $response1->json('data.transaction.id'))
-        ->assertJsonPath('data.transaction.agent_id', $agent1->id);
+    $response2->assertStatus(409)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Idempotency key reused with different parameters.');
+
+    // Same key, different amount -> 409
+    $response3 = $this->postJson('/api/v1/transactions/cash-out', [
+        'agent_phone' => $agent1->phone_number,
+        'amount' => 600.00,
+        'pin' => '12345',
+        'idempotency_key' => 'cash-out-replay-diff-phone',
+    ]);
+    $response3->assertStatus(409)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Idempotency key reused with different parameters.');
 
     $userWallet->refresh();
     $agent1->agentWallet->refresh();
@@ -429,6 +458,7 @@ test('agent or admin cannot perform cash-out', function () {
     $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $targetAgent->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'agent-cash-out',
     ])->assertStatus(403);
 
@@ -440,6 +470,7 @@ test('agent or admin cannot perform cash-out', function () {
     $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $targetAgent->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'admin-cash-out',
     ])->assertStatus(403);
 });
@@ -460,6 +491,7 @@ test('sequential cash-outs through the same agent accumulate total_commission ad
     $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 1000.00,
+        'pin' => '12345',
         'idempotency_key' => 'seq-cash-out-1',
     ])->assertStatus(201);
 
@@ -471,9 +503,111 @@ test('sequential cash-outs through the same agent accumulate total_commission ad
     $this->postJson('/api/v1/transactions/cash-out', [
         'agent_phone' => $agent->phone_number,
         'amount' => 1500.00,
+        'pin' => '12345',
         'idempotency_key' => 'seq-cash-out-2',
     ])->assertStatus(201);
 
     $agent->agentInfo->refresh();
     expect((float) $agent->agentInfo->total_commission)->toBe(25.00);
+});
+
+test('cash-out fails with wrong PIN and reports attempts left', function () {
+    $user = createActorForCashOut('USER');
+    Wallet::factory()->for($user)->balance(2000.00)->create();
+    Cap::factory()->for($user)->usage(0.00, 0.00)->create();
+
+    $agent = createAgentForCashOut(2000.00);
+
+    Sanctum::actingAs($user, ['user']);
+
+    $response = $this->postJson('/api/v1/transactions/cash-out', [
+        'agent_phone' => $agent->phone_number,
+        'amount' => 500.00,
+        'pin' => '99999',
+        'idempotency_key' => 'wrong-pin-cashout-001',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Wrong PIN. 4 attempt(s) left.')
+        ->assertJsonPath('errors.pin.0', 'Wrong PIN. 4 attempt(s) left.')
+        ->assertJsonPath('meta.attempts_remaining', 4);
+
+    expect(Transaction::count())->toBe(0);
+});
+
+test('exceeding PIN attempts on cash-out locks out user with 429', function () {
+    $user = createActorForCashOut('USER');
+    Wallet::factory()->for($user)->balance(2000.00)->create();
+    Cap::factory()->for($user)->usage(0.00, 0.00)->create();
+
+    $agent = createAgentForCashOut(2000.00);
+
+    Sanctum::actingAs($user, ['user']);
+
+    for ($i = 1; $i <= 4; $i++) {
+        $this->postJson('/api/v1/transactions/cash-out', [
+            'agent_phone' => $agent->phone_number,
+            'amount' => 10.00,
+            'pin' => '99999',
+            'idempotency_key' => "lockout-cashout-{$i}",
+        ])->assertStatus(422);
+    }
+
+    $fifth = $this->postJson('/api/v1/transactions/cash-out', [
+        'agent_phone' => $agent->phone_number,
+        'amount' => 10.00,
+        'pin' => '99999',
+        'idempotency_key' => 'lockout-cashout-5',
+    ]);
+
+    $fifth->assertStatus(429)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('errors.pin.0', fn ($msg) => str_contains($msg, 'locked'))
+        ->assertJsonPath('meta.locked', true)
+        ->assertJsonPath('meta.retry_after', fn ($val) => $val > 0)
+        ->assertHeader('Retry-After');
+
+    // Subsequent attempt even with correct PIN is blocked
+    $subsequent = $this->postJson('/api/v1/transactions/cash-out', [
+        'agent_phone' => $agent->phone_number,
+        'amount' => 10.00,
+        'pin' => '12345',
+        'idempotency_key' => 'lockout-cashout-correct-after',
+    ]);
+
+    $subsequent->assertStatus(429)
+        ->assertHeader('Retry-After');
+});
+
+test('cash-out validates pin rules', function () {
+    $user = createActorForCashOut('USER');
+    Wallet::factory()->for($user)->balance(2000.00)->create();
+
+    $agent = createAgentForCashOut(2000.00);
+
+    Sanctum::actingAs($user, ['user']);
+
+    // Missing pin
+    $this->postJson('/api/v1/transactions/cash-out', [
+        'agent_phone' => $agent->phone_number,
+        'amount' => 100.00,
+        'idempotency_key' => 'cashout-pin-missing',
+    ])->assertStatus(422)->assertJsonValidationErrors(['pin']);
+
+    // Short pin (< 5)
+    $this->postJson('/api/v1/transactions/cash-out', [
+        'agent_phone' => $agent->phone_number,
+        'amount' => 100.00,
+        'pin' => '123',
+        'idempotency_key' => 'cashout-pin-short',
+    ])->assertStatus(422)->assertJsonValidationErrors(['pin']);
+
+    // Non-numeric pin
+    $this->postJson('/api/v1/transactions/cash-out', [
+        'agent_phone' => $agent->phone_number,
+        'amount' => 100.00,
+        'pin' => 'abcde',
+        'idempotency_key' => 'cashout-pin-nonnumeric',
+    ])->assertStatus(422)->assertJsonValidationErrors(['pin']);
 });

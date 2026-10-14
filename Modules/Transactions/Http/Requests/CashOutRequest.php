@@ -34,6 +34,7 @@ class CashOutRequest extends FormRequest
                 },
             ],
             'amount' => ['required', 'numeric', 'gt:0'],
+            'pin' => ['required', 'string', 'digits_between:5,10'],
             'description' => ['nullable', 'string', 'max:500'],
             'idempotency_key' => ['required', 'string', 'max:255'],
         ];
@@ -48,6 +49,8 @@ class CashOutRequest extends FormRequest
     {
         return [
             'agent_phone.regex' => 'The phone number must be a valid 11-digit Bangladeshi mobile number.',
+            'pin.required' => 'The PIN is required.',
+            'pin.digits_between' => 'The PIN must be between 5 and 10 digits.',
         ];
     }
 }

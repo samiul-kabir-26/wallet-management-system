@@ -64,12 +64,14 @@ test('distinct idempotency keys for agent withdrawal execute independently', fun
 
     $response1 = $this->postJson('/api/v1/transactions/agent/withdrawal', [
         'amount' => 200.00,
+        'pin' => '12345',
         'description' => 'Withdraw part 1',
         'idempotency_key' => $key1,
     ]);
 
     $response2 = $this->postJson('/api/v1/transactions/agent/withdrawal', [
         'amount' => 300.00,
+        'pin' => '12345',
         'description' => 'Withdraw part 2',
         'idempotency_key' => $key2,
     ]);

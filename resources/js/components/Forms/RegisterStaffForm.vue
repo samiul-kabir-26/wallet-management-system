@@ -21,7 +21,7 @@ const rolesLoading = ref<boolean>(true);
 onMounted(async () => {
     try {
         const res = await api.get('/roles', { params: { panel: 'admin', per_page: 100 } });
-        availableRoles.value = res.data.data?.roles ?? [];
+        availableRoles.value = res.data.data?.items ?? [];
         if (availableRoles.value.length > 0 && !availableRoles.value.some((r) => r.name === role.value)) {
             role.value = availableRoles.value[0].name;
         }

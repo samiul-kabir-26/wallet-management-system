@@ -125,7 +125,10 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 401 (Invalid credentials), 403 (Account inactive or missing USER role), 429 (Throttled).
+- **Error Codes:** 401 (Invalid credentials), 403 (Account inactive or missing USER role), 429 (Too many failed PIN attempts / Account locked).
+
+> [!NOTE]
+> **PIN Lockout & Account Enumeration Trade-off**: The 5-attempt PIN lockout counter (`pin-attempts:{userId}`) is shared atomically across both public PIN login and money-moving transaction endpoints. While an unknown phone number always returns 401, a registered phone number returns 429 when locked out after 5 consecutive failed attempts. This deliberate trade-off follows mobile financial service industry patterns (e.g., bKash) to prioritize account and wallet balance defense against credential brute-forcing.
 
 ---
 
@@ -571,7 +574,37 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 3.4 Update User Profile
+### 3.4 Recipient Lookup
+- **Method & Route:** `GET /api/v1/users/lookup?phone_number={phone_number}`
+- **Access:** Authenticated caller (`ability:admin,agent,user`, `password.changed`)
+- **Throttle:** 30 requests per minute
+- **Query Parameters:**
+  - `phone_number` (string, required): 11-digit Bangladeshi mobile number (`^01[3-9]\d{8}$`)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "name": "R***l K***r",
+      "phone_number": "01712345678",
+      "can_receive": true
+    }
+  }
+  ```
+- **Error Codes:** 404 (User not found), 422 (Validation error: invalid phone number format), 429 (Too many requests).
+- **Security & Privacy Trade-Off:**
+  - *Purpose:* Allows the sender or agent to confirm the recipient before money moves, preventing misdirected transfers (standard pattern in payment apps like bKash/Nagad).
+  - *Privacy Trade-Off:* Revealing that a number is registered allows probing for account existence.
+  - *Mitigations:*
+    - Requires authentication (`ability:admin,agent,user`).
+    - Strictly rate-limited to 30 requests per minute per caller.
+    - Full recipient names are masked (`R***l K***r`) to protect privacy while still providing recognizable verification.
+    - Soft-deleted users are treated as not found (404), identical to non-existent numbers.
+    - Eligibility checks (`can_receive`) are derived centrally via `User::canReceiveTransfers()`.
+
+---
+
+### 3.5 Update User Profile
 - **Method & Route:** `PATCH /api/v1/users/{user}`
 - **Access:** Authenticated caller updating self, or Admin (`UserPolicy`)
 - **Request Body:**
@@ -598,7 +631,7 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 3.5 Grant Admin Access to Existing User (Case B Step 1)
+### 3.6 Grant Admin Access to Existing User (Case B Step 1)
 - **Method & Route:** `PATCH /api/v1/users/{user}/grant-admin-access`
 - **Access:** SUPER_ADMIN only (`auth:sanctum`, `ability:admin`, `password.changed`)
 - **Description:** Elevates user to administrator, assigns temporary password, attaches email, and generates signed invitation link. Target phone must be verified.
@@ -622,7 +655,7 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 3.6 Approve Pending Agent
+### 3.7 Approve Pending Agent
 - **Method & Route:** `PATCH /api/v1/users/{user}/approve-agent`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
 - **Request Body (Optional):**
@@ -653,7 +686,7 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 3.7 Suspend Approved Agent
+### 3.8 Suspend Approved Agent
 - **Method & Route:** `PATCH /api/v1/users/{user}/suspend-agent`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
 - **Request Body:**
@@ -681,7 +714,7 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
-### 3.8 Assign Additional Role to User ("Become an Agent" Flow)
+### 3.9 Assign Additional Role to User ("Become an Agent" Flow)
 - **Method & Route:** `POST /api/v1/users/{user}/assign-role`
 - **Access:** Admin only (`ability:admin`, `password.changed`, `UserPolicy::assignRole`). Separation of duties strictly enforced: administrators cannot assign roles to themselves (`403 Forbidden`).
 - **Request Body:**
@@ -847,8 +880,9 @@ All API responses follow a consistent JSON envelope structure.
 - **Request Body:**
   ```json
   {
-    "recipient_id": 11,
+    "recipient_phone": "01712345678",
     "amount": 1000.00,
+    "pin": "12345",
     "idempotency_key": "transfer-uuid-5678",
     "description": "Dinner split"
   }
@@ -873,7 +907,7 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 403 (Wallet blocked), 422 (Insufficient balance, cap exceeded, self-transfer).
+- **Error Codes:** 403 (Wallet blocked), 409 (Idempotency key reused with different parameters), 422 (Wrong PIN, insufficient balance, cap exceeded, self-transfer), 429 (PIN locked out).
 
 ---
 
@@ -903,7 +937,7 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 403 (Agent unapproved or wallet blocked), 422 (Agent insufficient balance).
+- **Error Codes:** 403 (Agent unapproved or wallet blocked), 409 (Idempotency key reused with different parameters), 422 (Agent insufficient balance).
 
 ---
 
@@ -916,6 +950,7 @@ All API responses follow a consistent JSON envelope structure.
   {
     "agent_phone": "01812345678",
     "amount": 2000.00,
+    "pin": "12345",
     "idempotency_key": "cashout-uuid-3456"
   }
   ```
@@ -940,7 +975,7 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 403 (Agent unapproved or wallet blocked), 422 (Insufficient balance or cap exceeded).
+- **Error Codes:** 403 (Agent unapproved or wallet blocked), 409 (Idempotency key reused with different parameters), 422 (Wrong PIN, insufficient balance or cap exceeded), 429 (PIN locked out).
 
 ---
 
@@ -951,6 +986,7 @@ All API responses follow a consistent JSON envelope structure.
   ```json
   {
     "amount": 1500.00,
+    "pin": "12345",
     "idempotency_key": "withdraw-uuid-7890"
   }
   ```
@@ -972,7 +1008,7 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 403 (Wallet blocked or unapproved), 422 (Insufficient balance).
+- **Error Codes:** 403 (Wallet blocked or unapproved), 409 (Idempotency key reused with different parameters), 422 (Wrong PIN, insufficient balance), 429 (PIN locked out).
 
 ---
 

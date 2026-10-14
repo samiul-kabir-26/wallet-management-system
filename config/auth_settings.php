@@ -16,6 +16,11 @@ return [
         'expiry_minutes' => (int) env('AUTH_PIN_RESET_EXPIRY_MINUTES', 15),
     ],
 
+    'pin' => [
+        'max_attempts' => (int) env('AUTH_PIN_MAX_ATTEMPTS', 5),
+        'decay_seconds' => (int) env('AUTH_PIN_DECAY_SECONDS', 900),
+    ],
+
     'rate_limits' => [
         'login' => (int) env('AUTH_RATE_LIMIT_LOGIN', 5),
         'register' => (int) env('AUTH_RATE_LIMIT_REGISTER', 5),

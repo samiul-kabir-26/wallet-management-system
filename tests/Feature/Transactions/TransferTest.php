@@ -7,11 +7,14 @@ use App\Models\User;
 use App\Models\Wallet;
 use Database\Seeders\RoleSeeder;
 use Database\Seeders\SystemSettingsSeeder;
+use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Sanctum\Sanctum;
+use Modules\Authentication\Services\PinVerifier;
 
 beforeEach(function () {
     $this->seed(RoleSeeder::class);
     $this->seed(SystemSettingsSeeder::class);
+    RateLimiter::clear(PinVerifier::getThrottleKey(1));
 });
 
 function createActorForTransfer(string $roleName): User
@@ -32,15 +35,16 @@ function createUserForTransfer(float $balance = 1000.00): User
     return $user;
 }
 
-test('user can successfully transfer funds to another user', function () {
+test('user can successfully transfer funds to another user with valid PIN', function () {
     $sender = createUserForTransfer(1500.00);
     $recipient = createUserForTransfer(200.00);
 
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 500.00,
+        'pin' => '12345',
         'description' => 'Rent split payment',
         'idempotency_key' => 'transfer-key-001',
     ]);
@@ -93,15 +97,16 @@ test('user can successfully transfer funds to another user', function () {
         ->and((float) $recipientCap->monthly_used)->toBe(0.00);
 });
 
-test('transfer accepts recipientId in camelCase', function () {
+test('transfer accepts recipientPhone in camelCase', function () {
     $sender = createUserForTransfer(1000.00);
     $recipient = createUserForTransfer(300.00);
 
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipientId' => $recipient->id,
+        'recipientPhone' => $recipient->phone_number,
         'amount' => 250.00,
+        'pin' => '12345',
         'idempotency_key' => 'camel-recipient-key',
     ]);
 
@@ -114,15 +119,16 @@ test('transfer accepts recipientId in camelCase', function () {
         ->and((float) $recipient->userWallet->balance)->toBe(550.00);
 });
 
-test('submitting same idempotency_key returns existing transaction without duplicate mutations', function () {
+test('submitting same idempotency_key with identical parameters returns existing transaction', function () {
     $sender = createUserForTransfer(1000.00);
     $recipient = createUserForTransfer(500.00);
 
     Sanctum::actingAs($sender, ['user']);
 
     $payload = [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 400.00,
+        'pin' => '12345',
         'idempotency_key' => 'transfer-idem-001',
     ];
 
@@ -144,6 +150,107 @@ test('submitting same idempotency_key returns existing transaction without dupli
     expect((float) $senderCap->daily_used)->toBe(400.00);
 });
 
+test('reusing idempotency_key with different parameters is rejected with 409 conflict', function () {
+    $sender = createUserForTransfer(1000.00);
+    $recipient1 = createUserForTransfer(500.00);
+    $recipient2 = createUserForTransfer(500.00);
+
+    Sanctum::actingAs($sender, ['user']);
+
+    // Initial transfer
+    $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $recipient1->phone_number,
+        'amount' => 100.00,
+        'pin' => '12345',
+        'idempotency_key' => 'idem-conflict-key',
+    ])->assertStatus(201);
+
+    // Same key, different amount -> 409
+    $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $recipient1->phone_number,
+        'amount' => 200.00,
+        'pin' => '12345',
+        'idempotency_key' => 'idem-conflict-key',
+    ])->assertStatus(409)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Idempotency key reused with different parameters.');
+
+    // Same key, different recipient -> 409
+    $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $recipient2->phone_number,
+        'amount' => 100.00,
+        'pin' => '12345',
+        'idempotency_key' => 'idem-conflict-key',
+    ])->assertStatus(409)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Idempotency key reused with different parameters.');
+});
+
+test('transfer fails with wrong PIN and reports attempts left', function () {
+    $sender = createUserForTransfer(1000.00);
+    $recipient = createUserForTransfer(500.00);
+
+    Sanctum::actingAs($sender, ['user']);
+
+    $response = $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $recipient->phone_number,
+        'amount' => 100.00,
+        'pin' => '99999',
+        'idempotency_key' => 'wrong-pin-001',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Wrong PIN. 4 attempt(s) left.')
+        ->assertJsonPath('errors.pin.0', 'Wrong PIN. 4 attempt(s) left.')
+        ->assertJsonPath('meta.attempts_remaining', 4);
+
+    expect(Transaction::count())->toBe(0);
+});
+
+test('exceeding PIN attempts locks out user with 429', function () {
+    $sender = createUserForTransfer(1000.00);
+    $recipient = createUserForTransfer(500.00);
+
+    Sanctum::actingAs($sender, ['user']);
+
+    // Attempt 1 to 4 -> 422
+    for ($i = 1; $i <= 4; $i++) {
+        $this->postJson('/api/v1/transactions/transfer', [
+            'recipient_phone' => $recipient->phone_number,
+            'amount' => 10.00,
+            'pin' => '99999',
+            'idempotency_key' => "lockout-test-{$i}",
+        ])->assertStatus(422);
+    }
+
+    // 5th attempt -> 429 locked
+    $fifth = $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $recipient->phone_number,
+        'amount' => 10.00,
+        'pin' => '99999',
+        'idempotency_key' => 'lockout-test-5',
+    ]);
+
+    $fifth->assertStatus(429)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('errors.pin.0', fn ($msg) => str_contains($msg, 'locked'))
+        ->assertJsonPath('meta.locked', true)
+        ->assertJsonPath('meta.retry_after', fn ($val) => $val > 0)
+        ->assertHeader('Retry-After');
+
+    // Subsequent attempt even with correct PIN is blocked
+    $subsequent = $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $recipient->phone_number,
+        'amount' => 10.00,
+        'pin' => '12345',
+        'idempotency_key' => 'lockout-test-correct-after-locked',
+    ]);
+
+    $subsequent->assertStatus(429)
+        ->assertHeader('Retry-After');
+});
+
 test('transfer fails when sender has insufficient balance', function () {
     $sender = createUserForTransfer(300.00);
     $recipient = createUserForTransfer(100.00);
@@ -151,8 +258,9 @@ test('transfer fails when sender has insufficient balance', function () {
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 500.00,
+        'pin' => '12345',
         'idempotency_key' => 'transfer-insufficient',
     ]);
 
@@ -180,8 +288,9 @@ test('transfer fails when daily cap is exceeded', function () {
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 600.00,
+        'pin' => '12345',
         'idempotency_key' => 'transfer-exceed-daily',
     ]);
 
@@ -206,8 +315,9 @@ test('transfer fails when monthly cap is exceeded', function () {
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 600.00,
+        'pin' => '12345',
         'idempotency_key' => 'transfer-exceed-monthly',
     ]);
 
@@ -222,19 +332,21 @@ test('transfer fails when monthly cap is exceeded', function () {
     expect(Transaction::count())->toBe(0);
 });
 
-test('self-transfer is rejected with validation error', function () {
+test('self-transfer is rejected', function () {
     $sender = createUserForTransfer(1000.00);
 
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $sender->id,
+        'recipient_phone' => $sender->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'transfer-self',
     ]);
 
     $response->assertStatus(422)
-        ->assertJsonValidationErrors(['recipient_id']);
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'You cannot transfer money to yourself.');
 
     expect(Transaction::count())->toBe(0);
 });
@@ -249,8 +361,9 @@ test('transfer fails when sender wallet is blocked', function () {
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'sender-blocked',
     ]);
 
@@ -270,8 +383,9 @@ test('transfer fails when recipient wallet is blocked', function () {
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'recipient-blocked',
     ]);
 
@@ -290,8 +404,9 @@ test('transfer fails when recipient is not a user (e.g. agent)', function () {
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $agent->id,
+        'recipient_phone' => $agent->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'recipient-not-user',
     ]);
 
@@ -299,6 +414,42 @@ test('transfer fails when recipient is not a user (e.g. agent)', function () {
         ->assertJsonPath('success', false);
 
     expect(Transaction::count())->toBe(0);
+});
+
+test('transfer validates recipient_phone and pin rules', function () {
+    $sender = createUserForTransfer(1000.00);
+
+    Sanctum::actingAs($sender, ['user']);
+
+    // Missing phone
+    $this->postJson('/api/v1/transactions/transfer', [
+        'amount' => 100.00,
+        'pin' => '12345',
+        'idempotency_key' => 'phone-val-missing',
+    ])->assertStatus(422)->assertJsonValidationErrors(['recipient_phone']);
+
+    // Missing pin
+    $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => '01711000000',
+        'amount' => 100.00,
+        'idempotency_key' => 'pin-val-missing',
+    ])->assertStatus(422)->assertJsonValidationErrors(['pin']);
+
+    // Invalid PIN length (< 5 digits)
+    $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => '01711000000',
+        'amount' => 100.00,
+        'pin' => '123',
+        'idempotency_key' => 'pin-val-short',
+    ])->assertStatus(422)->assertJsonValidationErrors(['pin']);
+
+    // Non-numeric PIN
+    $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => '01711000000',
+        'amount' => 100.00,
+        'pin' => 'abcde',
+        'idempotency_key' => 'pin-val-nonnumeric',
+    ])->assertStatus(422)->assertJsonValidationErrors(['pin']);
 });
 
 test('agent or admin cannot initiate a transfer', function () {
@@ -310,8 +461,9 @@ test('agent or admin cannot initiate a transfer', function () {
     Sanctum::actingAs($agent, ['agent']);
 
     $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $sender->id,
+        'recipient_phone' => $sender->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'agent-transfer',
     ])->assertStatus(403);
 
@@ -321,8 +473,87 @@ test('agent or admin cannot initiate a transfer', function () {
     Sanctum::actingAs($admin, ['admin']);
 
     $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $sender->id,
+        'recipient_phone' => $sender->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'admin-transfer',
     ])->assertStatus(403);
+});
+
+test('transferring to a deleted user number is rejected', function () {
+    $sender = createUserForTransfer(1000.00);
+
+    $deletedRecipient = createActorForTransfer('USER');
+    Wallet::factory()->for($deletedRecipient)->balance(500.00)->create();
+    Cap::factory()->for($deletedRecipient)->usage(0.00, 0.00)->create();
+    $deletedRecipient->is_deleted = true;
+    $deletedRecipient->save();
+
+    Sanctum::actingAs($sender, ['user']);
+
+    $response = $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $deletedRecipient->phone_number,
+        'amount' => 100.00,
+        'pin' => '12345',
+        'idempotency_key' => 'transfer-to-deleted',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['recipient_phone']);
+
+    expect(Transaction::count())->toBe(0);
+});
+
+test('can_receive and the transfer endpoint give the same answer for the same recipient', function () {
+    $sender = createUserForTransfer(1500.00);
+    Sanctum::actingAs($sender, ['user']);
+
+    // Case 1: Eligible recipient -> can_receive is true, transfer succeeds (201)
+    $eligible = createUserForTransfer(200.00);
+    $lookup1 = $this->getJson("/api/v1/users/lookup?phone_number={$eligible->phone_number}")->assertOk();
+    expect($lookup1->json('data.can_receive'))->toBeTrue();
+
+    $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $eligible->phone_number,
+        'amount' => 50.00,
+        'pin' => '12345',
+        'idempotency_key' => 'consistency-eligible',
+    ])->assertStatus(201);
+
+    // Case 2: Blocked wallet -> can_receive is false, transfer fails (403)
+    $blocked = createActorForTransfer('USER');
+    Wallet::factory()->for($blocked)->balance(200.00)->blocked()->create();
+    $lookup2 = $this->getJson("/api/v1/users/lookup?phone_number={$blocked->phone_number}")->assertOk();
+    expect($lookup2->json('data.can_receive'))->toBeFalse();
+
+    $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $blocked->phone_number,
+        'amount' => 50.00,
+        'pin' => '12345',
+        'idempotency_key' => 'consistency-blocked',
+    ])->assertStatus(403);
+
+    // Case 3: Agent recipient -> can_receive is false, transfer fails (422)
+    $agent = createActorForTransfer('AGENT');
+    Wallet::factory()->agent()->for($agent)->balance(500.00)->create();
+    $lookup3 = $this->getJson("/api/v1/users/lookup?phone_number={$agent->phone_number}")->assertOk();
+    expect($lookup3->json('data.can_receive'))->toBeFalse();
+
+    $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $agent->phone_number,
+        'amount' => 50.00,
+        'pin' => '12345',
+        'idempotency_key' => 'consistency-agent',
+    ])->assertStatus(422);
+
+    // Case 4: Self transfer -> can_receive is false, transfer fails (422)
+    $lookup4 = $this->getJson("/api/v1/users/lookup?phone_number={$sender->phone_number}")->assertOk();
+    expect($lookup4->json('data.can_receive'))->toBeFalse();
+
+    $this->postJson('/api/v1/transactions/transfer', [
+        'recipient_phone' => $sender->phone_number,
+        'amount' => 50.00,
+        'pin' => '12345',
+        'idempotency_key' => 'consistency-self',
+    ])->assertStatus(422);
 });

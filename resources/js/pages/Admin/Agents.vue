@@ -12,13 +12,15 @@ import Modal from '@/components/Modal.vue';
 import TextField from '@/components/Forms/TextField.vue';
 import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
 import Skeleton from '@/components/Skeleton.vue';
+import Pagination from '@/components/Pagination.vue';
 import { useToastStore } from '@/stores/toast';
-import type { User } from '@/types/models';
+import type { Pagination as PaginationType, User } from '@/types/models';
 
 useAuthGuard('ADMIN', 'agents.approve');
 
 const authStore = useAuthStore();
 const agents = ref<User[]>([]);
+const pagination = ref<PaginationType | null>(null);
 const loading = ref(true);
 const toast = useToastStore();
 
@@ -34,14 +36,14 @@ const { handleSubmit, setValues, values } = useForm<{ commissionRate: string }>(
     initialValues: { commissionRate: '0.015' },
 });
 
-const fetchAgents = async () => {
+const fetchAgents = async (page = 1) => {
     loading.value = true;
     try {
         const res = await api.get('/users/all-users', {
-            params: { per_page: 50 },
+            params: { role: 'AGENT', page, per_page: 15 },
         });
-        const allUsers: User[] = res.data.data?.items ?? [];
-        agents.value = allUsers.filter((u) => u.roles.includes('AGENT'));
+        agents.value = res.data.data?.items ?? [];
+        pagination.value = res.data.data?.pagination ?? null;
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
         toast.error(apiError.response?.data?.message || 'Failed to fetch agents.');
@@ -65,7 +67,7 @@ const handleApproveAgent = handleSubmit(async (formValues) => {
         });
         toast.success(`Agent ${selectedAgent.value.name} successfully approved!`);
         showApproveModal.value = false;
-        await fetchAgents();
+        await fetchAgents(pagination.value?.current_page ?? 1);
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
         toast.error(apiError.response?.data?.message || 'Failed to approve agent.');
@@ -82,7 +84,7 @@ const handleSuspendAgent = async () => {
         await api.patch(`/users/${agent.id}/suspend-agent`);
         toast.success(`Agent ${agent.name} has been suspended.`);
         suspendTarget.value = null;
-        await fetchAgents();
+        await fetchAgents(pagination.value?.current_page ?? 1);
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
         toast.error(apiError.response?.data?.message || 'Failed to suspend agent.');
@@ -139,8 +141,8 @@ onMounted(() => {
                                     {{ a.phone_number }}
                                 </td>
                                 <td class="px-6 py-4">
-                                    <Badge :variant="a.agent_info?.status === 'APPROVED' ? 'success' : a.agent_info?.status === 'SUSPENDED' ? 'danger' : 'warning'">
-                                        {{ a.agent_info?.status ?? 'PENDING' }}
+                                    <Badge :variant="a.agent_info?.status === 'APPROVED' ? 'success' : a.agent_info?.status === 'SUSPENDED' ? 'danger' : a.agent_info?.status === 'PENDING' ? 'warning' : 'neutral'">
+                                        {{ a.agent_info?.status ?? '—' }}
                                     </Badge>
                                 </td>
                                 <td class="px-6 py-4 text-xs font-semibold text-amber-600 dark:text-amber-400">
@@ -151,7 +153,7 @@ onMounted(() => {
                                 </td>
                                 <td v-if="authStore.can('agents.approve') || authStore.can('agents.suspend')" class="px-6 py-4 text-right space-x-2">
                                     <button
-                                        v-if="a.agent_info?.status !== 'APPROVED' && authStore.can('agents.approve')"
+                                        v-if="a.agent_info?.status === 'PENDING' && authStore.can('agents.approve')"
                                         type="button"
                                         class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 shadow-xs"
                                         @click="openApproveModal(a)"
@@ -174,6 +176,8 @@ onMounted(() => {
                         </tbody>
                     </table>
                 </div>
+
+                <Pagination :pagination="pagination" :loading="loading" @change-page="fetchAgents" />
             </div>
 
             <!-- Approve Agent Modal -->

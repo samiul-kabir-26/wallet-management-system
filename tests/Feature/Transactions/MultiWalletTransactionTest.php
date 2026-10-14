@@ -83,8 +83,9 @@ test('transfer to an agent-only recipient without a user wallet is rejected', fu
     Sanctum::actingAs($sender, ['user']);
 
     $response = $this->postJson('/api/v1/transactions/transfer', [
-        'recipient_id' => $recipient->id,
+        'recipient_phone' => $recipient->phone_number,
         'amount' => 100.00,
+        'pin' => '12345',
         'idempotency_key' => 'transfer-agent-only-recipient',
     ]);
 
@@ -121,6 +122,7 @@ test('blocking one wallet leaves the other wallet usable for the same user', fun
     Sanctum::actingAs($user, ['agent']);
     $withdrawResponse = $this->postJson('/api/v1/transactions/agent/withdrawal', [
         'amount' => 300.00,
+        'pin' => '12345',
         'idempotency_key' => 'active-agent-wallet-withdraw',
     ]);
     $withdrawResponse->assertStatus(201)

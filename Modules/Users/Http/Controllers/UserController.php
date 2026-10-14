@@ -11,10 +11,12 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Modules\Users\Http\Requests\ApproveAgentRequest;
 use Modules\Users\Http\Requests\AssignRoleRequest;
+use Modules\Users\Http\Requests\LookupRecipientRequest;
 use Modules\Users\Http\Requests\RegisterUserRequest;
 use Modules\Users\Http\Requests\SuspendAgentRequest;
 use Modules\Users\Http\Requests\UpdateUserRequest;
 use Modules\Users\Resources\AgentResource;
+use Modules\Users\Resources\RecipientLookupResource;
 use Modules\Users\Resources\UserResource;
 use Modules\Users\Services\UserService;
 
@@ -44,7 +46,7 @@ class UserController extends Controller
         $perPage = (int) ($validated['per_page'] ?? 15);
 
         $query = User::query()
-            ->with('roles')
+            ->with(['roles', 'agentInfo'])
             ->where('is_deleted', false)
             ->latest('id');
 
@@ -62,20 +64,10 @@ class UserController extends Controller
 
         $paginator = $query->paginate($perPage);
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'users' => UserResource::collection($paginator),
-                'pagination' => [
-                    'total' => $paginator->total(),
-                    'per_page' => $paginator->perPage(),
-                    'current_page' => $paginator->currentPage(),
-                    'last_page' => $paginator->lastPage(),
-                    'from' => $paginator->firstItem(),
-                    'to' => $paginator->lastItem(),
-                ],
-            ],
-        ]);
+        return $this->paginatedResponse(
+            $paginator,
+            UserResource::collection($paginator),
+        );
     }
 
     /**
@@ -192,6 +184,29 @@ class UserController extends Controller
             'data' => [
                 'user' => new UserResource($updatedUser),
             ],
+        ]);
+    }
+
+    /**
+     * Look up a user by phone number and return a masked name and eligibility.
+     */
+    public function lookup(LookupRecipientRequest $request): JsonResponse
+    {
+        $user = User::with(['roles', 'wallets'])
+            ->where('phone_number', $request->validated('phone_number'))
+            ->where('is_deleted', false)
+            ->first();
+
+        if (! $user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => (new RecipientLookupResource($user))->resolve($request),
         ]);
     }
 }

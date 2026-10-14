@@ -55,6 +55,7 @@ class TransactionController extends Controller
             agent: $request->user(),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
+            pin: (string) $request->validated('pin'),
             description: $request->validated('description'),
         );
 
@@ -99,6 +100,7 @@ class TransactionController extends Controller
             agentPhone: $request->validated('agent_phone'),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
+            pin: (string) $request->validated('pin'),
             description: $request->validated('description'),
         );
 
@@ -118,9 +120,10 @@ class TransactionController extends Controller
     {
         $transaction = $this->transactionService->transfer(
             sender: $request->user(),
-            recipientId: (int) $request->validated('recipient_id'),
+            recipientPhone: (string) $request->validated('recipient_phone'),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
+            pin: (string) $request->validated('pin'),
             description: $request->validated('description'),
         );
 
@@ -171,20 +174,10 @@ class TransactionController extends Controller
             );
         }
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'transactions' => TransactionResource::collection($paginator),
-                'pagination' => [
-                    'total' => $paginator->total(),
-                    'per_page' => $paginator->perPage(),
-                    'current_page' => $paginator->currentPage(),
-                    'last_page' => $paginator->lastPage(),
-                    'from' => $paginator->firstItem(),
-                    'to' => $paginator->lastItem(),
-                ],
-            ],
-        ]);
+        return $this->paginatedResponse(
+            $paginator,
+            TransactionResource::collection($paginator),
+        );
     }
 
     /**
@@ -240,19 +233,9 @@ class TransactionController extends Controller
             perPage: $perPage,
         );
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'transactions' => TransactionResource::collection($paginator),
-                'pagination' => [
-                    'total' => $paginator->total(),
-                    'per_page' => $paginator->perPage(),
-                    'current_page' => $paginator->currentPage(),
-                    'last_page' => $paginator->lastPage(),
-                    'from' => $paginator->firstItem(),
-                    'to' => $paginator->lastItem(),
-                ],
-            ],
-        ]);
+        return $this->paginatedResponse(
+            $paginator,
+            TransactionResource::collection($paginator),
+        );
     }
 }

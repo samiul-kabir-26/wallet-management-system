@@ -291,7 +291,7 @@ test('cash-in fails with 422 when agent phone is malformed', function (string $i
     'with letters' => '0171234567a',
 ]);
 
-test('replaying idempotency key on cash-in with different agent_phone returns existing transaction', function () {
+test('replaying idempotency key on cash-in with different agent_phone returns 409 conflict', function () {
     $user = createActorForCashIn('USER');
     $userWallet = Wallet::factory()->for($user)->balance(100.00)->create();
 
@@ -312,9 +312,9 @@ test('replaying idempotency key on cash-in with different agent_phone returns ex
         'amount' => 200.00,
         'idempotency_key' => 'cash-in-replay-diff-phone',
     ]);
-    $response2->assertSuccessful()
-        ->assertJsonPath('data.transaction.id', $response1->json('data.transaction.id'))
-        ->assertJsonPath('data.transaction.agent_id', $agent1->id);
+    $response2->assertStatus(409)
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Idempotency key reused with different parameters.');
 
     $userWallet->refresh();
     $agent1->agentWallet->refresh();

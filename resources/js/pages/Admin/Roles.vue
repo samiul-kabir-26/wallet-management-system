@@ -11,6 +11,7 @@ import Modal from '@/components/Modal.vue';
 import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
 import Skeleton from '@/components/Skeleton.vue';
 import type { PermissionCatalogItem, RoleModel } from '@/types/models';
+import type { PermissionName } from '@/types/permissions';
 
 useAuthGuard('ADMIN', 'roles.view');
 
@@ -52,7 +53,7 @@ const fetchData = async () => {
             api.get('/permissions'),
         ]);
 
-        roles.value = rolesRes.data.data?.roles ?? [];
+        roles.value = rolesRes.data.data?.items ?? [];
         catalog.value = permsRes.data.data?.grouped ?? {};
         allPermissions.value = permsRes.data.data?.permissions ?? [];
     } catch (err: unknown) {
@@ -227,14 +228,14 @@ const canGrantPermission = (permName: string): boolean => {
     if (isSuperAdminOnly(permName)) {
         return false;
     }
-    return authStore.can(permName);
+    return authStore.can(permName as PermissionName);
 };
 
 const getPermissionTooltip = (permName: string): string => {
     if (isSuperAdminOnly(permName)) {
         return 'Implicit for Super Admin. This permission cannot be assigned to roles.';
     }
-    if (!authStore.can(permName)) {
+    if (!authStore.can(permName as PermissionName)) {
         return 'You cannot grant a permission you do not have.';
     }
     return '';

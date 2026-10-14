@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Modules\Authentication\Exceptions\AccountInactiveException;
 use Modules\Authentication\Exceptions\InvalidCredentialsException;
+use Modules\Authentication\Exceptions\InvalidPinException;
+use Modules\Authentication\Exceptions\PinLockedException;
 
 class PinAuthService
 {
@@ -16,11 +18,16 @@ class PinAuthService
      */
     private const string DUMMY_HASH = '$2y$12$xn5OszU/1GZvtORdddVo2.dXALwyzJcbpB6JlSmyvPK.DUrKdJFra';
 
+    public function __construct(
+        protected PinVerifier $pinVerifier,
+    ) {}
+
     /**
      * Attempt to authenticate a user using their phone number and PIN.
      *
      * @throws InvalidCredentialsException
      * @throws AccountInactiveException
+     * @throws PinLockedException
      */
     public function attempt(string $phoneNumber, string $pin): User
     {
@@ -40,8 +47,10 @@ class PinAuthService
             throw new InvalidCredentialsException;
         }
 
-        // 2. Incorrect PIN check
-        if (! Hash::check($pin, $user->pin)) {
+        // 2. Delegate to PinVerifier to enforce atomic rate limiting and PIN verification
+        try {
+            $this->pinVerifier->verify($user, $pin);
+        } catch (InvalidPinException) {
             Log::warning('Failed login attempt', [
                 'phone_number' => $phoneNumber,
                 'ip' => request()->ip(),
