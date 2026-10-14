@@ -9,8 +9,7 @@ use App\Models\User;
 use App\Models\Wallet;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
-use Modules\Transactions\Jobs\ResetDailyCaps;
-use Modules\Transactions\Jobs\ResetMonthlyCaps;
+use Modules\Transactions\Jobs\ResetStaleCaps;
 
 beforeEach(function () {
     $this->seedRolesAndPermissions();
@@ -97,6 +96,7 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     Sanctum::actingAs($user1, ['user']);
     $topUpResponse = $this->postJson('/api/v1/transactions/top-up', [
         'amount' => 5000.00,
+        'pin' => '12345',
         'idempotency_key' => 'flow-topup-001',
     ]);
     $topUpResponse->assertStatus(201)
@@ -203,22 +203,20 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     expect(count($adminAllResponse->json('data.items')))->toBe(5);
 
     // -------------------------------------------------------------
-    // 12. Midnight Background Cap Reset
+    // 12. Next business day: stale counters roll over
     // -------------------------------------------------------------
     expect((float) $user1Cap->daily_used)->toBe(3000.00);
 
-    // Execute Daily Cap Reset Job
-    app(ResetDailyCaps::class)->handle();
+    $today = now(config('transactions.business_timezone'));
+    $tomorrow = $today->copy()->addDay();
+    $this->travelTo($tomorrow);
+
+    ResetStaleCaps::dispatchSync();
 
     $user1Cap->refresh();
     expect((float) $user1Cap->daily_used)->toBe(0.00)
-        ->and((float) $user1Cap->monthly_used)->toBe(3000.00); // Monthly remains intact
-
-    // Execute Monthly Cap Reset Job
-    app(ResetMonthlyCaps::class)->handle();
-
-    $user1Cap->refresh();
-    expect((float) $user1Cap->monthly_used)->toBe(0.00);
+        // Monthly usage survives a day change, unless that day also starts a new month
+        ->and((float) $user1Cap->monthly_used)->toBe($today->isSameMonth($tomorrow) ? 3000.00 : 0.00);
 });
 
 test('transaction rolls back completely and leaves wallet balances unchanged on mid-flight failure', function () {
@@ -269,6 +267,7 @@ test('submitting identical idempotency key returns identical transaction and pre
 
     $payload = [
         'amount' => 200.00,
+        'pin' => '12345',
         'idempotency_key' => 'idem-duplicate-check-key',
     ];
 

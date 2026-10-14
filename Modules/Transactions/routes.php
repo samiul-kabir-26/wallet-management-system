@@ -14,8 +14,9 @@ Route::middleware(['auth:sanctum', 'ability:admin,agent,user', 'password.changed
     Route::get('/history', [TransactionController::class, 'history']);
 });
 
-// USER endpoints: top-up, cash-out, transfer
+// USER endpoints: caps, top-up, cash-out, transfer
 Route::middleware(['auth:sanctum', 'ability:user', 'password.changed'])->group(function (): void {
+    Route::get('/caps', [TransactionController::class, 'myCaps']);
     Route::post('/top-up', [TransactionController::class, 'topUp']);
     Route::post('/cash-out', [TransactionController::class, 'cashOut']);
     Route::post('/transfer', [TransactionController::class, 'transfer']);

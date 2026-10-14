@@ -434,9 +434,12 @@ class TransactionService
                 // 1. Lock user's Cap row inside transaction
                 $lockedCap = Cap::where('user_id', $user->id)->lockForUpdate()->first();
                 if (! $lockedCap) {
-                    $lockedCap = Cap::factory()->for($user)->create();
-                    $lockedCap = Cap::where('id', $lockedCap->id)->lockForUpdate()->first();
+                    $createdCap = $user->cap()->create();
+                    $lockedCap = Cap::where('id', $createdCap->id)->lockForUpdate()->first();
                 }
+
+                // Roll counters over if the business day or month changed since they were last anchored
+                $this->capService->resetStalePeriods($lockedCap);
 
                 // 2. Assert within caps (throws DailyCapsExceededException or MonthlyCapsExceededException)
                 $this->capService->assertWithinCaps($lockedCap, $formattedAmount);
@@ -623,9 +626,12 @@ class TransactionService
                 // 1. Lock sender's Cap row inside transaction (strict table lock order: Cap -> Wallets)
                 $lockedCap = Cap::where('user_id', $sender->id)->lockForUpdate()->first();
                 if (! $lockedCap) {
-                    $lockedCap = Cap::factory()->for($sender)->create();
-                    $lockedCap = Cap::where('id', $lockedCap->id)->lockForUpdate()->first();
+                    $createdCap = $sender->cap()->create();
+                    $lockedCap = Cap::where('id', $createdCap->id)->lockForUpdate()->first();
                 }
+
+                // Roll counters over if the business day or month changed since they were last anchored
+                $this->capService->resetStalePeriods($lockedCap);
 
                 // 2. Assert within caps (sender outward caps)
                 $this->capService->assertWithinCaps($lockedCap, $formattedAmount);

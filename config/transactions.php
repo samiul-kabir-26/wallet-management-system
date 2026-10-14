@@ -3,6 +3,17 @@
 return [
     /*
     |--------------------------------------------------------------------------
+    | Business Timezone
+    |--------------------------------------------------------------------------
+    |
+    | Timestamps are stored in UTC, but daily and monthly caps roll over at
+    | midnight in this timezone.
+    |
+    */
+    'business_timezone' => env('TRANSACTION_BUSINESS_TIMEZONE', 'Asia/Dhaka'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Transaction Limits (BDT)
     |--------------------------------------------------------------------------
     |

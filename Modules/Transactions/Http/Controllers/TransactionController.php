@@ -14,7 +14,9 @@ use Modules\Transactions\Http\Requests\CashOutRequest;
 use Modules\Transactions\Http\Requests\IssueFloatRequest;
 use Modules\Transactions\Http\Requests\TopUpRequest;
 use Modules\Transactions\Http\Requests\TransferRequest;
+use Modules\Transactions\Resources\CapResource;
 use Modules\Transactions\Resources\TransactionResource;
+use Modules\Transactions\Services\CapService;
 use Modules\Transactions\Services\TransactionService;
 use Modules\Wallets\Services\WalletService;
 
@@ -26,6 +28,25 @@ class TransactionController extends Controller
         protected TransactionService $transactionService,
         protected WalletService $walletService,
     ) {}
+
+    /**
+     * Show the authenticated user's daily and monthly cap usage as it applies right now.
+     */
+    public function myCaps(Request $request, CapService $capService): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        // Older accounts may predate cap rows; refresh() loads the database defaults after creation
+        $cap = $user->cap ?? $user->cap()->create()->refresh();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'caps' => new CapResource($capService->usageSnapshot($cap)),
+            ],
+        ]);
+    }
 
     /**
      * Top-up the authenticated user's wallet.

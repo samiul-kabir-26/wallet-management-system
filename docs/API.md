@@ -1044,6 +1044,33 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
+### 5.5b Current Cap Usage
+- **Method & Route:** `GET /api/v1/transactions/caps`
+- **Access:** User only (`ability:user`, `password.changed`)
+- **Description:** Returns the caller's daily and monthly spending caps as they apply right now.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "caps": {
+        "daily_limit": 10000.00,
+        "daily_used": 1500.00,
+        "daily_remaining": 8500.00,
+        "monthly_limit": 50000.00,
+        "monthly_used": 3200.00,
+        "monthly_remaining": 46800.00
+      }
+    }
+  }
+  ```
+- **Behavior & Rules:**
+  - Caps count the transaction **amount** (not the fee) of outgoing cash-outs and transfers.
+  - Periods roll over at midnight in the business timezone (`config/transactions.php` → `business_timezone`, default `Asia/Dhaka`), not midnight UTC.
+  - Rollover is lazy: the first cash-out or transfer of a new day (or month) resets the counter under the same row lock that checks the cap, so correctness never depends on a scheduled job. Usage from an earlier period is reported as `0` even before that first transaction. A daily `ResetStaleCaps` job only tidies stored values.
+
+---
+
 ### 5.6 User Transaction History
 - **Method & Route:** `GET /api/v1/transactions/history`
 - **Access:** Authenticated (`ability:admin,agent,user`, `password.changed`)

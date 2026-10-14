@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { storeToRefs } from 'pinia';
 import { Head, Link } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { api } from '@/services/api';
@@ -7,11 +8,13 @@ import UserLayout from '@/layouts/UserLayout.vue';
 import Badge from '@/components/Badge.vue';
 import Skeleton from '@/components/Skeleton.vue';
 import Alert from '@/components/Alert.vue';
-import type { Transaction, Wallet } from '@/types/models';
+import { useWalletStore } from '@/stores/wallet';
+import type { Transaction } from '@/types/models';
 
 const { authStore } = useAuthGuard('USER');
 
-const wallet = ref<Wallet | null>(null);
+const walletStore = useWalletStore();
+const { wallet } = storeToRefs(walletStore);
 const recentTransactions = ref<Transaction[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -20,12 +23,14 @@ const fetchData = async () => {
     loading.value = true;
     error.value = null;
     try {
-        const [walletRes, txRes] = await Promise.all([
-            api.get('/wallets/me'),
+        const [loadedWallet, txRes] = await Promise.all([
+            walletStore.fetchWallet(),
             api.get('/transactions/history', { params: { per_page: 5 } }),
         ]);
 
-        wallet.value = walletRes.data.data?.wallet ?? walletRes.data.data;
+        if (!loadedWallet) {
+            error.value = walletStore.error ?? 'Failed to load wallet data.';
+        }
         recentTransactions.value = txRes.data.data?.items ?? [];
     } catch (err: unknown) {
         const apiError = err as { response?: { data?: { message?: string } } };
@@ -99,7 +104,7 @@ onMounted(() => {
                 <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
                     <div class="flex items-center justify-between text-zinc-500 dark:text-zinc-400">
                         <span class="text-xs font-semibold uppercase tracking-wider">Daily Limit Cap</span>
-                        <span class="text-xs font-medium">Resets 00:00 UTC</span>
+                        <span class="text-xs font-medium">Resets at midnight (BD time)</span>
                     </div>
                     <div class="mt-4">
                         <div class="flex justify-between text-sm font-semibold">
@@ -109,7 +114,7 @@ onMounted(() => {
                             </span>
                         </div>
                         <div class="mt-2 text-xs text-zinc-500">
-                            Used ৳{{ Number(wallet?.caps?.daily_used ?? 0).toFixed(2) }} of ৳{{ Number(wallet?.caps?.daily_limit ?? 10000).toFixed(2) }}
+                            Used ৳{{ Number(wallet?.caps?.daily_used ?? 0).toFixed(2) }} of ৳{{ Number(wallet?.caps?.daily_limit ?? 0).toFixed(2) }}
                         </div>
                     </div>
                 </div>
@@ -128,7 +133,7 @@ onMounted(() => {
                             </span>
                         </div>
                         <div class="mt-2 text-xs text-zinc-500">
-                            Used ৳{{ Number(wallet?.caps?.monthly_used ?? 0).toFixed(2) }} of ৳{{ Number(wallet?.caps?.monthly_limit ?? 50000).toFixed(2) }}
+                            Used ৳{{ Number(wallet?.caps?.monthly_used ?? 0).toFixed(2) }} of ৳{{ Number(wallet?.caps?.monthly_limit ?? 0).toFixed(2) }}
                         </div>
                     </div>
                 </div>

@@ -46,6 +46,7 @@ export interface Caps {
 export interface Wallet {
     id: number;
     user_id: number;
+    kind?: 'USER' | 'AGENT';
     balance: number | string;
     currency: string;
     is_blocked: boolean;

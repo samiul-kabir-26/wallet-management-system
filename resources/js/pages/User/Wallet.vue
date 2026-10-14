@@ -141,7 +141,7 @@ onMounted(async () => {
                     <!-- Daily Cap -->
                     <div class="space-y-2">
                         <div class="flex justify-between text-xs font-semibold">
-                            <span>Daily Limit: ৳{{ Number(wallet?.caps?.daily_limit ?? 10000).toFixed(2) }}</span>
+                            <span>Daily Limit: ৳{{ Number(wallet?.caps?.daily_limit ?? 0).toFixed(2) }}</span>
                             <span class="text-indigo-600 dark:text-indigo-400">{{ dailyPercentage }}% Used</span>
                         </div>
                         <div class="h-2 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
@@ -161,7 +161,7 @@ onMounted(async () => {
                     <!-- Monthly Cap -->
                     <div class="space-y-2 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                         <div class="flex justify-between text-xs font-semibold">
-                            <span>Monthly Limit: ৳{{ Number(wallet?.caps?.monthly_limit ?? 50000).toFixed(2) }}</span>
+                            <span>Monthly Limit: ৳{{ Number(wallet?.caps?.monthly_limit ?? 0).toFixed(2) }}</span>
                             <span class="text-indigo-600 dark:text-indigo-400">{{ monthlyPercentage }}% Used</span>
                         </div>
                         <div class="h-2 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">

@@ -29,6 +29,8 @@ class CapFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
+            // Anchor counters to the current business day so usage() states are not treated as stale
+            'last_reset_date' => now(config('transactions.business_timezone'))->toDateString(),
         ];
     }
 
