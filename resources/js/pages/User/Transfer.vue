@@ -128,9 +128,7 @@ const submit = async () => {
         } else {
             body.agent_phone = values.agentPhone;
         }
-        if (activeTab.value !== 'cash_in') {
-            body.pin = values.pin;
-        }
+        body.pin = values.pin;
         const res = await api.post(current.value.endpoint, body);
         const txId = res.data.data?.transaction?.id ?? '';
         toast.success(`${current.value.label.split(' (')[0]} of ৳${Number(values.amount).toFixed(2)} completed (Tx #${txId}).`);

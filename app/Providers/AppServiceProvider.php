@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 use Modules\Roles\Enums\Permission as PermissionEnum;
 
 class AppServiceProvider extends ServiceProvider
@@ -36,6 +38,28 @@ class AppServiceProvider extends ServiceProvider
         $this->configureRateLimiting();
         $this->configureAuthorizationLogging();
         $this->configurePermissionsAndGates();
+        $this->configureTokenIdleTimeout();
+    }
+
+    /**
+     * Reject access tokens that have been idle longer than the configured timeout.
+     *
+     * Sanctum calls this before it refreshes last_used_at, so the timestamp still
+     * reflects the previous request. Absolute expiry is enforced by Sanctum via expires_at.
+     */
+    protected function configureTokenIdleTimeout(): void
+    {
+        Sanctum::authenticateAccessTokensUsing(function (PersonalAccessToken $accessToken, bool $isValid): bool {
+            $idleMinutes = (int) config('auth_settings.tokens.idle_timeout_minutes', 15);
+
+            if (! $isValid || $idleMinutes <= 0) {
+                return $isValid;
+            }
+
+            $lastActivity = $accessToken->last_used_at ?? $accessToken->created_at;
+
+            return $lastActivity === null || $lastActivity->gt(now()->subMinutes($idleMinutes));
+        });
     }
 
     /**

@@ -82,6 +82,6 @@ class TransactionPolicy
      */
     public function issueFloat(User $user): bool
     {
-        return $user->isAdmin() && $user->hasPermission(Permission::AgentsIssueFloat);
+        return $user->can(Permission::AgentsIssueFloat->value);
     }
 }

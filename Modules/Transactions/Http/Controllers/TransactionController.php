@@ -36,6 +36,7 @@ class TransactionController extends Controller
             user: $request->user(),
             amount: $request->validated('amount'),
             idempotencyKey: $request->validated('idempotency_key'),
+            pin: (string) $request->validated('pin'),
             description: $request->validated('description'),
         );
 

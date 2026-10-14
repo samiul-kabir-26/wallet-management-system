@@ -4,8 +4,13 @@ use App\Models\AuditLog;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Laravel\Sanctum\Sanctum;
+use Modules\Authentication\Notifications\PinResetLinkNotification;
+use Modules\Authentication\Services\PinResetService;
+use Modules\Authentication\Services\PinVerifier;
 
 beforeEach(function () {
     $this->seedRolesAndPermissions();
@@ -171,11 +176,7 @@ test('reset-pin succeeds with valid signed URL and updates user PIN', function (
         'pin' => Hash::make('11111'),
     ]);
 
-    $signedUrl = URL::temporarySignedRoute(
-        'auth.reset-pin',
-        now()->addMinutes(15),
-        ['user' => $user->id],
-    );
+    $signedUrl = PinResetService::makeResetUrl($user, 15);
 
     $response = $this->postJson($signedUrl, [
         'pin' => '99999',
@@ -198,11 +199,7 @@ test('reset-pin fails with 403 on expired or tampered signature', function () {
     ]);
 
     // Tampered signature
-    $validUrl = URL::temporarySignedRoute(
-        'auth.reset-pin',
-        now()->addMinutes(15),
-        ['user' => $user->id],
-    );
+    $validUrl = PinResetService::makeResetUrl($user, 15);
     $tamperedUrl = $validUrl.'tampered';
 
     $this->postJson($tamperedUrl, [
@@ -214,7 +211,7 @@ test('reset-pin fails with 403 on expired or tampered signature', function () {
     $expiredUrl = URL::temporarySignedRoute(
         'auth.reset-pin',
         now()->subMinute(),
-        ['user' => $user->id],
+        ['user' => $user->id, 'fingerprint' => PinResetService::pinFingerprint($user)],
     );
 
     $this->postJson($expiredUrl, [
@@ -229,11 +226,7 @@ test('reset-pin fails with 403 when target account is inactive at click time', f
         'is_active' => 'INACTIVE',
     ]);
 
-    $signedUrl = URL::temporarySignedRoute(
-        'auth.reset-pin',
-        now()->addMinutes(15),
-        ['user' => $user->id],
-    );
+    $signedUrl = PinResetService::makeResetUrl($user, 15);
 
     $response = $this->postJson($signedUrl, [
         'pin' => '99999',
@@ -253,11 +246,7 @@ test('reset-pin fails with 422 if account PIN was cleared before consuming the l
         'pin' => null,
     ]);
 
-    $signedUrl = URL::temporarySignedRoute(
-        'auth.reset-pin',
-        now()->addMinutes(15),
-        ['user' => $user->id],
-    );
+    $signedUrl = PinResetService::makeResetUrl($user, 15);
 
     $response = $this->postJson($signedUrl, [
         'pin' => '99999',
@@ -277,11 +266,7 @@ test('reset-pin fails validation when pin confirmation mismatches or format is i
         'pin' => Hash::make('11111'),
     ]);
 
-    $signedUrl = URL::temporarySignedRoute(
-        'auth.reset-pin',
-        now()->addMinutes(15),
-        ['user' => $user->id],
-    );
+    $signedUrl = PinResetService::makeResetUrl($user, 15);
 
     // Confirmation mismatch
     $this->postJson($signedUrl, [
@@ -296,4 +281,84 @@ test('reset-pin fails validation when pin confirmation mismatches or format is i
         'pin_confirmation' => '123',
     ])->assertStatus(422)
         ->assertJsonValidationErrors(['pin']);
+});
+
+test('initiate-pin-reset emails a working one-time link to the attached address', function () {
+    Notification::fake();
+
+    $moderator = User::factory()->create();
+    $moderator->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
+    $target = User::factory()->create(['email' => null, 'pin' => Hash::make('12345')]);
+
+    Sanctum::actingAs($moderator, ['admin']);
+
+    $this->postJson('/api/v1/auth/pin-reset/initiate', [
+        'phone_number' => $target->phone_number,
+        'email' => 'recovery-mail@example.com',
+    ])->assertOk();
+
+    $sentUrl = null;
+    Notification::assertSentTo($target, PinResetLinkNotification::class, function (PinResetLinkNotification $notification, array $channels, object $notifiable) use (&$sentUrl) {
+        $sentUrl = $notification->url;
+
+        return $notifiable->routeNotificationFor('mail') === 'recovery-mail@example.com';
+    });
+
+    $this->app['auth']->forgetGuards();
+
+    $this->postJson($sentUrl, ['pin' => '99999', 'pin_confirmation' => '99999'])->assertOk();
+});
+
+test('reset-pin link works only once', function () {
+    $user = User::factory()->create(['pin' => Hash::make('11111')]);
+    $signedUrl = PinResetService::makeResetUrl($user, 15);
+
+    $this->postJson($signedUrl, ['pin' => '99999', 'pin_confirmation' => '99999'])->assertOk();
+
+    $this->postJson($signedUrl, ['pin' => '88888', 'pin_confirmation' => '88888'])
+        ->assertStatus(403)
+        ->assertJsonPath('message', 'This PIN reset link has already been used or is no longer valid.');
+
+    expect(Hash::check('99999', $user->fresh()->pin))->toBeTrue();
+});
+
+test('reset-pin link issued before a later PIN change is rejected', function () {
+    $user = User::factory()->create(['pin' => Hash::make('11111')]);
+    $staleUrl = PinResetService::makeResetUrl($user, 15);
+
+    $user->forceFill(['pin' => Hash::make('22222')])->save();
+
+    $this->postJson($staleUrl, ['pin' => '99999', 'pin_confirmation' => '99999'])->assertStatus(403);
+});
+
+test('reset-pin revokes every existing token, clears the PIN lockout and records an audit entry', function () {
+    $user = User::factory()->create(['pin' => Hash::make('11111')]);
+    $user->createToken('user-login', ['user']);
+    $user->createToken('agent-login', ['agent']);
+
+    RateLimiter::hit(PinVerifier::getThrottleKey($user->id), 900);
+
+    $this->postJson(PinResetService::makeResetUrl($user, 15), [
+        'pin' => '99999',
+        'pin_confirmation' => '99999',
+    ])->assertOk();
+
+    expect($user->tokens()->count())->toBe(0)
+        ->and(RateLimiter::attempts(PinVerifier::getThrottleKey($user->id)))->toBe(0)
+        ->and(AuditLog::where('action', 'PIN_RESET_COMPLETED')->where('auditable_id', $user->id)->exists())->toBeTrue();
+});
+
+test('a token issued before a PIN reset can no longer call the API', function () {
+    $user = User::factory()->create(['pin' => Hash::make('11111')]);
+    $user->roles()->attach(Role::where('name', 'USER')->first()->id, ['assigned_at' => now()]);
+    $oldToken = $user->createToken('user-login', ['user'])->plainTextToken;
+
+    $this->postJson(PinResetService::makeResetUrl($user, 15), [
+        'pin' => '99999',
+        'pin_confirmation' => '99999',
+    ])->assertOk();
+
+    $this->app['auth']->forgetGuards();
+
+    $this->withToken($oldToken)->getJson('/api/v1/auth/me')->assertUnauthorized();
 });

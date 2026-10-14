@@ -47,6 +47,7 @@ test('service operations populate exact wallet slots in database', function () {
     // 1. TOP_UP
     Sanctum::actingAs($customer, ['user']);
     $topUpRes = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 100.00,
         'idempotency_key' => 'slot-topup-'.uniqid(),
     ])->assertStatus(201);
@@ -380,11 +381,13 @@ test('idempotent replays return original row with unchanged wallet slots', funct
     $key = 'idemp-slot-'.uniqid();
 
     $res1 = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 50.00,
         'idempotency_key' => $key,
     ])->assertStatus(201);
 
     $res2 = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 50.00,
         'idempotency_key' => $key,
     ]);
@@ -494,6 +497,7 @@ test('operation responses for top-up, transfer, and withdrawal carry only viewer
     // Top-up response carries only recipient_wallet_balance_after
     Sanctum::actingAs($sender, ['user']);
     $topUpRes = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 50.00,
         'idempotency_key' => 'op-topup-'.uniqid(),
     ])->assertStatus(201);
@@ -533,6 +537,7 @@ test('wallet id foreign keys are omitted for non-admins and present for admins',
 
     Sanctum::actingAs($user, ['user']);
     $res = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 40.00,
         'idempotency_key' => 'fkeys-test-'.uniqid(),
     ])->assertStatus(201);
@@ -556,6 +561,7 @@ test('staff with admin ability can inspect any transaction and audit history', f
 
     Sanctum::actingAs($customer, ['user']);
     $res = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 80.00,
         'idempotency_key' => 'mod-test-'.uniqid(),
     ])->assertStatus(201);

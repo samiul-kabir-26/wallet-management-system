@@ -7,7 +7,6 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Modules\Authentication\Exceptions\AccountInactiveException;
@@ -15,6 +14,7 @@ use Modules\Authentication\Exceptions\InsufficientRoleException;
 use Modules\Authentication\Exceptions\InvalidCredentialsException;
 use Modules\Authentication\Exceptions\UnverifiedAccountException;
 use Modules\Authentication\Exceptions\UserAlreadyHasStaffAccessException;
+use Modules\Authentication\Notifications\AdminInviteNotification;
 use Modules\Roles\Exceptions\PermissionEscalationException;
 use Modules\Roles\Services\RoleService;
 
@@ -136,12 +136,8 @@ class AccountInviteService
             ['user' => $target->id],
         );
 
-        // 5. Stub email delivery (logged for local dev and testing)
-        Log::info("Admin invite sent to [{$email}]", [
-            'target_id' => $target->id,
-            'url' => $signedUrl,
-            'temp_password' => $password,
-        ]);
+        // 5. Deliver the invitation to the newly attached email
+        $target->refresh()->notify(new AdminInviteNotification($signedUrl, $password, $expiryHours));
 
         return $signedUrl;
     }

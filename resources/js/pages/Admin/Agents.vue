@@ -11,6 +11,7 @@ import Badge from '@/components/Badge.vue';
 import Modal from '@/components/Modal.vue';
 import TextField from '@/components/Forms/TextField.vue';
 import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
+import IssueFloatModal from '@/components/Modals/IssueFloatModal.vue';
 import Skeleton from '@/components/Skeleton.vue';
 import Pagination from '@/components/Pagination.vue';
 import { useToastStore } from '@/stores/toast';
@@ -30,6 +31,12 @@ const selectedAgent = ref<User | null>(null);
 const approveLoading = ref(false);
 const suspendTarget = ref<User | null>(null);
 const suspendLoading = ref(false);
+const floatTarget = ref<User | null>(null);
+
+const handleFloatIssued = async () => {
+    floatTarget.value = null;
+    await fetchAgents(pagination.value?.current_page ?? 1);
+};
 
 const { handleSubmit, setValues, values } = useForm<{ commissionRate: string }>({
     validationSchema: { commissionRate: rate('Commission rate') },
@@ -151,7 +158,7 @@ onMounted(() => {
                                 <td class="px-6 py-4 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                                     ৳{{ Number(a.agent_info?.total_commission ?? 0).toFixed(2) }}
                                 </td>
-                                <td v-if="authStore.can('agents.approve') || authStore.can('agents.suspend')" class="px-6 py-4 text-right space-x-2">
+                                <td v-if="authStore.can('agents.approve') || authStore.can('agents.suspend') || authStore.can('agents.issue_float')" class="px-6 py-4 text-right space-x-2">
                                     <button
                                         v-if="a.agent_info?.status === 'PENDING' && authStore.can('agents.approve')"
                                         type="button"
@@ -167,6 +174,14 @@ onMounted(() => {
                                         @click="suspendTarget = a"
                                     >
                                         Suspend
+                                    </button>
+                                    <button
+                                        v-if="a.agent_info?.status === 'APPROVED' && authStore.can('agents.issue_float')"
+                                        type="button"
+                                        class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 shadow-xs"
+                                        @click="floatTarget = a"
+                                    >
+                                        Issue Float
                                     </button>
                                 </td>
                                 <td v-else class="px-6 py-4 text-right text-xs text-zinc-400">
@@ -212,6 +227,8 @@ onMounted(() => {
                     </div>
                 </form>
             </Modal>
+
+            <IssueFloatModal :agent="floatTarget" @close="floatTarget = null" @issued="handleFloatIssued" />
 
             <ConfirmModal
                 :open="!!suspendTarget"

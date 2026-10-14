@@ -7,6 +7,7 @@ export const PERMISSIONS = [
     'users.grant_admin_access',
     'agents.approve',
     'agents.suspend',
+    'agents.issue_float',
     'wallets.view_any',
     'wallets.block',
     'wallets.unblock',

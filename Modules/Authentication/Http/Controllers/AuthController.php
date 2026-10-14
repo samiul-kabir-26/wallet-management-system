@@ -7,11 +7,13 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Laravel\Sanctum\PersonalAccessToken;
 use Modules\Authentication\Exceptions\AccountHasNoPinException;
 use Modules\Authentication\Exceptions\AccountInactiveException;
 use Modules\Authentication\Exceptions\InsufficientRoleException;
 use Modules\Authentication\Exceptions\InvalidCredentialsException;
 use Modules\Authentication\Exceptions\InvalidOtpException;
+use Modules\Authentication\Exceptions\PinResetLinkInvalidException;
 use Modules\Authentication\Exceptions\UnverifiedAccountException;
 use Modules\Authentication\Exceptions\UserNotFoundException;
 use Modules\Authentication\Http\Requests\AcceptInviteRequest;
@@ -33,6 +35,7 @@ use Modules\Authentication\Services\PinAuthService;
 use Modules\Authentication\Services\PinResetService;
 use Modules\Authentication\Services\RegistrationService;
 use Modules\Authentication\Services\SetPinService;
+use Modules\Authentication\Services\TokenIssuer;
 
 class AuthController extends Controller
 {
@@ -43,6 +46,7 @@ class AuthController extends Controller
         private SetPinService $setPinService,
         private AccountInviteService $accountInviteService,
         private PinResetService $pinResetService,
+        private TokenIssuer $tokenIssuer,
     ) {}
 
     /**
@@ -80,26 +84,37 @@ class AuthController extends Controller
     }
 
     /**
-     * Refresh the current access token, preserving exact name and abilities.
+     * Rotate the current access token, preserving its name, abilities and absolute expiry.
      */
     public function refreshToken(Request $request): AuthResource
     {
         $user = $request->user();
         $currentToken = $user->currentAccessToken();
 
-        $name = $currentToken?->name ?? 'token';
-        $abilities = $currentToken?->abilities ?? [];
-
-        // Revoke the current token (safe for PersonalAccessToken and test TransientToken)
-        if ($currentToken && method_exists($currentToken, 'delete')) {
-            $currentToken->delete();
+        if ($currentToken instanceof PersonalAccessToken) {
+            $newToken = $this->tokenIssuer->rotate($user, $currentToken);
+        } else {
+            // Transient (non-persisted) tokens only occur in tests; issue a fresh token instead
+            $newToken = $this->tokenIssuer->issue($user, 'token', $currentToken?->abilities ?? []);
         }
 
-        // Reissue a new token copying the exact same name and abilities
-        $token = $user->createToken($name, $abilities)->plainTextToken;
+        $abilities = $newToken->accessToken->abilities ?? [];
         $user->load('roles');
 
-        return new AuthResource($user, $token, $abilities, 'Token refreshed');
+        return new AuthResource($user, $newToken->plainTextToken, $abilities, 'Token refreshed');
+    }
+
+    /**
+     * Revoke every access token the user holds, ending all of their sessions.
+     */
+    public function logoutAll(Request $request): JsonResponse
+    {
+        $request->user()->tokens()->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Logged out from all sessions.',
+        ]);
     }
 
     /**
@@ -145,12 +160,14 @@ class AuthController extends Controller
      * Reset a user's PIN using a signed recovery link.
      *
      * @throws AccountInactiveException
+     * @throws PinResetLinkInvalidException
      */
     public function resetPin(ResetPinRequest $request, User $user): JsonResponse
     {
         $this->pinResetService->resetPin(
             user: $user,
             pin: $request->pin,
+            fingerprint: (string) $request->query('fingerprint'),
         );
 
         return response()->json([
@@ -175,14 +192,11 @@ class AuthController extends Controller
             newPassword: $request->new_password,
         );
 
-        // Revoke the current token (safe for both PersonalAccessToken and test TransientToken)
-        $currentAccessToken = $user->currentAccessToken();
-        if ($currentAccessToken && method_exists($currentAccessToken, 'delete')) {
-            $currentAccessToken->delete();
-        }
+        // Revoke every existing session, including the current restricted token
+        $user->tokens()->delete();
 
         // Issue a full admin token
-        $token = $user->createToken('admin-login', ['admin'])->plainTextToken;
+        $token = $this->tokenIssuer->issue($user, 'admin-login', ['admin'])->plainTextToken;
         $user->load('roles');
 
         return new AuthResource($user, $token, ['admin'], 'Password changed successfully.');
@@ -198,7 +212,7 @@ class AuthController extends Controller
     {
         $user = $this->accountInviteService->acceptInvite($user, $request->password);
 
-        $token = $user->createToken('accept-invite', ['password-change'])->plainTextToken;
+        $token = $this->tokenIssuer->issue($user, 'accept-invite', ['password-change'])->plainTextToken;
         $user->load('roles');
 
         return new AuthResource($user, $token, ['password-change'], 'Please change your password to continue.');
@@ -277,7 +291,7 @@ class AuthController extends Controller
         $user = $this->registrationService->register($request->validated());
 
         $ability = strtolower($request->role);
-        $token = $user->createToken("{$ability}-registration", [$ability])->plainTextToken;
+        $token = $this->tokenIssuer->issue($user, "{$ability}-registration", [$ability])->plainTextToken;
 
         return (new AuthResource($user, $token, [$ability], 'User registered successfully'))
             ->response()
@@ -299,7 +313,7 @@ class AuthController extends Controller
             throw new InsufficientRoleException;
         }
 
-        $token = $user->createToken('agent-login', ['agent'])->plainTextToken;
+        $token = $this->tokenIssuer->issue($user, 'agent-login', ['agent'])->plainTextToken;
         $user->load('roles');
 
         return new AuthResource($user, $token, ['agent'], 'Login successful');
@@ -320,7 +334,7 @@ class AuthController extends Controller
             throw new InsufficientRoleException;
         }
 
-        $token = $user->createToken('user-login', ['user'])->plainTextToken;
+        $token = $this->tokenIssuer->issue($user, 'user-login', ['user'])->plainTextToken;
         $user->load('roles');
 
         return new AuthResource($user, $token, ['user'], 'Login successful');
@@ -357,7 +371,7 @@ class AuthController extends Controller
     {
         $user = $this->adminAuthService->verifyOtp($request->email, $request->otp_code);
 
-        $token = $user->createToken('admin-login', ['admin'])->plainTextToken;
+        $token = $this->tokenIssuer->issue($user, 'admin-login', ['admin'])->plainTextToken;
         $user->load('roles');
 
         return new AuthResource($user, $token, ['admin'], 'Login successful');

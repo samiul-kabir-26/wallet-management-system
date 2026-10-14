@@ -114,6 +114,7 @@ test('blocking one wallet leaves the other wallet usable for the same user', fun
     // 1. As user, top-up fails because USER wallet is blocked
     Sanctum::actingAs($user, ['user']);
     $topUpResponse = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 100.00,
         'idempotency_key' => 'blocked-user-wallet-topup',
     ]);

@@ -5,11 +5,11 @@ namespace Modules\Authentication\Services;
 use App\Models\OtpToken;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Modules\Authentication\Exceptions\AccountInactiveException;
 use Modules\Authentication\Exceptions\InsufficientRoleException;
 use Modules\Authentication\Exceptions\InvalidOtpException;
 use Modules\Authentication\Exceptions\PinAlreadySetException;
+use Modules\Authentication\Notifications\OtpCodeNotification;
 
 class SetPinService
 {
@@ -40,7 +40,7 @@ class SetPinService
 
         $otp = $this->otpService->createOtp($user->id, 'SET_PIN');
 
-        Log::info("Set PIN OTP for [{$user->email}]: {$otp->otp_code}");
+        $user->notify(new OtpCodeNotification($otp->otp_code, 'SET_PIN', (int) config('auth_settings.otp.expiry_minutes', 5)));
 
         return $otp;
     }

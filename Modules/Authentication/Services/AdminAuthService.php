@@ -9,6 +9,7 @@ use Modules\Authentication\Exceptions\AccountInactiveException;
 use Modules\Authentication\Exceptions\InsufficientRoleException;
 use Modules\Authentication\Exceptions\InvalidCredentialsException;
 use Modules\Authentication\Exceptions\InvalidOtpException;
+use Modules\Authentication\Notifications\OtpCodeNotification;
 
 class AdminAuthService
 {
@@ -37,7 +38,7 @@ class AdminAuthService
 
         $otp = $this->otpService->createOtp($user->id, 'PASSWORD_RESET');
 
-        Log::info("Admin password reset OTP for [{$user->email}]: {$otp->otp_code}");
+        $user->notify(new OtpCodeNotification($otp->otp_code, 'PASSWORD_RESET', (int) config('auth_settings.otp.expiry_minutes', 5)));
     }
 
     /**
@@ -121,7 +122,7 @@ class AdminAuthService
 
         $otp = $this->otpService->createOtp($user->id, 'LOGIN');
 
-        Log::info("Admin login OTP for [{$user->email}]: {$otp->otp_code}");
+        $user->notify(new OtpCodeNotification($otp->otp_code, 'LOGIN', (int) config('auth_settings.otp.expiry_minutes', 5)));
 
         return $user;
     }

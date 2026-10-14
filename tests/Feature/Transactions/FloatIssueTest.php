@@ -7,13 +7,20 @@ use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
+use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\SystemSettingsSeeder;
+use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Sanctum;
 use Modules\Roles\Enums\Permission as PermissionEnum;
+use Modules\Transactions\Services\TransactionService;
 
 beforeEach(function () {
     $this->seedRolesAndPermissions();
     $this->seed(SystemSettingsSeeder::class);
+
+    // ADMIN does not hold agents.issue_float by default; these tests act as a SUPER_ADMIN who granted it.
+    $permission = Permission::where('name', PermissionEnum::AgentsIssueFloat->value)->firstOrFail();
+    Role::where('name', 'ADMIN')->firstOrFail()->permissions()->syncWithoutDetaching([$permission->id]);
 });
 
 function createActorForFloatIssue(string $roleName): User
@@ -334,4 +341,61 @@ test('cannot issue float if agent wallet is blocked', function () {
     ]);
 
     $response->assertStatus(403);
+});
+
+test('service rejects a reused external reference under a different idempotency key with a validation error', function () {
+    $admin = createActorForFloatIssue('ADMIN');
+    $agent = createAgentForFloatIssue(balance: 0.00);
+    $service = app(TransactionService::class);
+
+    $service->issueFloat($admin, $agent, '1000.00', 'BANK-SLIP-RACE', 'idem-race-1');
+
+    // Bypasses the Form Request, as a concurrent request that passed validation would.
+    expect(fn () => $service->issueFloat($admin, $agent, '1000.00', 'BANK-SLIP-RACE', 'idem-race-2'))
+        ->toThrow(ValidationException::class);
+
+    expect(Transaction::where('external_reference', 'BANK-SLIP-RACE')->count())->toBe(1)
+        ->and(Wallet::where('user_id', $agent->id)->where('kind', Wallet::KIND_AGENT)->value('balance'))->toEqual('1000.00');
+});
+
+test('ADMIN role does not receive agents.issue_float from the default seed', function () {
+    $permission = Permission::where('name', PermissionEnum::AgentsIssueFloat->value)->firstOrFail();
+    $adminRole = Role::where('name', 'ADMIN')->firstOrFail();
+    $adminRole->permissions()->detach($permission->id);
+
+    $this->seed(RolePermissionSeeder::class);
+
+    expect($adminRole->permissions()->where('name', PermissionEnum::AgentsIssueFloat->value)->exists())->toBeFalse();
+});
+
+test('a custom admin-panel role holding agents.issue_float can issue float', function () {
+    $financeRole = Role::create(['name' => 'FINANCE', 'panel' => 'admin', 'is_system' => false]);
+    $permission = Permission::where('name', PermissionEnum::AgentsIssueFloat->value)->firstOrFail();
+    $financeRole->permissions()->attach($permission->id);
+
+    $financeOfficer = createActorForFloatIssue('FINANCE');
+    $agent = createAgentForFloatIssue(balance: 0.00);
+
+    Sanctum::actingAs($financeOfficer, ['admin']);
+
+    $this->postJson('/api/v1/transactions/admin/float-issue', [
+        'agent_id' => $agent->id,
+        'amount' => '2500.00',
+        'external_reference' => 'BANK-SLIP-FINANCE-1',
+        'idempotency_key' => 'idem-finance-1',
+    ])->assertCreated();
+});
+
+test('super admin can issue float without an explicit grant', function () {
+    $superAdmin = createActorForFloatIssue('SUPER_ADMIN');
+    $agent = createAgentForFloatIssue(balance: 0.00);
+
+    Sanctum::actingAs($superAdmin, ['admin']);
+
+    $this->postJson('/api/v1/transactions/admin/float-issue', [
+        'agent_id' => $agent->id,
+        'amount' => '2500.00',
+        'external_reference' => 'BANK-SLIP-SUPER-1',
+        'idempotency_key' => 'idem-super-1',
+    ])->assertCreated();
 });

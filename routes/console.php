@@ -12,3 +12,4 @@ Artisan::command('inspire', function () {
 
 Schedule::job(new ResetDailyCaps)->dailyAt('00:00')->timezone('UTC');
 Schedule::job(new ResetMonthlyCaps)->monthlyOn(1, '00:00')->timezone('UTC');
+Schedule::command('sanctum:prune-expired --hours=24')->daily();

@@ -24,12 +24,14 @@ test('distinct idempotency keys from the same user succeed independently and mut
     $key2 = 'key-distinct-2-'.uniqid();
 
     $response1 = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 100.00,
         'description' => 'First top-up',
         'idempotency_key' => $key1,
     ]);
 
     $response2 = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 150.00,
         'description' => 'Second top-up',
         'idempotency_key' => $key2,
@@ -102,12 +104,14 @@ test('the same idempotency key used by two different users creates two separate 
 
     Sanctum::actingAs($alice, ['user']);
     $aliceResponse = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 40.00,
         'idempotency_key' => $sharedKey,
     ]);
 
     Sanctum::actingAs($bob, ['user']);
     $bobResponse = $this->postJson('/api/v1/transactions/top-up', [
+        'pin' => '12345',
         'amount' => 70.00,
         'idempotency_key' => $sharedKey,
     ]);
@@ -134,6 +138,7 @@ test('replaying an idempotency key from the same user returns the original trans
 
     $payload = [
         'amount' => 25.00,
+        'pin' => '12345',
         'idempotency_key' => 'replay-key-'.uniqid(),
     ];
 

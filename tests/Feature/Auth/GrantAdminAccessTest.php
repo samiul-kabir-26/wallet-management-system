@@ -8,11 +8,11 @@ use App\Models\User;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\RoleSeeder;
-use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Laravel\Sanctum\Sanctum;
+use Modules\Authentication\Notifications\AdminInviteNotification;
 use Modules\Roles\Enums\RolePanel;
 
 beforeEach(function () {
@@ -346,12 +346,7 @@ test('attack chain blocked: admin grant on verified customer cannot overwrite cu
     // 1. Attacker (SUPER_ADMIN or staff) grants admin access pointing to attacker-controlled email
     Sanctum::actingAs($superAdmin, ['admin']);
 
-    $capturedInvite = [];
-    Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$capturedInvite) {
-        if (isset($event->context['url'], $event->context['temp_password'])) {
-            $capturedInvite = $event->context;
-        }
-    });
+    Notification::fake();
 
     $attackerEmail = 'attacker@malicious.local';
     $this->patchJson("/api/v1/users/{$customer->id}/grant-admin-access", [
@@ -359,9 +354,10 @@ test('attack chain blocked: admin grant on verified customer cannot overwrite cu
         'role' => 'ADMIN',
     ])->assertOk();
 
-    expect($capturedInvite)->not->toBeEmpty();
-    $tempPassword = $capturedInvite['temp_password'];
-    $inviteUrl = $capturedInvite['url'];
+    $invite = Notification::sent($customer, AdminInviteNotification::class)->first();
+    expect($invite)->not->toBeNull();
+    $tempPassword = $invite->temporaryPassword;
+    $inviteUrl = $invite->url;
 
     // 2. Attacker accepts invite via signed link
     Auth::forgetGuards();

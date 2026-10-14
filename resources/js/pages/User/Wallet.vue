@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia';
 import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { parseApiError } from '@/composables/useApiError';
-import { money } from '@/composables/validators';
+import { money, pin } from '@/composables/validators';
 import { api } from '@/services/api';
 import { useToastStore } from '@/stores/toast';
 import { useWalletStore } from '@/stores/wallet';
@@ -21,16 +21,20 @@ const walletStore = useWalletStore();
 const { wallet, loading } = storeToRefs(walletStore);
 const topUpLoading = ref(false);
 
-const { handleSubmit, resetForm, setErrors } = useForm<{ amount: string }>({
-    validationSchema: { amount: money('Amount') },
-    initialValues: { amount: '' },
+const { handleSubmit, resetForm, setErrors } = useForm<{ amount: string; pin: string }>({
+    validationSchema: {
+        amount: money('Amount'),
+        pin,
+    },
+    initialValues: { amount: '', pin: '' },
 });
 
 const handleTopUp = handleSubmit(async (values) => {
     topUpLoading.value = true;
     try {
         await api.post('/transactions/top-up', {
-            amount: Number(values.amount),
+            amount: Number(values.amount).toFixed(2),
+            pin: values.pin,
             idempotency_key: crypto.randomUUID(),
         });
         toast.success(`Successfully added ৳${Number(values.amount).toFixed(2)} to your wallet!`);
@@ -38,8 +42,11 @@ const handleTopUp = handleSubmit(async (values) => {
         await walletStore.fetchWallet();
     } catch (err: unknown) {
         const { message, fieldErrors } = parseApiError(err, 'Top-up failed.');
-        if (fieldErrors.amount) {
-            setErrors({ amount: fieldErrors.amount });
+        const mapped: Record<string, string> = {};
+        if (fieldErrors.amount) mapped.amount = fieldErrors.amount;
+        if (fieldErrors.pin) mapped.pin = fieldErrors.pin;
+        if (Object.keys(mapped).length > 0) {
+            setErrors(mapped);
         }
         toast.error(message);
     } finally {
@@ -104,6 +111,15 @@ onMounted(async () => {
 
                         <form class="space-y-3" novalidate @submit.prevent="handleTopUp">
                             <TextField name="amount" label="Amount (BDT)" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="500.00" />
+                            <TextField
+                                name="pin"
+                                label="Your 5-Digit PIN"
+                                type="password"
+                                inputmode="numeric"
+                                maxlength="10"
+                                placeholder="•••••"
+                                autocomplete="current-password"
+                            />
                             <button
                                 type="submit"
                                 :disabled="topUpLoading || wallet?.is_blocked"

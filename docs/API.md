@@ -56,6 +56,10 @@ All API responses follow a consistent JSON envelope structure.
 
 ## 2. Authentication & Credential Endpoints
 
+> **Token lifetime.** Every access token has an absolute expiry set when it is issued, based on the ability it carries (configurable in `config/auth_settings.php` → `tokens`): `admin` 8 hours, `agent` and `user` 12 hours, and the restricted `password-change` token 30 minutes. A token that has not been used for 15 minutes is also rejected (idle timeout). Both cases return **401**, and the client must log in again. Refreshing a token never extends its absolute expiry. Expired tokens are pruned daily by `sanctum:prune-expired`.
+>
+> **Secret delivery.** OTP codes, PIN reset links and staff invitations (with the temporary password) are delivered by email notification. They are never written to the application log.
+
 ### 2.1 Public Registration
 - **Method & Route:** `POST /api/v1/auth/register`
 - **Access:** Public (Rate limited: 5 req/min per IP)
@@ -420,7 +424,7 @@ All API responses follow a consistent JSON envelope structure.
 ### 2.13 Customer Reset PIN via Signed Link (Case C Step 2)
 - **Method & Route:** `POST /api/v1/auth/reset-pin/{user}`
 - **Access:** Signed URL only (`signed` middleware)
-- **Description:** Customer sets a new PIN using the recovery link provided by customer care.
+- **Description:** Customer sets a new PIN using the recovery link provided by customer care. The link carries a `fingerprint` query parameter bound to the account's current PIN, so it works **once**: after a successful reset (or any other PIN change) the same link is rejected. A successful reset revokes every access token the account holds, clears the PIN lockout counter, and writes a `PIN_RESET_COMPLETED` audit entry.
 - **Request Body:**
   ```json
   {
@@ -435,14 +439,14 @@ All API responses follow a consistent JSON envelope structure.
     "message": "PIN reset successfully. Please log in with your new PIN."
   }
   ```
-- **Error Codes:** 403 (Invalid/expired signed link), 422 (Validation failure).
+- **Error Codes:** 403 (Invalid/expired signed link, link already used, or account inactive), 422 (Validation failure, or account has no PIN).
 
 ---
 
 ### 2.14 Refresh Token
 - **Method & Route:** `POST /api/v1/auth/refresh-token`
 - **Access:** Authenticated (`auth:sanctum`)
-- **Description:** Reissues access token preserving current abilities.
+- **Description:** Rotates the access token: the current token is revoked and a new one is issued with the same name, abilities, and **the same absolute expiry**. Refreshing never extends a session.
 - **Response (200 OK):**
   ```json
   {
@@ -467,6 +471,20 @@ All API responses follow a consistent JSON envelope structure.
   {
     "success": true,
     "message": "Logged out successfully."
+  }
+  ```
+
+---
+
+### 2.16 Logout From All Sessions
+- **Method & Route:** `POST /api/v1/auth/logout-all`
+- **Access:** Authenticated (`auth:sanctum`)
+- **Description:** Revokes every access token the caller holds, on every device and panel.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Logged out from all sessions."
   }
   ```
 
@@ -848,6 +866,7 @@ All API responses follow a consistent JSON envelope structure.
   ```json
   {
     "amount": 5000.00,
+    "pin": "12345",
     "idempotency_key": "topup-uuid-1234",
     "description": "Bank transfer deposit"
   }
@@ -870,7 +889,10 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 403 (Wallet blocked), 422 (Validation error).
+- **Behavior & Rules:**
+  - **Simulation:** `TOP_UP` stands in for a bank or card payment gateway and creates new e-money. In a production system the credit would only be applied after a verified gateway callback.
+  - Requires the user's transaction PIN (shared lockout counter with PIN login).
+- **Error Codes:** 403 (Wallet blocked), 422 (Validation error or wrong PIN), 429 (PIN locked out).
 
 ---
 
@@ -1105,6 +1127,44 @@ All API responses follow a consistent JSON envelope structure.
 - **Access:** Admin only (`ability:admin`, `password.changed`)
 - **Query Params:** `type`, `status`, `user_id`, `sender_id`, `recipient_id`, `agent_id`, `from_date`, `to_date`, `per_page`, `page`
 - **Response (200 OK):** Full paginated system transactions list with eager-loaded user/sender/recipient/agent relations.
+
+---
+
+### 5.9 Admin Float Issuance
+- **Method & Route:** `POST /api/v1/transactions/admin/float-issue`
+- **Access:** Admin only (`ability:admin`, `password.changed`) **and** the `agents.issue_float` permission. ADMIN does not hold it by default; SUPER_ADMIN can assign it to a custom role (e.g. FINANCE).
+- **Description:** Credits e-money float to an approved agent's AGENT wallet against a confirmed external bank deposit. Writes a `FLOAT_ISSUE` transaction (`initiated_by` = admin) and a `FLOAT_ISSUED` audit log entry.
+- **Request Body:** (`agent_id` or `agent_phone` is required)
+  ```json
+  {
+    "agent_id": 42,
+    "amount": "5000.00",
+    "external_reference": "BANK-SLIP-1001",
+    "idempotency_key": "float-uuid-1234",
+    "description": "Cheque deposit branch #42"
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Float issued successfully.",
+    "data": {
+      "transaction": {
+        "type": "FLOAT_ISSUE",
+        "amount": "5000.00",
+        "external_reference": "BANK-SLIP-1001",
+        "status": "COMPLETED"
+      }
+    }
+  }
+  ```
+- **Behavior & Rules:**
+  - `external_reference` is unique across all transactions (enforced by a database unique index), so one bank deposit can never be credited twice — including by two concurrent requests.
+  - An admin cannot issue float to themselves.
+  - The agent must be approved, and their agent wallet must not be blocked.
+  - Amount limits come from `config/transactions.php` → `limits.float_issue`.
+- **Error Codes:** 403 (Missing permission, non-admin token, or wallet blocked), 409 (Idempotency key reused with different parameters, or agent not approved), 422 (Validation error, reused external reference, or self-issuance).
 
 ---
 

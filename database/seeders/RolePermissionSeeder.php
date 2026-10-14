@@ -25,11 +25,13 @@ class RolePermissionSeeder extends Seeder
             return;
         }
 
-        // All catalog permissions except users.grant_admin_access and roles.manage
+        // All catalog permissions except users.grant_admin_access, roles.manage and
+        // agents.issue_float (creates e-money; SUPER_ADMIN grants it to a dedicated role)
         $adminPermissions = collect(PermissionEnum::cases())
             ->filter(fn (PermissionEnum $p): bool => ! in_array($p, [
                 PermissionEnum::UsersGrantAdminAccess,
                 PermissionEnum::RolesManage,
+                PermissionEnum::AgentsIssueFloat,
             ], true))
             ->map(fn (PermissionEnum $p): string => $p->value)
             ->all();

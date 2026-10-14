@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Modules\Authentication\Exceptions\UserNotFoundException;
 use Modules\Authentication\Services\PinVerifier;
 use Modules\Transactions\Exceptions\DailyCapsExceededException;
@@ -102,7 +103,7 @@ class TransactionService
     /**
      * Top-up user's own wallet balance.
      */
-    public function topUp(User $user, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
+    public function topUp(User $user, string|float $amount, string $idempotencyKey, string $pin, ?string $description = null): Transaction
     {
         $formattedAmount = number_format((float) $amount, 2, '.', '');
         $this->assertValidAmount($formattedAmount);
@@ -113,6 +114,8 @@ class TransactionService
 
             return $existing;
         }
+
+        $this->pinVerifier->verify($user, $pin);
 
         try {
             return DB::transaction(function () use ($user, $formattedAmount, $idempotencyKey, $description): Transaction {
@@ -378,7 +381,7 @@ class TransactionService
      */
     public function cashOut(User $user, string $agentPhone, string|float $amount, string $idempotencyKey, string $pin, ?string $description = null): Transaction
     {
-        $agent = User::with('agentInfo')->where('phone_number', $agentPhone)->first();
+        $agent = User::with('agentInfo')->where('phone_number', $agentPhone)->where('is_deleted', false)->first();
         if (! $agent) {
             throw new UserNotFoundException('Agent user not found.');
         }
@@ -569,7 +572,7 @@ class TransactionService
      */
     public function transfer(User $sender, string $recipientPhone, string|float $amount, string $idempotencyKey, string $pin, ?string $description = null): Transaction
     {
-        $recipient = User::where('phone_number', $recipientPhone)->first();
+        $recipient = User::where('phone_number', $recipientPhone)->where('is_deleted', false)->first();
         if (! $recipient || $recipient->is_deleted) {
             throw new UserNotFoundException('Recipient user not found.');
         }
@@ -923,6 +926,13 @@ class TransactionService
                 );
 
                 return $existing;
+            }
+
+            // A concurrent request under a different idempotency key claimed the same bank reference.
+            if ($e instanceof UniqueConstraintViolationException && str_contains($e->getMessage(), 'external_reference')) {
+                throw ValidationException::withMessages([
+                    'external_reference' => ['This external reference has already been used.'],
+                ]);
             }
 
             throw $e;
