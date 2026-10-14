@@ -81,6 +81,14 @@ const handleIssue = handleSubmit(async (values) => {
                 Credit e-money float to <span class="font-semibold text-zinc-900 dark:text-zinc-100">{{ agent?.name }}</span>
                 ({{ agent?.phone_number }}). Only issue float after the agent's bank deposit has been confirmed.
             </p>
+            <details class="rounded-lg bg-zinc-50 p-3 text-xs text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-400">
+                <summary class="cursor-pointer font-semibold text-zinc-700 dark:text-zinc-300">What is agent float?</summary>
+                <p class="mt-2">
+                    Float is the e-money an agent uses to serve customers. The agent pays real cash into the company bank account, finance
+                    confirms the deposit, and the same amount is credited here. The agent then spends this balance on customer cash-ins.
+                    The bank deposit reference can only be used once, so the same deposit cannot be credited twice.
+                </p>
+            </details>
 
             <TextField name="amount" label="Amount (BDT)" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="10000.00" />
             <TextField name="externalReference" label="Bank Deposit Reference" placeholder="e.g. BANK-SLIP-2026-00042" />

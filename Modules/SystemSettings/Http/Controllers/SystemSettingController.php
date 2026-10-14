@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\SystemSetting;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
+use Modules\SystemSettings\Http\Requests\UpdateSessionTimeoutsRequest;
 use Modules\SystemSettings\Http\Requests\UpdateSystemSettingsRequest;
 use Modules\SystemSettings\Resources\SettingsResource;
+use Modules\SystemSettings\Services\SessionTimeoutService;
 use Modules\SystemSettings\Services\SystemSettingService;
 
 class SystemSettingController extends Controller
@@ -16,6 +18,7 @@ class SystemSettingController extends Controller
 
     public function __construct(
         protected SystemSettingService $settingService,
+        protected SessionTimeoutService $sessionTimeouts,
     ) {}
 
     /**
@@ -50,6 +53,40 @@ class SystemSettingController extends Controller
             'message' => 'Settings updated successfully',
             'data' => [
                 'settings' => new SettingsResource($updatedSettings),
+            ],
+        ]);
+    }
+
+    /**
+     * Get the idle auto-logout timeout (minutes) for each panel.
+     */
+    public function sessionTimeouts(): JsonResponse
+    {
+        $this->authorize('viewAny', SystemSetting::class);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'session_timeouts' => $this->sessionTimeouts->all(),
+            ],
+        ]);
+    }
+
+    /**
+     * Change the idle auto-logout timeout for one or more panels.
+     */
+    public function updateSessionTimeouts(UpdateSessionTimeoutsRequest $request): JsonResponse
+    {
+        $timeouts = $this->sessionTimeouts->update(
+            minutesByPanel: $request->validated(),
+            actor: $request->user(),
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Session timeouts updated successfully',
+            'data' => [
+                'session_timeouts' => $timeouts,
             ],
         ]);
     }

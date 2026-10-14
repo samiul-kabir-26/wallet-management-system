@@ -40,12 +40,22 @@ function getInitialPermissions(): string[] {
     }
 }
 
+function getInitialIdleTimeout(): number | null {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    const stored = Number(localStorage.getItem('idle_timeout_minutes'));
+    return Number.isFinite(stored) && stored > 0 ? stored : null;
+}
+
 export const useAuthStore = defineStore('auth', () => {
     const token = ref<string | null>(
         typeof window !== 'undefined' ? localStorage.getItem('token') : null,
     );
     const user = ref<User | null>(getInitialUser());
     const permissions = ref<string[]>(getInitialPermissions());
+    // Server-issued idle timeout for the panel this token belongs to
+    const idleTimeoutMinutes = ref<number | null>(getInitialIdleTimeout());
     const loading = ref<boolean>(false);
     const error = ref<string | null>(null);
 
@@ -72,14 +82,27 @@ export const useAuthStore = defineStore('auth', () => {
         return permissions.value.includes(permission);
     };
 
-    const setAuth = (newToken: string, newUser: User): void => {
+    const setIdleTimeout = (minutes: number | null | undefined): void => {
+        idleTimeoutMinutes.value = typeof minutes === 'number' && minutes > 0 ? minutes : null;
+        if (typeof window !== 'undefined') {
+            if (idleTimeoutMinutes.value) {
+                localStorage.setItem('idle_timeout_minutes', String(idleTimeoutMinutes.value));
+            } else {
+                localStorage.removeItem('idle_timeout_minutes');
+            }
+        }
+    };
+
+    const setAuth = (newToken: string, newUser: User, idleTimeout?: number | null): void => {
         token.value = newToken;
         user.value = newUser;
         permissions.value = Array.isArray(newUser.permissions) ? newUser.permissions : [];
+        setIdleTimeout(idleTimeout);
         if (typeof window !== 'undefined') {
             localStorage.setItem('token', newToken);
             localStorage.setItem('user', JSON.stringify(newUser));
             localStorage.setItem('permissions', JSON.stringify(permissions.value));
+            localStorage.setItem('last_activity_at', String(Date.now()));
         }
     };
 
@@ -87,6 +110,7 @@ export const useAuthStore = defineStore('auth', () => {
         token.value = null;
         user.value = null;
         permissions.value = [];
+        setIdleTimeout(null);
         useWalletStore().reset();
         useTransactionStore().reset();
         useUserStore().reset();
@@ -94,6 +118,7 @@ export const useAuthStore = defineStore('auth', () => {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             localStorage.removeItem('permissions');
+            localStorage.removeItem('last_activity_at');
         }
     };
 
@@ -109,7 +134,7 @@ export const useAuthStore = defineStore('auth', () => {
                 pin,
             });
             const data = res.data.data;
-            setAuth(data.token, data.user);
+            setAuth(data.token, data.user, data.idle_timeout_minutes);
             return data.user;
         } catch (err: unknown) {
             const apiError = err as { response?: { data?: { message?: string } } };
@@ -130,7 +155,7 @@ export const useAuthStore = defineStore('auth', () => {
                 pin,
             });
             const data = res.data.data;
-            setAuth(data.token, data.user);
+            setAuth(data.token, data.user, data.idle_timeout_minutes);
             return data.user;
         } catch (err: unknown) {
             const apiError = err as { response?: { data?: { message?: string } } };
@@ -170,7 +195,7 @@ export const useAuthStore = defineStore('auth', () => {
                 otp_code: otpCode,
             });
             const data = res.data.data;
-            setAuth(data.token, data.user);
+            setAuth(data.token, data.user, data.idle_timeout_minutes);
             return data.user;
         } catch (err: unknown) {
             const apiError = err as { response?: { data?: { message?: string } } };
@@ -195,7 +220,7 @@ export const useAuthStore = defineStore('auth', () => {
             const res = await api.post('/auth/register', payload);
             const data = res.data.data;
             if (data.token && data.user) {
-                setAuth(data.token, data.user);
+                setAuth(data.token, data.user, data.idle_timeout_minutes);
             }
             return data;
         } catch (err: unknown) {
@@ -215,6 +240,9 @@ export const useAuthStore = defineStore('auth', () => {
         try {
             const res = await api.get('/auth/me');
             const updatedUser = res.data.data?.user || res.data.data;
+            if (res.data.data?.idle_timeout_minutes !== undefined) {
+                setIdleTimeout(res.data.data.idle_timeout_minutes);
+            }
             if (updatedUser) {
                 user.value = { ...user.value, ...updatedUser };
                 if (Array.isArray(updatedUser.permissions)) {
@@ -231,7 +259,10 @@ export const useAuthStore = defineStore('auth', () => {
         }
     };
 
-    const logout = async (): Promise<void> => {
+    /**
+     * Revoke the token and return to the login page. reason 'idle' tells the login page why.
+     */
+    const logout = async (reason?: 'idle'): Promise<void> => {
         loading.value = true;
         try {
             if (token.value) {
@@ -242,7 +273,7 @@ export const useAuthStore = defineStore('auth', () => {
         } finally {
             clearAuth();
             loading.value = false;
-            router.visit('/login');
+            router.visit(reason === 'idle' ? '/login?reason=idle' : '/login');
         }
     };
 
@@ -250,6 +281,7 @@ export const useAuthStore = defineStore('auth', () => {
         token,
         user,
         permissions,
+        idleTimeoutMinutes,
         loading,
         error,
         isAuthenticated,

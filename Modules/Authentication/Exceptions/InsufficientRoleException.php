@@ -15,10 +15,12 @@ class InsufficientRoleException extends ApiException
     /**
      * Create a new insufficient role exception instance.
      */
-    public function __construct(?Throwable $previous = null)
-    {
+    public function __construct(
+        string $message = 'You do not have permission to access this portal.',
+        ?Throwable $previous = null,
+    ) {
         parent::__construct(
-            message: 'You do not have permission to access this portal.',
+            message: $message,
             previous: $previous,
         );
     }

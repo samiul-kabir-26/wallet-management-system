@@ -79,7 +79,7 @@ onMounted(() => {
                                     ৳{{ Number(tx.system_fee_amount).toFixed(2) }}
                                 </td>
                                 <td class="px-6 py-4">
-                                    <Badge :variant="tx.status === 'COMPLETED' ? 'success' : tx.status === 'FAILED' ? 'danger' : 'warning'">
+                                    <Badge :variant="tx.status === 'COMPLETED' ? 'success' : tx.status === 'FAILED' || tx.status === 'REJECTED' ? 'danger' : 'warning'">
                                         {{ tx.status }}
                                     </Badge>
                                 </td>

@@ -53,6 +53,7 @@ export interface Wallet {
     created_at?: string;
     caps?: Caps;
     user?: User;
+    owner?: { id: number; name: string; phone_number: string | null; email: string | null } | null;
 }
 
 export type TransactionType =
@@ -61,9 +62,16 @@ export type TransactionType =
     | 'CASH_OUT'
     | 'TRANSFER'
     | 'AGENT_WITHDRAWAL'
-    | 'COMMISSION_PAYOUT';
+    | 'COMMISSION_PAYOUT'
+    | 'FLOAT_ISSUE';
 
-export type TransactionStatus = 'COMPLETED' | 'PENDING' | 'FAILED';
+export type TransactionStatus = 'COMPLETED' | 'PENDING' | 'FAILED' | 'REJECTED';
+
+export interface TransactionParty {
+    id: number;
+    name: string;
+    phone_number: string | null;
+}
 
 export interface Transaction {
     id: number;
@@ -87,6 +95,13 @@ export interface Transaction {
     status: TransactionStatus;
     description: string | null;
     idempotency_key?: string;
+    external_reference?: string | null;
+    meta?: Record<string, unknown> | null;
+    parties?: {
+        sender: TransactionParty | null;
+        recipient: TransactionParty | null;
+        agent: TransactionParty | null;
+    };
     created_at: string;
     source_wallet?: Wallet;
     destination_wallet?: Wallet;
@@ -122,4 +137,31 @@ export interface Pagination {
 export interface PaginatedResponse<T> {
     items: T[];
     pagination: Pagination;
+}
+
+export interface UserProfile extends User {
+    address?: string | null;
+    wallets?: Wallet[];
+    caps?: { daily_cap: number | string; monthly_cap: number | string; daily_used: number | string; monthly_used: number | string } | null;
+}
+
+export interface LoginActivityRecord {
+    id: number;
+    panel: 'admin' | 'agent' | 'user';
+    identifier: string;
+    status: 'SUCCESS' | 'FAILED';
+    failure_reason: string | null;
+    ip_address: string | null;
+    user_agent: string | null;
+    created_at: string;
+}
+
+export interface AuditLogRecord {
+    id: number;
+    action: string;
+    actor: { id: number; name: string } | null;
+    auditable_type: string | null;
+    auditable_id: number | null;
+    metadata: Record<string, unknown> | null;
+    created_at: string;
 }

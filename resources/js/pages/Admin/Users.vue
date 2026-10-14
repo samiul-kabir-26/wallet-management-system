@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { useAuthStore } from '@/stores/auth';
 import { api } from '@/services/api';
@@ -154,7 +154,15 @@ onMounted(() => {
                                 <td class="px-6 py-4 font-mono text-xs text-zinc-500">#{{ u.id }}</td>
                                 <td class="px-6 py-4 font-semibold text-zinc-900 dark:text-zinc-100">{{ u.name }}</td>
                                 <td class="px-6 py-4 text-xs text-zinc-600 dark:text-zinc-400">
-                                    <div>{{ u.phone_number ?? 'No phone' }}</div>
+                                    <div>
+                                        {{ u.phone_number ?? 'No phone' }}
+                                        <span
+                                            v-if="u.phone_number"
+                                            :class="u.is_verified ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'"
+                                        >
+                                            · {{ u.is_verified ? 'verified' : 'unverified' }}
+                                        </span>
+                                    </div>
                                     <div class="text-zinc-400">{{ u.email ?? '' }}</div>
                                 </td>
                                 <td class="px-6 py-4">
@@ -167,7 +175,14 @@ onMounted(() => {
                                         {{ u.is_active ?? 'ACTIVE' }}
                                     </Badge>
                                 </td>
-                                <td class="px-6 py-4 text-right">
+                                <td class="px-6 py-4 text-right space-x-3 whitespace-nowrap">
+                                    <Link
+                                        v-if="authStore.can('users.view')"
+                                        :href="`/admin/users/${u.id}`"
+                                        class="text-xs font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+                                    >
+                                        View Profile
+                                    </Link>
                                     <button
                                         v-if="authStore.can('users.grant_admin_access') && !u.roles.includes('ADMIN') && !u.roles.includes('SUPER_ADMIN')"
                                         type="button"
@@ -216,6 +231,12 @@ onMounted(() => {
                         <span class="font-semibold text-zinc-900 dark:text-zinc-100">{{ elevateUser?.name }}</span>
                         ({{ elevateUser?.phone_number }}) to administrative staff?
                     </p>
+
+                    <Alert
+                        v-if="elevateUser && !elevateUser.is_verified"
+                        type="warning"
+                        message="This user's phone number is not verified yet. Open their profile and use 'Mark Phone Verified' after confirming their identity, then grant access."
+                    />
 
                     <div>
                         <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Staff Email Address</label>

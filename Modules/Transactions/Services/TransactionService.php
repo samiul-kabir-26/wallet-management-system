@@ -22,6 +22,7 @@ use Modules\Transactions\Exceptions\IdempotencyConflictException;
 use Modules\Transactions\Exceptions\InvalidAmountException;
 use Modules\Transactions\Exceptions\InvalidRecipientException;
 use Modules\Transactions\Exceptions\MonthlyCapsExceededException;
+use Modules\Transactions\Exceptions\WithdrawalNotPendingException;
 use Modules\Users\Exceptions\AgentNotApprovedException;
 use Modules\Users\Exceptions\UserNotAnAgentException;
 use Modules\Wallets\Exceptions\InsufficientBalanceException;
@@ -166,7 +167,10 @@ class TransactionService
     }
 
     /**
-     * Agent withdraws accumulated funds from their own wallet.
+     * Agent requests a bank withdrawal from their own wallet.
+     *
+     * The amount is debited immediately so it cannot be spent twice, and the transaction stays
+     * PENDING until staff approve (bank payout sent) or reject (funds returned) it.
      *
      * @throws UserNotAnAgentException
      * @throws AgentNotApprovedException
@@ -218,7 +222,8 @@ class TransactionService
                     'agent_commission_rate' => '0.0000',
                     'currency' => $updatedWallet->currency ?? 'BDT',
                     'description' => $description,
-                    'status' => 'COMPLETED',
+                    // Funds are held (already debited) until staff confirm the bank payout
+                    'status' => 'PENDING',
                     'idempotency_key' => $idempotencyKey,
                     'sender_wallet_balance_after' => $updatedWallet->balance,
                     'recipient_wallet_balance_after' => null,
@@ -760,7 +765,49 @@ class TransactionService
             $query->where('agent_id', (int) $filters['agent_id']);
         }
 
+        if (! empty($filters['party_id'])) {
+            $partyId = (int) $filters['party_id'];
+            $query->where(fn (Builder $q) => $q
+                ->where('user_id', $partyId)
+                ->orWhere('sender_id', $partyId)
+                ->orWhere('recipient_id', $partyId)
+                ->orWhere('agent_id', $partyId));
+        }
+
+        if (! empty($filters['search'])) {
+            $this->applySearch($query, trim((string) $filters['search']));
+        }
+
         return $query->latest('id')->paginate($perPage);
+    }
+
+    /**
+     * Match a free-text term against the transaction ID, external reference, and the name,
+     * phone number or email of any party to the transaction.
+     */
+    protected function applySearch(Builder $query, string $term): void
+    {
+        $like = '%'.addcslashes($term, '%_\\').'%';
+        $transactionId = ltrim($term, '#');
+
+        $matchingUserIds = User::query()
+            ->select('id')
+            ->where(fn (Builder $q) => $q
+                ->where('name', 'like', $like)
+                ->orWhere('phone_number', 'like', $like)
+                ->orWhere('email', 'like', $like));
+
+        $query->where(function (Builder $q) use ($like, $transactionId, $matchingUserIds): void {
+            $q->whereIn('user_id', $matchingUserIds)
+                ->orWhereIn('sender_id', $matchingUserIds)
+                ->orWhereIn('recipient_id', $matchingUserIds)
+                ->orWhereIn('agent_id', $matchingUserIds)
+                ->orWhere('external_reference', 'like', $like);
+
+            if (ctype_digit($transactionId)) {
+                $q->orWhere('id', (int) $transactionId);
+            }
+        });
     }
 
     /**
@@ -943,5 +990,134 @@ class TransactionService
 
             throw $e;
         }
+    }
+
+    /**
+     * Approve a pending agent bank withdrawal once the bank payout has been sent.
+     *
+     * The funds were already debited when the agent made the request, so only the status changes.
+     *
+     * @throws WithdrawalNotPendingException
+     * @throws ValidationException
+     */
+    public function approveWithdrawal(Transaction $withdrawal, User $reviewer, string $externalReference, ?string $note = null): Transaction
+    {
+        try {
+            return DB::transaction(function () use ($withdrawal, $reviewer, $externalReference, $note): Transaction {
+                $locked = $this->lockPendingWithdrawal($withdrawal);
+
+                $locked->forceFill([
+                    'status' => 'COMPLETED',
+                    'external_reference' => $externalReference,
+                    'meta' => array_merge($locked->meta ?? [], [
+                        'review' => [
+                            'decision' => 'APPROVED',
+                            'reviewed_by' => $reviewer->id,
+                            'reviewed_at' => now()->toIso8601String(),
+                            'bank_transfer_reference' => $externalReference,
+                            'note' => $note,
+                        ],
+                    ]),
+                ])->save();
+
+                AuditLog::create([
+                    'actor_id' => $reviewer->id,
+                    'action' => 'WITHDRAWAL_APPROVED',
+                    'auditable_type' => (new User)->getMorphClass(),
+                    'auditable_id' => $locked->agent_id,
+                    'metadata' => [
+                        'transaction_id' => $locked->id,
+                        'amount' => $locked->amount,
+                        'external_reference' => $externalReference,
+                        'note' => $note,
+                    ],
+                ]);
+
+                return $locked;
+            });
+        } catch (UniqueConstraintViolationException $e) {
+            // A concurrent review claimed the same bank reference after validation passed
+            if (str_contains($e->getMessage(), 'external_reference')) {
+                throw ValidationException::withMessages([
+                    'external_reference' => ['This external reference has already been used.'],
+                ]);
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Reject a pending agent bank withdrawal and return the held funds to the agent wallet.
+     *
+     * The refund ignores a wallet block: the money never left the platform, so returning it is
+     * not a new movement the block is meant to stop. A REJECTED row nets to zero in the ledger.
+     *
+     * @throws WithdrawalNotPendingException
+     * @throws WalletNotFoundException
+     */
+    public function rejectWithdrawal(Transaction $withdrawal, User $reviewer, string $reason): Transaction
+    {
+        return DB::transaction(function () use ($withdrawal, $reviewer, $reason): Transaction {
+            $locked = $this->lockPendingWithdrawal($withdrawal);
+
+            $wallet = Wallet::whereKey($locked->sender_wallet_id)->lockForUpdate()->first();
+            if (! $wallet) {
+                throw new WalletNotFoundException;
+            }
+
+            $balanceBefore = number_format((float) $wallet->balance, 2, '.', '');
+            $balanceAfter = bcadd($balanceBefore, number_format((float) $locked->amount, 2, '.', ''), 2);
+            $wallet->balance = $balanceAfter;
+            $wallet->save();
+
+            $locked->forceFill([
+                'status' => 'REJECTED',
+                'meta' => array_merge($locked->meta ?? [], [
+                    'review' => [
+                        'decision' => 'REJECTED',
+                        'reviewed_by' => $reviewer->id,
+                        'reviewed_at' => now()->toIso8601String(),
+                        'reason' => $reason,
+                        'refunded_wallet_id' => $wallet->id,
+                        'refund_balance_after' => $balanceAfter,
+                    ],
+                ]),
+            ])->save();
+
+            AuditLog::create([
+                'actor_id' => $reviewer->id,
+                'action' => 'WITHDRAWAL_REJECTED',
+                'auditable_type' => (new User)->getMorphClass(),
+                'auditable_id' => $locked->agent_id,
+                'metadata' => [
+                    'transaction_id' => $locked->id,
+                    'amount' => $locked->amount,
+                    'reason' => $reason,
+                    'wallet_id' => $wallet->id,
+                    'balance_before' => $balanceBefore,
+                    'balance_after' => $balanceAfter,
+                ],
+            ]);
+
+            return $locked;
+        });
+    }
+
+    /**
+     * Lock an agent withdrawal row and guard that it is still awaiting review.
+     *
+     * @throws WithdrawalNotPendingException
+     */
+    private function lockPendingWithdrawal(Transaction $withdrawal): Transaction
+    {
+        /** @var Transaction $locked */
+        $locked = Transaction::whereKey($withdrawal->id)->lockForUpdate()->firstOrFail();
+
+        if ($locked->type !== 'AGENT_WITHDRAWAL' || $locked->status !== 'PENDING') {
+            throw new WithdrawalNotPendingException;
+        }
+
+        return $locked;
     }
 }

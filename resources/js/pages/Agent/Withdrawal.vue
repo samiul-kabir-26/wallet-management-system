@@ -42,7 +42,7 @@ const submit = async () => {
             pin: values.pin,
             idempotency_key: crypto.randomUUID(),
         });
-        toast.success(`Bank withdrawal of ৳${Number(values.amount).toFixed(2)} initiated (Tx #${res.data.data?.transaction?.id ?? ''}).`);
+        toast.success(`Withdrawal request of ৳${Number(values.amount).toFixed(2)} submitted (Tx #${res.data.data?.transaction?.id ?? ''}). It will show as PENDING until an admin approves it.`);
         confirmOpen.value = false;
         resetForm();
         await walletStore.fetchWallet();
@@ -73,7 +73,7 @@ onMounted(() => {
                     Agent Bank Withdrawal
                 </h1>
                 <p class="text-sm text-zinc-500 dark:text-zinc-400">
-                    Disburse earned commissions and wallet funds directly to your bank account
+                    Request a transfer of your wallet funds to your bank account. Requests are reviewed by an admin.
                 </p>
             </div>
 
@@ -118,11 +118,17 @@ onMounted(() => {
             :open="confirmOpen"
             title="Confirm Bank Withdrawal"
             :loading="loading"
-            confirm-label="Withdraw to Bank"
+            confirm-label="Submit Request"
             @cancel="confirmOpen = false"
             @confirm="submit"
         >
-            You are about to withdraw <strong>৳{{ Number(values.amount || 0).toFixed(2) }}</strong> from your wallet to your bank account.
+            <p>
+                You are about to request a withdrawal of <strong>৳{{ Number(values.amount || 0).toFixed(2) }}</strong> to your bank account.
+            </p>
+            <p class="mt-2 text-xs text-zinc-500">
+                The amount is held from your balance straight away and the request stays <strong>PENDING</strong> until an admin
+                confirms the bank transfer. If it is rejected, the full amount is returned to your wallet.
+            </p>
         </ConfirmModal>
     </AgentLayout>
 </template>

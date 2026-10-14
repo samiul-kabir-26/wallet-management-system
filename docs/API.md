@@ -125,11 +125,15 @@ All API responses follow a consistent JSON envelope structure.
       },
       "token": "11|sanctum_token...",
       "token_type": "Bearer",
-      "abilities": ["user"]
+      "abilities": ["user"],
+      "idle_timeout_minutes": 5
     }
   }
   ```
 - **Error Codes:** 401 (Invalid credentials), 403 (Account inactive or missing USER role), 429 (Too many failed PIN attempts / Account locked).
+- **Wrong panel:** one phone number holds one wallet type (as with bKash/Nagad). After a correct PIN, an agent account on this route gets 403 *"This number is registered as an agent account. Please sign in through the Agent portal; a personal wallet needs a separate number."* The agent route likewise says when a number is a customer account, awaiting approval, or suspended.
+- **Login records:** every attempt on the three login routes (success or failure, panel, identifier, IP, user agent) is stored in `login_activities`; see 3.11.
+- **`idle_timeout_minutes`:** the idle auto-logout for this panel (see 6.3). Clients should sign out after this long without interaction; the server rejects the token anyway once it has been unused for that long. `/auth/me` returns the same field.
 
 > [!NOTE]
 > **PIN Lockout & Account Enumeration Trade-off**: The 5-attempt PIN lockout counter (`pin-attempts:{userId}`) is shared atomically across both public PIN login and money-moving transaction endpoints. While an unknown phone number always returns 401, a registered phone number returns 429 when locked out after 5 consecutive failed attempts. This deliberate trade-off follows mobile financial service industry patterns (e.g., bKash) to prioritize account and wallet balance defense against credential brute-forcing.
@@ -778,6 +782,28 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
+### 3.10 Mark Phone Verified
+- **Method & Route:** `PATCH /api/v1/users/{user}/verify-phone`
+- **Access:** Admin only **and** `users.verify_phone`. Staff cannot verify their own phone.
+- **Description:** Records that staff confirmed out of band (call, NID check) that the phone number belongs to this person. Granting admin access (3.6) requires a verified phone. Idempotent; audited once as `PHONE_VERIFIED`.
+- **Error Codes:** 403, 422 (account has no phone number).
+
+---
+
+### 3.11 User Login Records
+- **Method & Route:** `GET /api/v1/users/{user}/login-activity`
+- **Access:** Admin only **and** `users.view_activity`.
+- **Response:** paginated `{ id, panel, identifier, status (SUCCESS|FAILED), failure_reason, ip_address, user_agent, created_at }`, newest first. Admin password-step failures are recorded; admin success is recorded when the OTP is verified.
+
+---
+
+### 3.12 User Audit Trail
+- **Method & Route:** `GET /api/v1/users/{user}/audit-trail`
+- **Access:** Admin only **and** `users.view_activity`.
+- **Response:** paginated audit entries the user performed, entries recorded against the user, and entries recorded against any of the user's wallets: `{ id, action, actor { id, name }, auditable_type, auditable_id, metadata, created_at }`.
+
+---
+
 ## 4. Wallet Management Endpoints
 
 ### 4.1 View Current Wallet
@@ -804,8 +830,8 @@ All API responses follow a consistent JSON envelope structure.
 ### 4.2 List All Wallets
 - **Method & Route:** `GET /api/v1/wallets/admin/all`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
-- **Query Params:** `is_blocked`, `user_id`, `per_page`, `page`
-- **Response (200 OK):** Paginated wallet list with total, per_page, current_page.
+- **Query Params:** `is_blocked`, `user_id`, `search` (owner name, phone or email), `per_page`, `page`
+- **Response (200 OK):** Paginated wallet list. Each item includes `owner: { id, name, phone_number, email }`.
 
 ---
 
@@ -1026,7 +1052,7 @@ All API responses follow a consistent JSON envelope structure.
   ```json
   {
     "success": true,
-    "message": "Withdrawal completed successfully.",
+    "message": "Withdrawal request submitted and awaiting approval.",
     "data": {
       "transaction": {
         "id": 106,
@@ -1034,12 +1060,13 @@ All API responses follow a consistent JSON envelope structure.
         "agent_id": 12,
         "type": "AGENT_WITHDRAWAL",
         "amount": 1500.00,
-        "status": "COMPLETED",
+        "status": "PENDING",
         "sender_wallet_balance_after": 600.00
       }
     }
   }
   ```
+- **Behavior & Rules:** the amount is debited (held) immediately so it cannot be spent twice. The transaction stays `PENDING` until staff approve it (5.10, `COMPLETED`) or reject it (5.11, `REJECTED`, amount returned).
 - **Error Codes:** 403 (Wallet blocked or unapproved), 409 (Idempotency key reused with different parameters), 422 (Wrong PIN, insufficient balance), 429 (PIN locked out).
 
 ---
@@ -1068,6 +1095,23 @@ All API responses follow a consistent JSON envelope structure.
   - Caps count the transaction **amount** (not the fee) of outgoing cash-outs and transfers.
   - Periods roll over at midnight in the business timezone (`config/transactions.php` → `business_timezone`, default `Asia/Dhaka`), not midnight UTC.
   - Rollover is lazy: the first cash-out or transfer of a new day (or month) resets the counter under the same row lock that checks the cap, so correctness never depends on a scheduled job. Usage from an earlier period is reported as `0` even before that first transaction. A daily `ResetStaleCaps` job only tidies stored values.
+
+---
+
+### 5.5c Fee Quote
+- **Method & Route:** `GET /api/v1/transactions/quote?type=CASH_OUT&amount=1000`
+- **Access:** User only (`ability:user`, `password.changed`)
+- **Description:** Previews the fee and total debit using the same fee calculator the transaction uses, so the confirm dialog shows what will actually be charged. `type` is `CASH_OUT` or `TRANSFER` (transfers have no fee).
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "quote": { "type": "CASH_OUT", "amount": 1000.00, "fee_rate": 0.05, "fee_amount": 50.00, "total": 1050.00 }
+    }
+  }
+  ```
+- **Note:** a quote is informational. If the fee rate changes between the quote and the submit, the transaction uses the rate at submit time.
 
 ---
 
@@ -1152,8 +1196,10 @@ All API responses follow a consistent JSON envelope structure.
 ### 5.8 Admin Audit (All System Transactions)
 - **Method & Route:** `GET /api/v1/transactions/admin/all`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
-- **Query Params:** `type`, `status`, `user_id`, `sender_id`, `recipient_id`, `agent_id`, `from_date`, `to_date`, `per_page`, `page`
-- **Response (200 OK):** Full paginated system transactions list with eager-loaded user/sender/recipient/agent relations.
+- **Query Params:** `type`, `status` (`COMPLETED`, `PENDING`, `FAILED`, `REJECTED`), `search`, `party_id`, `user_id`, `sender_id`, `recipient_id`, `agent_id`, `from_date`, `to_date`, `per_page`, `page`
+  - `search` matches the name, phone or email of any party, the `external_reference`, or the transaction ID (`123` or `#123`). LIKE wildcards are matched literally.
+  - `party_id` returns transactions where that user is the user, sender, recipient or agent.
+- **Response (200 OK):** Full paginated system transactions list. For staff each item includes `parties: { sender, recipient, agent }` with `{ id, name, phone_number }`.
 
 ---
 
@@ -1192,6 +1238,24 @@ All API responses follow a consistent JSON envelope structure.
   - The agent must be approved, and their agent wallet must not be blocked.
   - Amount limits come from `config/transactions.php` → `limits.float_issue`.
 - **Error Codes:** 403 (Missing permission, non-admin token, or wallet blocked), 409 (Idempotency key reused with different parameters, or agent not approved), 422 (Validation error, reused external reference, or self-issuance).
+
+---
+
+### 5.10 Approve Agent Withdrawal
+- **Method & Route:** `PATCH /api/v1/transactions/admin/withdrawals/{transaction}/approve`
+- **Access:** Admin only (`ability:admin`, `password.changed`) **and** `agents.approve_withdrawal`. Staff cannot review their own withdrawal.
+- **Request Body:** `{ "external_reference": "BEFTN-20261014-0042", "note": "optional" }` — the bank transfer reference, unique across all transactions.
+- **Behavior:** the funds were already held at request time, so only the status changes (`PENDING` → `COMPLETED`). The review is stored in `meta.review` and audited as `WITHDRAWAL_APPROVED`.
+- **Error Codes:** 403 (Missing permission, non-admin token, own withdrawal), 409 (Not a pending agent withdrawal), 422 (Missing or reused reference).
+
+---
+
+### 5.11 Reject Agent Withdrawal
+- **Method & Route:** `PATCH /api/v1/transactions/admin/withdrawals/{transaction}/reject`
+- **Access:** Same as 5.10.
+- **Request Body:** `{ "reason": "Bank account name does not match" }` (5–500 characters)
+- **Behavior:** returns the held amount to the agent wallet under a row lock and marks the transaction `REJECTED`. The refund goes through even if the wallet was blocked after the request, because the money never left the platform. A `REJECTED` row nets to zero in the ledger. Audited as `WITHDRAWAL_REJECTED` with balances before and after.
+- **Error Codes:** 403, 409 (already reviewed — a second rejection never refunds twice), 422 (Missing reason).
 
 ---
 
@@ -1239,6 +1303,15 @@ All API responses follow a consistent JSON envelope structure.
   }
   ```
 - **Error Codes:** 403 (Non-admin token), 422 (Rate must be between 0 and 1).
+- **Audit:** each update writes a `SETTINGS_UPDATED` audit entry with the before and after value of every changed key.
+
+---
+
+### 6.3 Session Idle Timeouts
+- **Routes:** `GET /api/v1/system-settings/session-timeouts` (any admin token) and `PATCH /api/v1/system-settings/session-timeouts` (`settings.manage_session_timeouts`)
+- **Request Body (PATCH):** any of `{ "admin": 15, "agent": 5, "user": 3 }` — whole minutes from 1 to 120.
+- **Response (200 OK):** `{ "success": true, "data": { "session_timeouts": { "admin": 15, "agent": 5, "user": 3 } } }`
+- **Behavior:** a token unused for longer than its panel's timeout is rejected with 401 on the next request. Defaults are 5 minutes per panel (`config/auth_settings.php` → `tokens.idle_timeout_minutes`); changes are stored in `system_settings` and take effect for every existing session immediately. Audited as `SESSION_TIMEOUTS_UPDATED`. Tokens without a panel ability (password-change) use `tokens.default_idle_timeout_minutes`.
 
 ---
 

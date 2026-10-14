@@ -29,4 +29,12 @@ class SystemSettingPolicy
     {
         return $user->can('settings.update');
     }
+
+    /**
+     * Determine whether the user can change the per-panel idle auto-logout timeouts.
+     */
+    public function manageSessionTimeouts(User $user): bool
+    {
+        return $user->can('settings.manage_session_timeouts');
+    }
 }

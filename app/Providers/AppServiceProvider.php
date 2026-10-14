@@ -18,6 +18,7 @@ use Illuminate\Validation\Rules\Password;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
 use Modules\Roles\Enums\Permission as PermissionEnum;
+use Modules\SystemSettings\Services\SessionTimeoutService;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -50,7 +51,7 @@ class AppServiceProvider extends ServiceProvider
     protected function configureTokenIdleTimeout(): void
     {
         Sanctum::authenticateAccessTokensUsing(function (PersonalAccessToken $accessToken, bool $isValid): bool {
-            $idleMinutes = (int) config('auth_settings.tokens.idle_timeout_minutes', 15);
+            $idleMinutes = app(SessionTimeoutService::class)->minutesForToken($accessToken);
 
             if (! $isValid || $idleMinutes <= 0) {
                 return $isValid;

@@ -92,13 +92,13 @@ const openCreateModal = () => {
 };
 
 const validateCreateName = (): boolean => {
-    const val = createName.value.trim();
+    const val = createName.value.trim().toUpperCase();
     if (!val) {
         createNameError.value = 'Role name is required.';
         return false;
     }
-    if (!/^[A-Z0-9_-]{2,50}$/.test(val)) {
-        createNameError.value = 'Name must be 2-50 uppercase letters, numbers, hyphens, or underscores.';
+    if (!/^[A-Z0-9_]{2,50}$/.test(val)) {
+        createNameError.value = 'Name must be 2-50 letters, numbers, or underscores.';
         return false;
     }
     createNameError.value = null;

@@ -111,9 +111,37 @@ const estimatedFee = computed(() => {
 
 const counterpartyLabel = computed(() => (current.value.counterparty === 'recipientPhone' ? 'Recipient' : 'Agent'));
 
-const onValid = handleSubmit(() => {
+interface Quote {
+    amount: number;
+    fee_amount: number;
+    fee_rate: number;
+    total: number;
+}
+
+const quote = ref<Quote | null>(null);
+const quoting = ref(false);
+// One key per confirmation, so a retry after a network error cannot charge twice
+const idempotencyKey = ref<string>('');
+
+const onValid = handleSubmit(async () => {
+    quoting.value = true;
+    quote.value = null;
+    try {
+        const res = await api.get('/transactions/quote', {
+            params: { type: activeTab.value === 'cash_out' ? 'CASH_OUT' : 'TRANSFER', amount: Number(values.amount) },
+        });
+        quote.value = res.data.data?.quote ?? null;
+    } catch {
+        quote.value = null; // Fall back to the local estimate; the server still applies the real fee.
+    } finally {
+        quoting.value = false;
+    }
+    idempotencyKey.value = crypto.randomUUID();
     confirmOpen.value = true;
 });
+
+const confirmFee = computed<number | null>(() => quote.value?.fee_amount ?? estimatedFee.value);
+const confirmTotal = computed<number>(() => quote.value?.total ?? Number(values.amount || 0) + (estimatedFee.value ?? 0));
 
 const submit = async () => {
     submitting.value = true;
@@ -121,7 +149,7 @@ const submit = async () => {
     try {
         const body: Record<string, unknown> = {
             amount: Number(values.amount),
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: idempotencyKey.value,
         };
         if (current.value.counterparty === 'recipientPhone') {
             body.recipient_phone = values.recipientPhone;
@@ -253,7 +281,7 @@ onMounted(async () => {
 
                     <button
                         type="submit"
-                        :disabled="submitting"
+                        :disabled="submitting || quoting"
                         class="w-full rounded-lg py-2.5 text-sm font-semibold text-white shadow-xs transition disabled:opacity-50"
                         :class="current.color"
                     >
@@ -284,9 +312,13 @@ onMounted(async () => {
                     <dt class="text-zinc-500">Amount</dt>
                     <dd class="font-semibold">৳{{ Number(values.amount || 0).toFixed(2) }}</dd>
                 </div>
-                <div v-if="estimatedFee !== null" class="flex justify-between">
-                    <dt class="text-zinc-500">Estimated fee</dt>
-                    <dd class="font-semibold">৳{{ estimatedFee.toFixed(2) }}</dd>
+                <div class="flex justify-between">
+                    <dt class="text-zinc-500">{{ quote ? 'Fee' : 'Estimated fee' }}</dt>
+                    <dd class="font-semibold">৳{{ (confirmFee ?? 0).toFixed(2) }}</dd>
+                </div>
+                <div class="flex justify-between border-t border-zinc-200 pt-2 text-base dark:border-zinc-700">
+                    <dt class="font-semibold text-zinc-900 dark:text-zinc-100">Total deducted</dt>
+                    <dd class="font-bold text-zinc-900 dark:text-zinc-100">৳{{ confirmTotal.toFixed(2) }}</dd>
                 </div>
             </dl>
             <p class="mt-3 text-xs text-zinc-500">This action cannot be undone once submitted.</p>

@@ -10,6 +10,9 @@ Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(
     Route::post('/{user}/assign-role', [UserController::class, 'assignRole']);
     Route::patch('/{user}/approve-agent', [UserController::class, 'approveAgent']);
     Route::patch('/{user}/suspend-agent', [UserController::class, 'suspendAgent']);
+    Route::patch('/{user}/verify-phone', [UserController::class, 'verifyPhone']);
+    Route::get('/{user}/login-activity', [UserController::class, 'loginActivity']);
+    Route::get('/{user}/audit-trail', [UserController::class, 'auditTrail']);
 });
 
 // Profile detail and update routes (Admin, Agent, User - UserPolicy enforces self or admin)

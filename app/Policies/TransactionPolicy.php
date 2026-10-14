@@ -84,4 +84,15 @@ class TransactionPolicy
     {
         return $user->can(Permission::AgentsIssueFloat->value);
     }
+
+    /**
+     * Determine whether the user can approve or reject a pending agent bank withdrawal.
+     *
+     * An agent who also holds staff access can never review their own withdrawal.
+     */
+    public function reviewWithdrawal(User $user, Transaction $transaction): bool
+    {
+        return $user->can(Permission::AgentsApproveWithdrawal->value)
+            && $transaction->agent_id !== $user->id;
+    }
 }

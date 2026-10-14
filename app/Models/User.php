@@ -139,6 +139,11 @@ class User extends Authenticatable
         return $this->hasMany(AuthProvider::class);
     }
 
+    public function loginActivities(): HasMany
+    {
+        return $this->hasMany(LoginActivity::class);
+    }
+
     /**
      * In-memory memoized role names for the current instance.
      *

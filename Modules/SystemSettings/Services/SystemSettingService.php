@@ -2,9 +2,11 @@
 
 namespace Modules\SystemSettings\Services;
 
+use App\Models\AuditLog;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class SystemSettingService
 {
@@ -44,18 +46,41 @@ class SystemSettingService
     /**
      * Update multiple system settings, recording the updating user and invalidating cache.
      *
+     * Each change is audited with its previous and new value unless the caller writes its own
+     * audit entry (pass $auditAction = null).
+     *
      * @param  array<string, float|int|string>  $settings
      * @return array<string, float>
      */
-    public function updateSettings(array $settings, User $user): array
+    public function updateSettings(array $settings, User $user, ?string $auditAction = 'SETTINGS_UPDATED'): array
     {
-        foreach ($settings as $key => $value) {
-            $setting = SystemSetting::firstOrNew(['key' => $key]);
-            $setting->value = (float) $value;
-            $setting->updated_by = $user->id;
-            $setting->save();
-        }
+        DB::transaction(function () use ($settings, $user, $auditAction): void {
+            $changes = [];
 
+            foreach ($settings as $key => $value) {
+                $setting = SystemSetting::where('key', $key)->lockForUpdate()->first() ?? new SystemSetting(['key' => $key]);
+                $changes[$key] = [
+                    'before' => $setting->exists ? (float) $setting->value : null,
+                    'after' => (float) $value,
+                ];
+
+                $setting->value = (float) $value;
+                $setting->updated_by = $user->id;
+                $setting->save();
+            }
+
+            if ($auditAction !== null) {
+                AuditLog::create([
+                    'actor_id' => $user->id,
+                    'action' => $auditAction,
+                    'auditable_type' => null,
+                    'auditable_id' => null,
+                    'metadata' => ['changes' => $changes],
+                ]);
+            }
+        });
+
+        // Forget after commit so a concurrent read cannot re-cache the old values mid-transaction
         Cache::forget(self::CACHE_KEY);
 
         return $this->getSettings();

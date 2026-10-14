@@ -57,6 +57,7 @@ class WalletController extends Controller
         $validated = $request->validate([
             'is_blocked' => ['sometimes', Rule::in(['true', 'false', '1', '0'])],
             'user_id' => ['sometimes', 'integer', 'exists:users,id'],
+            'search' => ['sometimes', 'string', 'max:100'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);

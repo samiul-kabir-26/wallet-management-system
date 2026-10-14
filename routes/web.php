@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 // Public marketing & auth entry routes
 Route::inertia('/', 'Welcome')->name('home');
@@ -29,6 +30,10 @@ Route::prefix('agent')->name('agent.')->group(function (): void {
 Route::prefix('admin')->name('admin.')->group(function (): void {
     Route::inertia('/dashboard', 'Admin/Dashboard')->name('dashboard');
     Route::inertia('/users', 'Admin/Users')->name('users');
+    Route::get('/users/{user}', fn (int $user) => Inertia::render('Admin/UserProfile', ['userId' => $user]))
+        ->whereNumber('user')
+        ->name('users.show');
+    Route::inertia('/withdrawals', 'Admin/Withdrawals')->name('withdrawals');
     Route::inertia('/roles', 'Admin/Roles')->name('roles');
     Route::inertia('/agents', 'Admin/Agents')->name('agents');
     Route::inertia('/wallets', 'Admin/Wallets')->name('wallets');

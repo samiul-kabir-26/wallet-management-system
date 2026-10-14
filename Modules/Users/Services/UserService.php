@@ -14,6 +14,7 @@ use Modules\Roles\Services\RoleService;
 use Modules\SystemSettings\Services\SystemSettingService;
 use Modules\Users\Exceptions\AgentNotApprovedException;
 use Modules\Users\Exceptions\AgentNotPendingException;
+use Modules\Users\Exceptions\UserHasNoPhoneException;
 use Modules\Users\Exceptions\UserInactiveException;
 use Modules\Users\Exceptions\UserNotAnAgentException;
 use Modules\Users\Exceptions\UserRequiresPasswordForStaffRoleException;
@@ -267,6 +268,42 @@ class UserService
             ]);
 
             return $agentUser->refresh()->load('agentInfo');
+        });
+    }
+
+    /**
+     * Mark a user's phone number as verified after staff confirmed ownership out of band.
+     *
+     * Idempotent: an already-verified account is returned unchanged and no new audit entry is written.
+     *
+     * @throws UserHasNoPhoneException
+     */
+    public function verifyPhone(User $user, User $actor): User
+    {
+        return DB::transaction(function () use ($user, $actor): User {
+            $lockedUser = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+
+            if ($lockedUser->phone_number === null) {
+                throw new UserHasNoPhoneException;
+            }
+
+            if ($lockedUser->is_verified) {
+                return $lockedUser;
+            }
+
+            $lockedUser->forceFill(['is_verified' => true])->save();
+
+            AuditLog::create([
+                'actor_id' => $actor->id,
+                'action' => 'PHONE_VERIFIED',
+                'auditable_type' => $lockedUser->getMorphClass(),
+                'auditable_id' => $lockedUser->id,
+                'metadata' => [
+                    'phone_number' => $lockedUser->phone_number,
+                ],
+            ]);
+
+            return $lockedUser;
         });
     }
 }

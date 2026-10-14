@@ -11,6 +11,7 @@ import { useToastStore } from '@/stores/toast';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import Skeleton from '@/components/Skeleton.vue';
 import TextField from '@/components/Forms/TextField.vue';
+import SessionTimeoutForm from '@/components/Forms/SessionTimeoutForm.vue';
 
 useAuthGuard('ADMIN');
 
@@ -126,6 +127,8 @@ onMounted(() => {
                     </div>
                 </form>
             </div>
+
+            <SessionTimeoutForm />
         </div>
     </AdminLayout>
 </template>

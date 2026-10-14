@@ -56,7 +56,7 @@ test('password-change token gets the short configured lifetime', function () {
 });
 
 test('a token past its absolute expiry is rejected', function () {
-    config(['auth_settings.tokens.lifetime_minutes.user' => 60, 'auth_settings.tokens.idle_timeout_minutes' => 0]);
+    config(['auth_settings.tokens.lifetime_minutes.user' => 60, 'auth_settings.tokens.idle_timeout_minutes.user' => 0]);
 
     $user = createPinUserForTokenLifetime();
     $token = $this->postJson('/api/v1/auth/user/login', [
@@ -71,7 +71,7 @@ test('a token past its absolute expiry is rejected', function () {
 });
 
 test('a token idle longer than the timeout is rejected, while regular use keeps it alive', function () {
-    config(['auth_settings.tokens.idle_timeout_minutes' => 15]);
+    config(['auth_settings.tokens.idle_timeout_minutes.user' => 15]);
 
     $user = createPinUserForTokenLifetime();
     $token = $user->createToken('user-login', ['user'], now()->addHours(12))->plainTextToken;
@@ -91,6 +91,7 @@ test('a token idle longer than the timeout is rejected, while regular use keeps 
 
 test('refreshing rotates the token without extending its absolute expiry', function () {
     $this->freezeSecond();
+    config(['auth_settings.tokens.idle_timeout_minutes.user' => 15]);
 
     $user = createPinUserForTokenLifetime();
     $originalExpiry = now()->addMinutes(90);

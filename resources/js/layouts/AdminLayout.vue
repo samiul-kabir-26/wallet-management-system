@@ -4,6 +4,7 @@ import { Link } from '@inertiajs/vue3';
 import { useAuthStore } from '@/stores/auth';
 import Badge from '@/components/Badge.vue';
 import ToastContainer from '@/components/ToastContainer.vue';
+import SessionGuard from '@/components/SessionGuard.vue';
 import type { PermissionName } from '@/types/permissions';
 
 const authStore = useAuthStore();
@@ -21,6 +22,7 @@ const navItems: NavItem[] = [
     { name: 'Users & Staff', href: '/admin/users', icon: '👥', permission: 'users.view_any' },
     { name: 'Roles & Permissions', href: '/admin/roles', icon: '🔑', permission: 'roles.view' },
     { name: 'Agent Approvals', href: '/admin/agents', icon: '🤝', permission: 'agents.approve' },
+    { name: 'Agent Withdrawals', href: '/admin/withdrawals', icon: '🏦', permission: 'agents.approve_withdrawal' },
     { name: 'Wallets & Freeze', href: '/admin/wallets', icon: '💳', permission: 'wallets.view_any' },
     { name: 'Platform Transactions', href: '/admin/transactions', icon: '📜', permission: 'transactions.view_any' },
     { name: 'System Settings', href: '/admin/settings', icon: '⚙️' },
@@ -30,14 +32,17 @@ const visibleNavItems = computed(() =>
     navItems.filter((item) => !item.permission || authStore.can(item.permission)),
 );
 
-const handleLogout = async () => {
-    await authStore.logout();
+const sessionGuard = ref<InstanceType<typeof SessionGuard> | null>(null);
+
+const handleLogout = () => {
+    sessionGuard.value?.confirmLogout();
 };
 </script>
 
 <template>
     <div class="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex">
         <ToastContainer />
+        <SessionGuard ref="sessionGuard" />
         <!-- Desktop Sidebar -->
         <aside class="hidden lg:flex lg:w-64 lg:flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
             <div class="flex h-16 items-center gap-2 px-6 border-b border-zinc-200 dark:border-zinc-800">

@@ -101,4 +101,20 @@ class UserPolicy
     {
         return $user->tokenCan('admin') && $user->can('users.grant_admin_access') && $user->id !== $model->id;
     }
+
+    /**
+     * Determine whether the user can mark another account's phone number as verified.
+     */
+    public function verifyPhone(User $user, User $model): bool
+    {
+        return $user->can('users.verify_phone') && $user->id !== $model->id;
+    }
+
+    /**
+     * Determine whether the user can view another account's login records and audit trail.
+     */
+    public function viewActivity(User $user, User $model): bool
+    {
+        return $user->can('users.view_activity');
+    }
 }

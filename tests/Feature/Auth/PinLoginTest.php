@@ -83,7 +83,7 @@ test('user without USER role is rejected on user login route with 403', function
     $response->assertStatus(403)
         ->assertExactJson([
             'success' => false,
-            'message' => 'You do not have permission to access this portal.',
+            'message' => 'This number is registered as an agent account. Please sign in through the Agent portal; a personal wallet needs a separate number.',
             'errors' => [],
         ]);
 });
@@ -101,7 +101,7 @@ test('agent without approved agent info is rejected on agent login route with 40
     $responseNoInfo->assertStatus(403)
         ->assertExactJson([
             'success' => false,
-            'message' => 'You do not have permission to access this portal.',
+            'message' => 'Your agent account is awaiting approval.',
             'errors' => [],
         ]);
 
@@ -119,7 +119,7 @@ test('agent without approved agent info is rejected on agent login route with 40
     $responsePending->assertStatus(403)
         ->assertExactJson([
             'success' => false,
-            'message' => 'You do not have permission to access this portal.',
+            'message' => 'Your agent account is awaiting approval.',
             'errors' => [],
         ]);
 });

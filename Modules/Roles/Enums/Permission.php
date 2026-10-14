@@ -10,10 +10,13 @@ enum Permission: string
     case UsersUpdate = 'users.update';
     case UsersAssignRole = 'users.assign_role';
     case UsersGrantAdminAccess = 'users.grant_admin_access';
+    case UsersVerifyPhone = 'users.verify_phone';
+    case UsersViewActivity = 'users.view_activity';
 
     case AgentsApprove = 'agents.approve';
     case AgentsSuspend = 'agents.suspend';
     case AgentsIssueFloat = 'agents.issue_float';
+    case AgentsApproveWithdrawal = 'agents.approve_withdrawal';
 
     case WalletsViewAny = 'wallets.view_any';
     case WalletsBlock = 'wallets.block';
@@ -22,6 +25,7 @@ enum Permission: string
     case TransactionsViewAny = 'transactions.view_any';
 
     case SettingsUpdate = 'settings.update';
+    case SettingsManageSessionTimeouts = 'settings.manage_session_timeouts';
 
     case PinResetInitiate = 'pin_reset.initiate';
 
@@ -40,14 +44,18 @@ enum Permission: string
             self::UsersUpdate => 'Update user profile details',
             self::UsersAssignRole => 'Assign additional roles to users',
             self::UsersGrantAdminAccess => 'Grant administrative access invite to users',
+            self::UsersVerifyPhone => 'Mark a user phone number as verified after an identity check',
+            self::UsersViewActivity => 'View user activity: login records and audit trail',
             self::AgentsApprove => 'Approve pending agent applications',
             self::AgentsSuspend => 'Suspend active agents',
             self::AgentsIssueFloat => 'Issue e-money float to agents against external bank deposit',
+            self::AgentsApproveWithdrawal => 'Approve or reject pending agent bank withdrawals',
             self::WalletsViewAny => 'View any wallet in the system',
             self::WalletsBlock => 'Block active wallets',
             self::WalletsUnblock => 'Unblock suspended or blocked wallets',
             self::TransactionsViewAny => 'View all system transactions and sensitive fields',
             self::SettingsUpdate => 'Update global system settings and transaction caps',
+            self::SettingsManageSessionTimeouts => 'Change the idle auto-logout timeout for each panel',
             self::PinResetInitiate => 'Initiate staff-assisted customer PIN reset',
             self::RolesView => 'View administrative roles and permission catalog',
             self::RolesManage => 'Create, edit, delete custom roles and sync permissions',
@@ -65,11 +73,14 @@ enum Permission: string
             self::UsersCreate,
             self::UsersUpdate,
             self::UsersAssignRole,
-            self::UsersGrantAdminAccess => 'Users',
+            self::UsersGrantAdminAccess,
+            self::UsersVerifyPhone,
+            self::UsersViewActivity => 'Users',
 
             self::AgentsApprove,
             self::AgentsSuspend,
-            self::AgentsIssueFloat => 'Agents',
+            self::AgentsIssueFloat,
+            self::AgentsApproveWithdrawal => 'Agents',
 
             self::WalletsViewAny,
             self::WalletsBlock,
@@ -77,7 +88,8 @@ enum Permission: string
 
             self::TransactionsViewAny => 'Transactions',
 
-            self::SettingsUpdate => 'Settings',
+            self::SettingsUpdate,
+            self::SettingsManageSessionTimeouts => 'Settings',
 
             self::PinResetInitiate => 'Auth',
 

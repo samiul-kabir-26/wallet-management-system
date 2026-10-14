@@ -32,7 +32,7 @@ function createAgentWithWallet(float $balance = 1000.00, string $status = 'APPRO
     return $agent;
 }
 
-test('approved agent can successfully withdraw funds from their wallet', function () {
+test('approved agent withdrawal request holds the funds and stays pending', function () {
     $agent = createAgentWithWallet(1000.00);
 
     Sanctum::actingAs($agent, ['agent']);
@@ -55,7 +55,7 @@ test('approved agent can successfully withdraw funds from their wallet', functio
         ->assertJsonPath('data.transaction.agent_id', $agent->id)
         ->assertJsonPath('data.transaction.recipient_id', null)
         ->assertJsonPath('data.transaction.initiated_by', $agent->id)
-        ->assertJsonPath('data.transaction.status', 'COMPLETED')
+        ->assertJsonPath('data.transaction.status', 'PENDING')
         ->assertJsonPath('data.transaction.sender_wallet_balance_after', fn ($val) => (float) $val === 600.0)
         ->assertJsonMissingPath('data.transaction.recipient_wallet_balance_after');
 

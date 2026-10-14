@@ -82,8 +82,33 @@ class TransactionResource extends JsonResource
                     : null
             ),
             'meta' => $this->resource->meta,
+            'parties' => $this->when($isStaff, fn (): array => [
+                'sender' => $this->partySummary('sender'),
+                'recipient' => $this->partySummary('recipient'),
+                'agent' => $this->partySummary('agent'),
+            ]),
             'created_at' => $this->resource->created_at,
             'updated_at' => $this->resource->updated_at,
+        ];
+    }
+
+    /**
+     * Name and phone of one party, for staff views; null when that party is absent or not eager loaded.
+     *
+     * @return array{id: int, name: string, phone_number: string|null}|null
+     */
+    private function partySummary(string $relation): ?array
+    {
+        if (! $this->resource->relationLoaded($relation)) {
+            return null;
+        }
+
+        $party = $this->resource->getRelation($relation);
+
+        return $party === null ? null : [
+            'id' => $party->id,
+            'name' => $party->name,
+            'phone_number' => $party->phone_number,
         ];
     }
 }

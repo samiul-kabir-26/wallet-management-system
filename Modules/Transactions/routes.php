@@ -7,6 +7,8 @@ use Modules\Transactions\Http\Controllers\TransactionController;
 Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(function (): void {
     Route::get('/admin/all', [TransactionController::class, 'adminAll']);
     Route::post('/admin/float-issue', [TransactionController::class, 'adminIssueFloat']);
+    Route::patch('/admin/withdrawals/{transaction}/approve', [TransactionController::class, 'approveWithdrawal'])->whereNumber('transaction');
+    Route::patch('/admin/withdrawals/{transaction}/reject', [TransactionController::class, 'rejectWithdrawal'])->whereNumber('transaction');
 });
 
 // Common authenticated query endpoints: history
@@ -17,6 +19,7 @@ Route::middleware(['auth:sanctum', 'ability:admin,agent,user', 'password.changed
 // USER endpoints: caps, top-up, cash-out, transfer
 Route::middleware(['auth:sanctum', 'ability:user', 'password.changed'])->group(function (): void {
     Route::get('/caps', [TransactionController::class, 'myCaps']);
+    Route::get('/quote', [TransactionController::class, 'quote']);
     Route::post('/top-up', [TransactionController::class, 'topUp']);
     Route::post('/cash-out', [TransactionController::class, 'cashOut']);
     Route::post('/transfer', [TransactionController::class, 'transfer']);

@@ -4,6 +4,7 @@ import { Link } from '@inertiajs/vue3';
 import { useAuthStore } from '@/stores/auth';
 import Badge from '@/components/Badge.vue';
 import ToastContainer from '@/components/ToastContainer.vue';
+import SessionGuard from '@/components/SessionGuard.vue';
 
 const authStore = useAuthStore();
 const mobileMenuOpen = ref(false);
@@ -15,14 +16,17 @@ const navItems = [
     { name: 'Bank Withdrawal', href: '/agent/withdrawal' },
 ];
 
-const handleLogout = async () => {
-    await authStore.logout();
+const sessionGuard = ref<InstanceType<typeof SessionGuard> | null>(null);
+
+const handleLogout = () => {
+    sessionGuard.value?.confirmLogout();
 };
 </script>
 
 <template>
     <div class="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col">
         <ToastContainer />
+        <SessionGuard ref="sessionGuard" />
         <!-- Top Navbar -->
         <header class="sticky top-0 z-40 border-b border-zinc-200 bg-white/80 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/80">
             <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">

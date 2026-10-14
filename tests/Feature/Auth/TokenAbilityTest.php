@@ -174,7 +174,7 @@ test('agent whose agent_info status is PENDING cannot log in on agent route', fu
     $response->assertStatus(403)
         ->assertExactJson([
             'success' => false,
-            'message' => 'You do not have permission to access this portal.',
+            'message' => 'Your agent account is awaiting approval.',
             'errors' => [],
         ]);
 });

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { Head } from '@inertiajs/vue3';
+import { onMounted, ref, watch } from 'vue';
+import { Head, Link } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { useAuthStore } from '@/stores/auth';
 import { required } from '@/composables/validators';
@@ -35,12 +35,16 @@ const validateReason = (): boolean => {
     return result === true;
 };
 
+const search = ref('');
+const statusFilter = ref<'' | 'true' | 'false'>('');
+
 const fetchWallets = async (page = 1) => {
     loading.value = true;
     try {
-        const res = await api.get('/wallets/admin/all', {
-            params: { page, per_page: 15 },
-        });
+        const params: Record<string, string | number> = { page, per_page: 15 };
+        if (search.value.trim()) params.search = search.value.trim();
+        if (statusFilter.value) params.is_blocked = statusFilter.value;
+        const res = await api.get('/wallets/admin/all', { params });
         wallets.value = res.data.data?.items ?? [];
         pagination.value = res.data.data?.pagination ?? null;
     } catch (err: unknown) {
@@ -101,6 +105,13 @@ const handleUnblock = async () => {
     }
 };
 
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
+watch(search, () => {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => fetchWallets(1), 350);
+});
+watch(statusFilter, () => fetchWallets(1));
+
 onMounted(() => {
     fetchWallets();
 });
@@ -122,14 +133,37 @@ onMounted(() => {
 
             <!-- Wallets Table -->
             <div class="rounded-2xl border border-zinc-200 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
+                <div class="flex flex-col gap-3 border-b border-zinc-100 p-4 sm:flex-row dark:border-zinc-800">
+                    <input
+                        v-model="search"
+                        type="search"
+                        placeholder="Search owner name, phone or email"
+                        class="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                    <select
+                        v-model="statusFilter"
+                        aria-label="Wallet status"
+                        class="rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    >
+                        <option value="">All wallets</option>
+                        <option value="false">Active only</option>
+                        <option value="true">Frozen only</option>
+                    </select>
+                </div>
+
                 <div v-if="loading && wallets.length === 0" class="p-6"><Skeleton :rows="6" height="h-6" /></div>
+
+                <div v-else-if="wallets.length === 0" class="p-12 text-center text-sm text-zinc-500">
+                    No wallets match this search.
+                </div>
 
                 <div v-else class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-zinc-50 text-xs font-semibold uppercase text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                             <tr>
                                 <th class="px-6 py-3.5">Wallet ID</th>
-                                <th class="px-6 py-3.5">User</th>
+                                <th class="px-6 py-3.5">Owner</th>
+                                <th class="px-6 py-3.5">Type</th>
                                 <th class="px-6 py-3.5">Balance</th>
                                 <th class="px-6 py-3.5">Status</th>
                                 <th class="px-6 py-3.5 text-right">Actions</th>
@@ -141,12 +175,31 @@ onMounted(() => {
                                     #{{ w.id }}
                                 </td>
                                 <td class="px-6 py-4">
-                                    <div class="font-medium text-zinc-900 dark:text-zinc-100">
-                                        {{ w.user?.name ?? `User #${w.user_id}` }}
+                                    <div class="flex items-center gap-2">
+                                        <div>
+                                            <div class="font-medium text-zinc-900 dark:text-zinc-100">
+                                                {{ w.owner?.name ?? `User #${w.user_id}` }}
+                                            </div>
+                                            <div class="text-xs text-zinc-500">
+                                                {{ w.owner?.phone_number ?? w.owner?.email ?? '' }} · ID #{{ w.user_id }}
+                                            </div>
+                                        </div>
+                                        <Link
+                                            v-if="authStore.can('users.view')"
+                                            :href="`/admin/users/${w.user_id}`"
+                                            class="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-indigo-600 dark:hover:bg-zinc-800 dark:hover:text-indigo-400"
+                                            :title="`View ${w.owner?.name ?? 'user'}'s profile and activity`"
+                                            :aria-label="`View ${w.owner?.name ?? 'user'}'s profile and activity`"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4" aria-hidden="true">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.04 12.32a1 1 0 0 1 0-.64C3.42 7.51 7.36 4.5 12 4.5s8.57 3.01 9.96 7.18a1 1 0 0 1 0 .64C20.58 16.49 16.64 19.5 12 19.5s-8.57-3.01-9.96-7.18Z" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                            </svg>
+                                        </Link>
                                     </div>
-                                    <div class="text-xs text-zinc-500">
-                                        {{ w.user?.phone_number ?? '' }}
-                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <Badge :variant="w.kind === 'AGENT' ? 'warning' : 'neutral'">{{ w.kind ?? 'USER' }}</Badge>
                                 </td>
                                 <td class="px-6 py-4 font-semibold text-zinc-900 dark:text-zinc-100">
                                     ৳{{ Number(w.balance).toFixed(2) }} {{ w.currency }}
