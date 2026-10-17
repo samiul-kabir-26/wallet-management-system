@@ -1,6 +1,6 @@
 import { onMounted, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
-import { useAuthStore } from '@/stores/auth';
+import { panelFromPath, useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/stores/toast';
 import type { PermissionName } from '@/types/permissions';
 
@@ -11,8 +11,17 @@ export function useAuthGuard(requiredRole?: RequiredRole, requiredPermission?: P
     const isReady = ref(false);
 
     onMounted(() => {
+        // Each panel has its own session; make sure this tab uses the one for the page it shows
+        authStore.usePanel(panelFromPath());
+
         if (!authStore.isAuthenticated) {
             router.visit('/login');
+            return;
+        }
+
+        // A temporary staff password must be replaced before any other admin page can load data
+        if (requiredRole === 'ADMIN' && authStore.mustChangePassword && window.location.pathname !== '/admin/account') {
+            router.visit('/admin/account');
             return;
         }
 

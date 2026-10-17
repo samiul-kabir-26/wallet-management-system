@@ -3,6 +3,7 @@
 namespace Modules\Authentication\Services;
 
 use App\Models\OtpToken;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Modules\Authentication\Exceptions\InvalidOtpException;
 
@@ -47,11 +48,12 @@ class OtpService
      * Persist an OTP token for a specific user and purpose.
      */
     public function saveOtp(
-        int $userId,
+        ?int $userId,
         string $code,
         string $purpose,
         ?int $validForMinutes = null,
         ?int $maxAttempts = null,
+        ?string $target = null,
     ): OtpToken {
         $validForMinutes ??= (int) config('auth_settings.otp.expiry_minutes', self::DEFAULT_EXPIRY_MINUTES);
         $maxAttempts ??= (int) config('auth_settings.otp.max_attempts', 5);
@@ -60,6 +62,7 @@ class OtpService
             'user_id' => $userId,
             'otp_code' => $code,
             'purpose' => $purpose,
+            'target' => $target,
             'expires_at' => Carbon::now()->addMinutes($validForMinutes),
             'max_attempts' => $maxAttempts,
         ]);
@@ -67,18 +70,21 @@ class OtpService
 
     /**
      * Generate and save a new OTP, automatically invalidating any prior active tokens.
+     *
+     * $target records what the code was sent to when that is not the account's own contact (e.g. a new phone number).
      */
     public function createOtp(
         int $userId,
         string $purpose,
         ?int $validForMinutes = null,
         ?int $maxAttempts = null,
+        ?string $target = null,
     ): OtpToken {
         $this->invalidateActiveOtps($userId, $purpose);
 
         $code = $this->generateOtp();
 
-        return $this->saveOtp($userId, $code, $purpose, $validForMinutes, $maxAttempts);
+        return $this->saveOtp($userId, $code, $purpose, $validForMinutes, $maxAttempts, $target);
     }
 
     /**
@@ -106,12 +112,51 @@ class OtpService
      */
     public function verify(int $userId, string $purpose, string $code): OtpToken
     {
-        // 1. Locate the latest active (unused) OTP for this user and purpose
-        $otpToken = OtpToken::where('user_id', $userId)
+        return $this->verifyLatest(
+            OtpToken::where('user_id', $userId)->where('purpose', $purpose),
+            $code,
+        );
+    }
+
+    /**
+     * Issue a code for a destination that has no account yet (e.g. a phone number signing up).
+     * Earlier unused codes for the same destination and purpose are invalidated.
+     */
+    public function createForTarget(string $purpose, string $target): OtpToken
+    {
+        OtpToken::whereNull('user_id')
             ->where('purpose', $purpose)
+            ->where('target', $target)
             ->whereNull('used_at')
-            ->latest('id')
-            ->first();
+            ->update(['used_at' => Carbon::now()]);
+
+        return $this->saveOtp(null, $this->generateOtp(), $purpose, target: $target);
+    }
+
+    /**
+     * Verify a code issued by createForTarget() for that exact destination.
+     *
+     * @throws InvalidOtpException
+     */
+    public function verifyForTarget(string $purpose, string $target, string $code): OtpToken
+    {
+        return $this->verifyLatest(
+            OtpToken::whereNull('user_id')->where('purpose', $purpose)->where('target', $target),
+            $code,
+        );
+    }
+
+    /**
+     * Check the latest unused code matching the query: lockout, expiry, then a timing-safe comparison.
+     *
+     * @param  Builder<OtpToken>  $query
+     *
+     * @throws InvalidOtpException
+     */
+    private function verifyLatest(Builder $query, string $code): OtpToken
+    {
+        // 1. Locate the latest active (unused) OTP
+        $otpToken = $query->whereNull('used_at')->latest('id')->first();
 
         if (! $otpToken) {
             throw new InvalidOtpException('Invalid or expired OTP.');

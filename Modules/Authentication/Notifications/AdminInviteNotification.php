@@ -39,6 +39,8 @@ class AdminInviteNotification extends Notification
             ->line('You have been granted access to the admin panel.')
             ->line("Temporary password: {$this->temporaryPassword}")
             ->action('Accept invitation', $this->url)
-            ->line("This invitation expires in {$this->expiresInHours} hour(s). You must change the password on first login.");
+            ->line('The button asks for the temporary password and then lets you choose your own.')
+            ->line("Or sign in through the Staff / Admin tab with this email address and the temporary password; you will be asked to choose a new password first. The invitation expires in {$this->expiresInHours} hour(s).")
+            ->line('Your customer wallet, if you have one, keeps working with your PIN as before.');
     }
 }

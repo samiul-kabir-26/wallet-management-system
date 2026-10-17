@@ -20,14 +20,13 @@ function createActorWithRoleForUpdate(string $roleName): User
     return $user;
 }
 
-test('USER can update their own name, address, and image', function () {
+test('USER can update their own name and address', function () {
     $user = createActorWithRoleForUpdate('USER');
     Sanctum::actingAs($user, ['user']);
 
     $response = $this->patchJson("/api/v1/users/{$user->id}", [
         'name' => 'Updated Name',
         'address' => '456 Updated St, Chittagong',
-        'image' => 'profile_avatar.png',
     ]);
 
     $response->assertOk()
@@ -38,8 +37,17 @@ test('USER can update their own name, address, and image', function () {
 
     $user->refresh();
     expect($user->name)->toBe('Updated Name')
-        ->and($user->address)->toBe('456 Updated St, Chittagong')
-        ->and($user->image)->toBe('profile_avatar.png');
+        ->and($user->address)->toBe('456 Updated St, Chittagong');
+});
+
+test('an arbitrary image string is rejected; avatars must be uploaded', function () {
+    $user = createActorWithRoleForUpdate('USER');
+    Sanctum::actingAs($user, ['user']);
+
+    $this->patchJson("/api/v1/users/{$user->id}", ['image' => 'https://tracker.example/pixel.png'])
+        ->assertJsonValidationErrors('image');
+
+    expect($user->refresh()->image)->toBeNull();
 });
 
 test('USER cannot update another user profile', function () {

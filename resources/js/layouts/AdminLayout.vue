@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth';
 import Badge from '@/components/Badge.vue';
 import ToastContainer from '@/components/ToastContainer.vue';
 import SessionGuard from '@/components/SessionGuard.vue';
+import UserAvatar from '@/components/Account/UserAvatar.vue';
 import type { PermissionName } from '@/types/permissions';
 
 const authStore = useAuthStore();
@@ -26,10 +27,14 @@ const navItems: NavItem[] = [
     { name: 'Wallets & Freeze', href: '/admin/wallets', icon: '💳', permission: 'wallets.view_any' },
     { name: 'Platform Transactions', href: '/admin/transactions', icon: '📜', permission: 'transactions.view_any' },
     { name: 'System Settings', href: '/admin/settings', icon: '⚙️' },
+    { name: 'My Account', href: '/admin/account', icon: '👤' },
 ];
 
+// While a temporary password is in place the API refuses every other page, so only offer the account page
 const visibleNavItems = computed(() =>
-    navItems.filter((item) => !item.permission || authStore.can(item.permission)),
+    authStore.mustChangePassword
+        ? navItems.filter((item) => item.href === '/admin/account')
+        : navItems.filter((item) => !item.permission || authStore.can(item.permission)),
 );
 
 const sessionGuard = ref<InstanceType<typeof SessionGuard> | null>(null);
@@ -68,15 +73,18 @@ const handleLogout = () => {
             </nav>
 
             <div class="p-4 border-t border-zinc-200 dark:border-zinc-800">
-                <div class="flex items-center justify-between">
-                    <div class="flex flex-col">
-                        <span class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                            {{ authStore.user?.name ?? 'Admin' }}
-                        </span>
-                        <span class="text-[10px] text-zinc-400 truncate max-w-[120px]">
-                            {{ authStore.user?.email ?? authStore.user?.phone_number ?? '' }}
-                        </span>
-                    </div>
+                <div class="flex items-center justify-between gap-2">
+                    <Link href="/admin/account" class="flex min-w-0 items-center gap-2 rounded-lg p-1 -m-1 transition hover:bg-zinc-100 dark:hover:bg-zinc-800" title="My Account">
+                        <UserAvatar :name="authStore.user?.name" :src="authStore.user?.avatar_url" />
+                        <div class="flex min-w-0 flex-col">
+                            <span class="truncate text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                                {{ authStore.user?.name ?? 'Admin' }}
+                            </span>
+                            <span class="text-[10px] text-zinc-400 truncate max-w-[110px]">
+                                {{ authStore.user?.email ?? authStore.user?.phone_number ?? '' }}
+                            </span>
+                        </div>
+                    </Link>
                     <Badge variant="danger">{{ authStore.roles[0] ?? 'ADMIN' }}</Badge>
                 </div>
             </div>

@@ -31,6 +31,7 @@ class UserResource extends JsonResource
             'email' => $this->resource->email,
             'phone_number' => $this->resource->phone_number,
             'address' => $this->resource->address,
+            'avatar_url' => $this->resource->avatarUrl(),
             'roles' => $this->whenLoaded('roles', fn () => $this->resource->roles->pluck('name')),
             'is_active' => $this->resource->is_active,
             'is_verified' => (bool) $this->resource->is_verified,

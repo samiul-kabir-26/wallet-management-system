@@ -13,16 +13,20 @@ use Modules\Authentication\Exceptions\AccountInactiveException;
 use Modules\Authentication\Exceptions\InsufficientRoleException;
 use Modules\Authentication\Exceptions\InvalidCredentialsException;
 use Modules\Authentication\Exceptions\InvalidOtpException;
+use Modules\Authentication\Exceptions\InvalidPinException;
+use Modules\Authentication\Exceptions\PinLockedException;
 use Modules\Authentication\Exceptions\PinResetLinkInvalidException;
 use Modules\Authentication\Exceptions\UnverifiedAccountException;
 use Modules\Authentication\Exceptions\UserNotFoundException;
 use Modules\Authentication\Http\Requests\AcceptInviteRequest;
 use Modules\Authentication\Http\Requests\AdminLoginRequest;
 use Modules\Authentication\Http\Requests\ChangePasswordRequest;
+use Modules\Authentication\Http\Requests\ChangePinRequest;
 use Modules\Authentication\Http\Requests\ForgotPasswordRequest;
 use Modules\Authentication\Http\Requests\GrantAdminAccessRequest;
 use Modules\Authentication\Http\Requests\InitiatePinResetRequest;
 use Modules\Authentication\Http\Requests\PinLoginRequest;
+use Modules\Authentication\Http\Requests\RegisterOtpRequest;
 use Modules\Authentication\Http\Requests\RegisterRequest;
 use Modules\Authentication\Http\Requests\ResetPasswordRequest;
 use Modules\Authentication\Http\Requests\ResetPinRequest;
@@ -33,6 +37,7 @@ use Modules\Authentication\Services\AccountInviteService;
 use Modules\Authentication\Services\AdminAuthService;
 use Modules\Authentication\Services\LoginActivityRecorder;
 use Modules\Authentication\Services\PinAuthService;
+use Modules\Authentication\Services\PinChangeService;
 use Modules\Authentication\Services\PinResetService;
 use Modules\Authentication\Services\RegistrationService;
 use Modules\Authentication\Services\SetPinService;
@@ -49,6 +54,7 @@ class AuthController extends Controller
         private PinResetService $pinResetService,
         private TokenIssuer $tokenIssuer,
         private LoginActivityRecorder $loginActivity,
+        private PinChangeService $pinChangeService,
     ) {}
 
     /**
@@ -205,6 +211,31 @@ class AuthController extends Controller
     }
 
     /**
+     * Change the PIN of a signed-in agent or customer. Other sessions are signed out; this one stays.
+     *
+     * @throws AccountInactiveException
+     * @throws InvalidPinException
+     * @throws PinLockedException
+     */
+    public function changePin(ChangePinRequest $request): JsonResponse
+    {
+        $user = $request->user();
+        $currentToken = $user->currentAccessToken();
+
+        $this->pinChangeService->changePin(
+            user: $user,
+            currentPin: $request->string('current_pin')->toString(),
+            newPin: $request->string('new_pin')->toString(),
+            keepTokenId: $currentToken instanceof PersonalAccessToken ? $currentToken->id : null,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'PIN changed. Other devices have been signed out.',
+        ]);
+    }
+
+    /**
      * Accept an invitation with the temporary password and issue a restricted password-change token.
      *
      * @throws InvalidCredentialsException
@@ -284,9 +315,26 @@ class AuthController extends Controller
     }
 
     /**
-     * Register a new user or agent.
+     * Text a signup code to a phone number that has no account yet (step 1 of public registration).
+     */
+    public function requestRegisterOtp(RegisterOtpRequest $request): JsonResponse
+    {
+        $this->registrationService->requestOtp($request->string('phone_number')->toString());
+
+        return response()->json([
+            'success' => true,
+            'message' => 'We sent a 6-digit code to your phone number.',
+            'data' => [
+                'expires_in_minutes' => (int) config('auth_settings.otp.expiry_minutes', 5),
+            ],
+        ]);
+    }
+
+    /**
+     * Register a new user or agent (step 2: requires the code texted to the phone number).
      *
      * @throws ModelNotFoundException
+     * @throws InvalidOtpException
      */
     public function register(RegisterRequest $request): JsonResponse
     {

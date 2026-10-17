@@ -56,6 +56,9 @@ class AuthResource extends JsonResource
                         : [],
                     'is_verified' => (bool) $this->resource->is_verified,
                     'is_active' => $this->resource->is_active,
+                    'avatar_url' => $this->resource->avatarUrl(),
+                    // Admin clients send the user to the change-password form until this is false
+                    'must_change_password' => $this->resource->mustChangePassword(),
                 ],
                 'token' => $this->token,
                 'token_type' => $this->token ? 'Bearer' : null,

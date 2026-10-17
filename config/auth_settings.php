@@ -47,5 +47,9 @@ return [
         'login' => (int) env('AUTH_RATE_LIMIT_LOGIN', 5),
         'register' => (int) env('AUTH_RATE_LIMIT_REGISTER', 5),
         'forgot_password' => (int) env('AUTH_RATE_LIMIT_FORGOT_PASSWORD', 5),
+        // Phone verification codes an account may request per 10 minutes
+        'phone_otp' => (int) env('AUTH_RATE_LIMIT_PHONE_OTP', 3),
+        // Signup codes a single IP may request per 10 minutes (no account yet, and IPs are shared)
+        'phone_otp_per_ip' => (int) env('AUTH_RATE_LIMIT_PHONE_OTP_PER_IP', 10),
     ],
 ];

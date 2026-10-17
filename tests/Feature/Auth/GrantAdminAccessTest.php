@@ -255,6 +255,7 @@ test('super admin with pending password change is blocked from granting admin ac
             'success' => false,
             'message' => 'You must change your password before proceeding.',
             'errors' => [],
+            'meta' => ['code' => 'PASSWORD_CHANGE_REQUIRED'],
         ]);
 });
 
@@ -357,7 +358,7 @@ test('attack chain blocked: admin grant on verified customer cannot overwrite cu
     $invite = Notification::sent($customer, AdminInviteNotification::class)->first();
     expect($invite)->not->toBeNull();
     $tempPassword = $invite->temporaryPassword;
-    $inviteUrl = $invite->url;
+    $inviteUrl = str_replace('/accept-invite/', '/api/v1/auth/accept-invite/', $invite->url);
 
     // 2. Attacker accepts invite via signed link
     Auth::forgetGuards();

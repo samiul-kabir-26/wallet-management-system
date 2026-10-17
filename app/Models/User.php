@@ -14,6 +14,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
 use Modules\Roles\Enums\Permission as PermissionEnum;
 use Modules\Roles\Enums\RolePanel;
@@ -42,6 +43,11 @@ class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable;
+
+    /**
+     * Directory on the public disk that holds uploaded avatars.
+     */
+    public const string AVATAR_DIRECTORY = 'avatars';
 
     /**
      * Get the attributes that should be cast.
@@ -142,6 +148,34 @@ class User extends Authenticatable
     public function loginActivities(): HasMany
     {
         return $this->hasMany(LoginActivity::class);
+    }
+
+    /**
+     * Route SMS notifications to the account's phone number.
+     */
+    public function routeNotificationForSms(): ?string
+    {
+        return $this->phone_number;
+    }
+
+    /**
+     * Public URL of the uploaded avatar, if any. Only paths written by the avatar upload are served.
+     */
+    public function avatarUrl(): ?string
+    {
+        if (! is_string($this->image) || ! str_starts_with($this->image, self::AVATAR_DIRECTORY.'/')) {
+            return null;
+        }
+
+        return Storage::disk('public')->url($this->image);
+    }
+
+    /**
+     * Whether the account holds a temporary password that must be replaced before anything else.
+     */
+    public function mustChangePassword(): bool
+    {
+        return $this->password !== null && $this->password_changed_at === null;
     }
 
     /**

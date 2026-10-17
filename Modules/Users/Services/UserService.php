@@ -272,15 +272,16 @@ class UserService
     }
 
     /**
-     * Mark a user's phone number as verified after staff confirmed ownership out of band.
+     * Mark a user's phone number as verified.
      *
+     * $method records how ownership was proven: STAFF (confirmed out of band) or OTP (SMS code).
      * Idempotent: an already-verified account is returned unchanged and no new audit entry is written.
      *
      * @throws UserHasNoPhoneException
      */
-    public function verifyPhone(User $user, User $actor): User
+    public function verifyPhone(User $user, User $actor, string $method = 'STAFF'): User
     {
-        return DB::transaction(function () use ($user, $actor): User {
+        return DB::transaction(function () use ($user, $actor, $method): User {
             $lockedUser = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
 
             if ($lockedUser->phone_number === null) {
@@ -300,6 +301,7 @@ class UserService
                 'auditable_id' => $lockedUser->id,
                 'metadata' => [
                     'phone_number' => $lockedUser->phone_number,
+                    'method' => $method,
                 ],
             ]);
 

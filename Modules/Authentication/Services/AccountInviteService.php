@@ -42,11 +42,25 @@ class AccountInviteService
             throw new AccountInactiveException;
         }
 
-        // 3. Atomically update password and set password_changed_at timestamp
-        $user->forceFill([
-            'password' => Hash::make($newPassword),
-            'password_changed_at' => now(),
-        ])->save();
+        $wasTemporary = $user->password_changed_at === null;
+
+        // 3. Update password, set password_changed_at and record the change
+        DB::transaction(function () use ($user, $newPassword, $wasTemporary): void {
+            $user->forceFill([
+                'password' => Hash::make($newPassword),
+                'password_changed_at' => now(),
+            ])->save();
+
+            AuditLog::create([
+                'actor_id' => $user->id,
+                'action' => 'PASSWORD_CHANGED',
+                'auditable_type' => $user->getMorphClass(),
+                'auditable_id' => $user->id,
+                'metadata' => [
+                    'replaced_temporary_password' => $wasTemporary,
+                ],
+            ]);
+        });
     }
 
     private const string INVALID_INVITE_MESSAGE = 'Invalid or already-used invite credentials.';
@@ -136,10 +150,23 @@ class AccountInviteService
             ['user' => $target->id],
         );
 
-        // 5. Deliver the invitation to the newly attached email
-        $target->refresh()->notify(new AdminInviteNotification($signedUrl, $password, $expiryHours));
+        // 5. Deliver the invitation to the newly attached email. The email opens the web page, which
+        //    posts the same signed query string to the API route it was signed for.
+        $target->refresh()->notify(new AdminInviteNotification(
+            self::invitePageUrl($target, $signedUrl),
+            $password,
+            $expiryHours,
+        ));
 
         return $signedUrl;
+    }
+
+    /**
+     * Browser page for a signed invite: /accept-invite/{user} carrying the API signature's query string.
+     */
+    public static function invitePageUrl(User $user, string $signedApiUrl): string
+    {
+        return url("/accept-invite/{$user->id}").'?'.parse_url($signedApiUrl, PHP_URL_QUERY);
     }
 
     /**

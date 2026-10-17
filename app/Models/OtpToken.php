@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'user_id',
     'otp_code',
     'purpose',
+    'target',
     'expires_at',
     'used_at',
     'attempt_count',

@@ -3,6 +3,7 @@
 use App\Models\Role;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
+use Database\Seeders\SystemSettingsSeeder;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
 
@@ -28,6 +29,7 @@ test('admin with pending password change is blocked from protected admin routes 
             'success' => false,
             'message' => 'You must change your password before proceeding.',
             'errors' => [],
+            'meta' => ['code' => 'PASSWORD_CHANGE_REQUIRED'],
         ]);
 });
 
@@ -66,4 +68,21 @@ test('admin who has changed password can access protected admin routes', functio
 
     $response->assertOk()
         ->assertJsonPath('success', true);
+});
+
+test('a temporary staff password does not block the same person\'s PIN-authenticated wallet session', function () {
+    $this->seed(SystemSettingsSeeder::class);
+    $person = User::factory()->pendingPasswordChange()->create([
+        'password' => Hash::make('temp_password'),
+    ]);
+    $person->roles()->attach(Role::where('name', 'USER')->first()->id, ['assigned_at' => now()]);
+    $person->roles()->attach(Role::where('name', 'ADMIN')->first()->id, ['assigned_at' => now()]);
+    $person->wallets()->create(['kind' => 'USER']);
+
+    Sanctum::actingAs($person, ['user']);
+    $this->getJson('/api/v1/wallets/me')->assertOk();
+    $this->getJson('/api/v1/users/me')->assertOk();
+
+    Sanctum::actingAs($person, ['admin']);
+    $this->getJson('/api/v1/users/me')->assertStatus(403)->assertJsonPath('meta.code', 'PASSWORD_CHANGE_REQUIRED');
 });

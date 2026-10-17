@@ -60,10 +60,18 @@ All API responses follow a consistent JSON envelope structure.
 >
 > **Secret delivery.** OTP codes, PIN reset links and staff invitations (with the temporary password) are delivered by email notification. They are never written to the application log.
 
-### 2.1 Public Registration
+### 2.0 Request Signup Code (Registration Step 1)
+- **Method & Route:** `POST /api/v1/auth/register/request-otp`
+- **Access:** Public. Limited to 3 codes per number and 10 per IP per 10 minutes (429).
+- **Request Body:** `{ "phone_number": "01712345678" }`
+- **Description:** Texts a 6-digit code to a number that has no account yet (OTP purpose `REGISTRATION`, `user_id` null, number in `target`). A new request invalidates the previous code. 422 if the number is invalid or already has an account.
+
+---
+
+### 2.1 Public Registration (Step 2)
 - **Method & Route:** `POST /api/v1/auth/register`
 - **Access:** Public (Rate limited: 5 req/min per IP)
-- **Description:** Registers a new `USER` or `AGENT`. For users, provisions a wallet (50.00 BDT bonus) and caps. For agents, provisions a pending profile.
+- **Description:** Registers a new `USER` or `AGENT`. For users, provisions a wallet (50.00 BDT bonus) and caps. For agents, provisions a pending profile. Requires the code from 2.0 for this exact `phone_number`; the account starts with `is_verified = true`. A wrong or expired code returns 401 and nothing is created; attempts count toward the code's lockout.
 - **Request Body:**
   ```json
   {
@@ -71,7 +79,8 @@ All API responses follow a consistent JSON envelope structure.
     "phone_number": "01712345678",
     "pin": "12345",
     "pin_confirmation": "12345",
-    "role": "USER"
+    "role": "USER",
+    "otp_code": "123456"
   }
   ```
 - **Response (201 Created):**
@@ -247,15 +256,20 @@ All API responses follow a consistent JSON envelope structure.
         "email": "admin@wallet.local",
         "roles": ["SUPER_ADMIN"],
         "permissions": ["users.view_any", "users.create", "wallets.block", "..."],
-        "is_active": "ACTIVE"
+        "is_active": "ACTIVE",
+        "avatar_url": null,
+        "must_change_password": false
       }
     }
   }
   ```
+- **Notes:** `must_change_password` is `true` while the account holds a temporary staff password. Every endpoint called with an **admin token** (except 2.7) then returns 403 with `meta.code = "PASSWORD_CHANGE_REQUIRED"`; clients should send the user to the change-password form. Agent/customer sessions (PIN tokens) of the same person are not blocked: they were never opened with the temporary password.
 
 ---
 
 ### 2.6 Accept Staff Invitation (Case B Step 2)
+- **Email link:** the invitation email links to the web page `/accept-invite/{user}?expires=…&signature=…`. The page posts that same query string to the API route below (the signature is for the API path), then calls 2.7 with the restricted token. Invitees can instead sign in on the Staff / Admin tab with the email and temporary password; they are sent to the change-password form first. The same pattern applies to PIN reset links (2.13): `/reset-pin/{user}?…` posts to `/api/v1/auth/reset-pin/{user}?…`.
+
 - **Method & Route:** `POST /api/v1/auth/accept-invite/{user}`
 - **Access:** Signed URL only (`signed` middleware)
 - **Description:** Consumes a temporary signed URL generated during `grant-admin-access` or staff creation. Authenticates with temporary password and returns a restricted token.
@@ -318,6 +332,16 @@ All API responses follow a consistent JSON envelope structure.
   }
   ```
 - **Error Codes:** 401 (Invalid current password), 422 (Password requirements not met or matches temporary password).
+- **Notes:** Also used by signed-in staff to change their password at any time (admin token). Every existing session is revoked and the response carries the new token. Audited as `PASSWORD_CHANGED` (`replaced_temporary_password` in metadata).
+
+---
+
+### 2.7b Change PIN (Agent / Customer)
+- **Method & Route:** `POST /api/v1/auth/change-pin`
+- **Access:** Authenticated (`ability:agent,user`), throttled 10/min.
+- **Request Body:** `{ "current_pin": "12345", "new_pin": "54321", "new_pin_confirmation": "54321" }`
+- **Description:** Replaces a PIN the caller still knows. The current PIN check shares the login lockout counter (`pin-attempts:{id}`). The calling session stays signed in; every other token is revoked. Audited as `PIN_CHANGED`. A forgotten PIN still goes through the staff-initiated reset (2.12/2.13).
+- **Error Codes:** 403 (admin token), 422 (wrong current PIN, with `meta.attempts_remaining`; or validation), 429 (PIN locked).
 
 ---
 
@@ -629,6 +653,7 @@ All API responses follow a consistent JSON envelope structure.
 ### 3.5 Update User Profile
 - **Method & Route:** `PATCH /api/v1/users/{user}`
 - **Access:** Authenticated caller updating self, or Admin (`UserPolicy`)
+- **Notes:** `email`, `phone_number`, `password`, `role` and `image` are prohibited. Avatars are uploaded through 3.13.
 - **Request Body:**
   ```json
   {
@@ -801,6 +826,24 @@ All API responses follow a consistent JSON envelope structure.
 - **Method & Route:** `GET /api/v1/users/{user}/audit-trail`
 - **Access:** Admin only **and** `users.view_activity`.
 - **Response:** paginated audit entries the user performed, entries recorded against the user, and entries recorded against any of the user's wallets: `{ id, action, actor { id, name }, auditable_type, auditable_id, metadata, created_at }`.
+
+---
+
+### 3.13 My Account (self-service, any panel)
+All routes require `ability:admin,agent,user` and `password.changed`. They act on the signed-in account only and return `{ data: { user } }` (the 3.3 shape plus `avatar_url`).
+
+| Method & Route | Body | Notes |
+|---|---|---|
+| `GET /api/v1/users/me` | none | Own profile. |
+| `PATCH /api/v1/users/me` | `name`, `address` | `email`, `phone_number` and `image` are prohibited (422). |
+| `POST /api/v1/users/me/avatar` | multipart `avatar` | JPG/PNG/WebP, max 2 MB, 64–4000 px per side; SVG is refused. Stored on the `public` disk under `avatars/` (needs `php artisan storage:link`); the previous file is deleted. Throttled 10/min. |
+| `DELETE /api/v1/users/me/avatar` | none | Deletes the file and clears `avatar_url`. |
+| `POST /api/v1/users/me/phone` | `phone_number` (`01[3-9]XXXXXXXX`, unique) | For accounts **without** a phone (409 otherwise). Texts a 6-digit code to that number (OTP purpose `ADD_PHONE`, number kept in `otp_tokens.target`). Nothing is saved yet. Limited to 3 per 10 minutes per account **and** per destination number. |
+| `POST /api/v1/users/me/phone/confirm` | `otp_code` | Saves the number the code was sent to, marked verified, audited as `PHONE_ADDED`. 422 if another account took the number meanwhile, 409 if a phone was already set. Staff can then sign in to the admin panel with this number and their password (2.4); the OTP step (2.5) uses the `email` returned by 2.4. Changing an existing number is a support task. |
+| `POST /api/v1/users/me/phone-verification` | none | Texts a 6-digit code (OTP purpose `PHONE_VERIFICATION`, expires per `auth_settings.otp.expiry_minutes`) and invalidates any earlier code. Limited to 3 per 10 minutes per account (429). 409 if already verified, 422 if the account has no phone. |
+| `POST /api/v1/users/me/phone-verification/confirm` | `otp_code` | Sets `is_verified`, audited as `PHONE_VERIFIED` with `metadata.method = "OTP"` (staff verification in 3.10 records `"STAFF"`). 401 wrong/expired code (attempts are counted and lock the code), 409 already verified. |
+
+**SMS delivery:** no SMS gateway is configured yet. `SmsChannel` writes each message to the log channel named by `SMS_LOG_CHANNEL` (default log), so in development the code appears in `storage/logs/laravel.log` as `SMS message`.
 
 ---
 

@@ -20,6 +20,8 @@ class PasswordChangeRequiredException extends ApiException
         parent::__construct(
             message: 'You must change your password before proceeding.',
             previous: $previous,
+            // Lets clients route to the change-password form without matching on the message
+            meta: ['code' => 'PASSWORD_CHANGE_REQUIRED'],
         );
     }
 }

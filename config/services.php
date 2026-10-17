@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    // No SMS gateway yet: messages are written to this log channel (default log when unset)
+    'sms' => [
+        'log_channel' => env('SMS_LOG_CHANNEL'),
+    ],
+
 ];

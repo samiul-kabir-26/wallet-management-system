@@ -7,16 +7,45 @@ use App\Models\User;
 use App\Models\Wallet;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
+use Modules\Authentication\Exceptions\InvalidOtpException;
+use Modules\Authentication\Notifications\PhoneVerificationCodeNotification;
 
 class RegistrationService
 {
+    public const string OTP_PURPOSE = 'REGISTRATION';
+
+    public function __construct(
+        private OtpService $otpService,
+    ) {}
+
+    /**
+     * Text a signup code to a number that has no account yet.
+     */
+    public function requestOtp(string $phoneNumber): void
+    {
+        $otp = $this->otpService->createForTarget(self::OTP_PURPOSE, $phoneNumber);
+
+        Notification::route('sms', $phoneNumber)->notify(new PhoneVerificationCodeNotification(
+            $otp->otp_code,
+            (int) config('auth_settings.otp.expiry_minutes', OtpService::DEFAULT_EXPIRY_MINUTES),
+        ));
+    }
+
     /**
      * Register a new user or agent with associated wallet, cap, and role.
      *
-     * @param  array{name: string, phone_number: string, pin: string, role: string}  $data
+     * The signup code proves the caller holds the phone number, so the account starts verified.
+     *
+     * @param  array{name: string, phone_number: string, pin: string, role: string, otp_code: string}  $data
+     *
+     * @throws InvalidOtpException
      */
     public function register(array $data): User
     {
+        // Checked before the write transaction so failed attempts are counted even though registration aborts
+        $this->otpService->verifyForTarget(self::OTP_PURPOSE, $data['phone_number'], $data['otp_code']);
+
         return DB::transaction(function () use ($data): User {
             // 1. Create the user
             $user = User::create([
@@ -24,6 +53,7 @@ class RegistrationService
                 'phone_number' => $data['phone_number'],
                 'pin' => Hash::make($data['pin']),
             ]);
+            $user->forceFill(['is_verified' => true])->save();
 
             // 2. Create the initial wallet (schema defaults: balance 50.00, currency BDT)
             $kind = $data['role'] === 'AGENT' ? Wallet::KIND_AGENT : Wallet::KIND_USER;

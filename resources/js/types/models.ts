@@ -7,6 +7,9 @@ export interface User {
     permissions?: string[];
     is_verified?: boolean;
     is_active?: string;
+    address?: string | null;
+    avatar_url?: string | null;
+    must_change_password?: boolean;
     created_at?: string;
     updated_at?: string;
     wallet?: Wallet | null;

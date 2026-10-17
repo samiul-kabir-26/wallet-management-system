@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { newIdempotencyKey } from '@/composables/useIdempotencyKey';
 import { computed, onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { storeToRefs } from 'pinia';
@@ -35,7 +36,7 @@ const handleTopUp = handleSubmit(async (values) => {
         await api.post('/transactions/top-up', {
             amount: Number(values.amount).toFixed(2),
             pin: values.pin,
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: newIdempotencyKey(),
         });
         toast.success(`Successfully added ৳${Number(values.amount).toFixed(2)} to your wallet!`);
         resetForm();

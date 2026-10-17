@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { newIdempotencyKey } from '@/composables/useIdempotencyKey';
 import { ref, watch } from 'vue';
 import { useForm } from 'vee-validate';
 import Modal from '@/components/Modal.vue';
@@ -39,7 +40,7 @@ watch(
     () => props.agent,
     (agent) => {
         if (agent) {
-            idempotencyKey.value = crypto.randomUUID();
+            idempotencyKey.value = newIdempotencyKey();
             resetForm();
         }
     },
