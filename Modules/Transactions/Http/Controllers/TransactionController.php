@@ -14,11 +14,13 @@ use Modules\Transactions\Http\Requests\ApproveWithdrawalRequest;
 use Modules\Transactions\Http\Requests\CashOutRequest;
 use Modules\Transactions\Http\Requests\IssueFloatRequest;
 use Modules\Transactions\Http\Requests\RejectWithdrawalRequest;
+use Modules\Transactions\Http\Requests\ReverseTransactionRequest;
 use Modules\Transactions\Http\Requests\TransferRequest;
 use Modules\Transactions\Resources\CapResource;
 use Modules\Transactions\Resources\TransactionResource;
 use Modules\Transactions\Services\CapService;
 use Modules\Transactions\Services\FeeCalculator;
+use Modules\Transactions\Services\ReversalService;
 use Modules\Transactions\Services\TransactionService;
 use Modules\Wallets\Services\WalletService;
 
@@ -176,7 +178,7 @@ class TransactionController extends Controller
     public function history(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE,SIGNUP_BONUS'],
+            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE,SIGNUP_BONUS,REVERSAL'],
             'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,REJECTED'],
             'from_date' => ['sometimes', 'date'],
             'to_date' => ['sometimes', 'date'],
@@ -247,7 +249,7 @@ class TransactionController extends Controller
         $this->authorize('viewAny', Transaction::class);
 
         $validated = $request->validate([
-            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE,SIGNUP_BONUS'],
+            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE,SIGNUP_BONUS,REVERSAL'],
             'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,REJECTED'],
             'search' => ['sometimes', 'string', 'max:100'],
             'party_id' => ['sometimes', 'integer', 'exists:users,id'],
@@ -348,5 +350,25 @@ class TransactionController extends Controller
                 'transaction' => new TransactionResource($rejected),
             ],
         ]);
+    }
+
+    /**
+     * Reverse a completed transfer, cash-in or cash-out with a new REVERSAL transaction.
+     */
+    public function reverse(ReverseTransactionRequest $request, Transaction $transaction, ReversalService $reversals): JsonResponse
+    {
+        $reversal = $reversals->reverse(
+            original: $transaction,
+            staff: $request->user(),
+            reason: $request->validated('reason'),
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => "Transaction #{$transaction->id} reversed.",
+            'data' => [
+                'transaction' => new TransactionResource($reversal->load(['sender', 'recipient', 'agent', 'user'])),
+            ],
+        ], 201);
     }
 }

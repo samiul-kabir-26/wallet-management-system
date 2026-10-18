@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\DB;
  * | CASH_OUT          | COMPLETED             | sender − (amount + fee), agent wallet + (amount + commission) |
  * | COMMISSION_PAYOUT | —                     | none: a memo row, the commission is credited by CASH_OUT      |
  * | AGENT_WITHDRAWAL  | PENDING or COMPLETED  | sender (agent) wallet − amount (held at request time)         |
+ * | REVERSAL          | COMPLETED             | sender − (amount + commission), recipient + (amount + fee)    |
  *
  * A REJECTED withdrawal nets to zero because the refund restores the held amount.
  */
@@ -84,19 +85,19 @@ class LedgerIntegrityService
             }
         };
 
-        // Credits to the recipient wallet
+        // Credits to the recipient wallet; a reversal also refunds the original fee
         $add($this->ledgerQuery('recipient_wallet_id', $walletIds)
-            ->selectRaw('recipient_wallet_id as wallet_id, SUM(amount) as total')
+            ->selectRaw("recipient_wallet_id as wallet_id, SUM(CASE WHEN type = 'REVERSAL' THEN amount + system_fee_amount ELSE amount END) as total")
             ->where('status', 'COMPLETED')
-            ->whereIn('type', ['TOP_UP', 'SIGNUP_BONUS', 'FLOAT_ISSUE', 'TRANSFER', 'CASH_IN']));
+            ->whereIn('type', ['TOP_UP', 'SIGNUP_BONUS', 'FLOAT_ISSUE', 'TRANSFER', 'CASH_IN', 'REVERSAL']));
 
         // Debits from the sender wallet, fee included; withdrawals are held from the moment they are requested
         $add($this->ledgerQuery('sender_wallet_id', $walletIds)
-            ->selectRaw('sender_wallet_id as wallet_id, -SUM(amount + system_fee_amount) as total')
+            ->selectRaw("sender_wallet_id as wallet_id, -SUM(CASE WHEN type = 'REVERSAL' THEN amount + agent_commission_amount ELSE amount + system_fee_amount END) as total")
             ->where(fn (Builder $query) => $query
                 ->where(fn (Builder $completed) => $completed
                     ->where('status', 'COMPLETED')
-                    ->whereIn('type', ['TRANSFER', 'CASH_OUT']))
+                    ->whereIn('type', ['TRANSFER', 'CASH_OUT', 'REVERSAL']))
                 ->orWhere(fn (Builder $withdrawal) => $withdrawal
                     ->where('type', 'AGENT_WITHDRAWAL')
                     ->whereIn('status', ['PENDING', 'COMPLETED']))));
@@ -171,9 +172,10 @@ class LedgerIntegrityService
      */
     private function verifyCommissionTotals(): array
     {
+        // Commission earned on cash-outs, less commission clawed back by reversing them
         $earned = DB::table('transactions')
-            ->selectRaw('agent_id, SUM(agent_commission_amount) as total')
-            ->where('type', 'CASH_OUT')
+            ->selectRaw("agent_id, SUM(CASE WHEN type = 'REVERSAL' THEN -agent_commission_amount ELSE agent_commission_amount END) as total")
+            ->whereIn('type', ['CASH_OUT', 'REVERSAL'])
             ->where('status', 'COMPLETED')
             ->whereNotNull('agent_id')
             ->groupBy('agent_id')

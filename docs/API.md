@@ -1236,7 +1236,7 @@ IPNs get lost and customers close the tab, so unfinished top-ups are swept by a 
 ### 5.6 User Transaction History
 - **Method & Route:** `GET /api/v1/transactions/history`
 - **Access:** Authenticated (`ability:admin,agent,user`, `password.changed`)
-- **Query Params:** `type` (`TOP_UP`, `CASH_IN`, `CASH_OUT`, `TRANSFER`, `AGENT_WITHDRAWAL`, `COMMISSION_PAYOUT`, `FLOAT_ISSUE`, `SIGNUP_BONUS`), `status`, `from_date`, `to_date`, `per_page`, `page`
+- **Query Params:** `type` (`TOP_UP`, `CASH_IN`, `CASH_OUT`, `TRANSFER`, `AGENT_WITHDRAWAL`, `COMMISSION_PAYOUT`, `FLOAT_ISSUE`, `SIGNUP_BONUS`, `REVERSAL`), `status`, `from_date`, `to_date`, `per_page`, `page`
 - **Description:** Paginated transactions list scoped directly to the authenticated caller's active wallet panel (determined by token ability: `user` -> USER wallet, `agent` -> AGENT wallet; admins view unscoped history).
 - **Response (200 OK):**
   ```json
@@ -1409,6 +1409,34 @@ There is no endpoint for this. Every completed `TRANSFER`, `CASH_IN` and `CASH_O
 
 ---
 
+### 5.14 Reverse a Transaction
+- **Method & Route:** `POST /api/v1/transactions/admin/{transaction}/reverse`
+- **Access:** Admin token **and** `transactions.reverse`. ADMIN does not hold it by default (like `agents.issue_float`, it moves money on staff say-so); SUPER_ADMIN has it and can grant it to a dedicated role. Staff cannot reverse a transaction they took part in, in any role (403). Throttled 30/min.
+- **Request Body:** `{ "reason": "Sent to the wrong number, confirmed with both customers by phone" }` (10–500 characters; shown in both parties' history and in the audit log).
+- **Response (201 Created):** `{ data: { transaction } }`, the new `REVERSAL` row, with `reversed_transaction_id` pointing at the original.
+- **What moves:**
+
+  | Original | Taken back from | Returned to |
+  |---|---|---|
+  | `TRANSFER` | recipient: amount | sender: amount + fee |
+  | `CASH_IN` | customer: amount | agent: amount |
+  | `CASH_OUT` | agent: amount + commission (also deducted from `agent_info.total_commission`) | customer: amount + fee |
+
+  On the `REVERSAL` row the debited wallet is the sender slot and the credited wallet the recipient slot; `system_fee_amount` is the fee refunded and `agent_commission_amount` the commission clawed back.
+- **Rules:**
+  - The original is never edited. Admin ledger items carry `reversed_by_transaction_id` on the original and `reversed_transaction_id` on the reversal.
+  - Only once: `transactions.reversed_transaction_id` is unique, so two staff reversing at the same moment cannot both succeed (409).
+  - The original is locked, then both wallets in id order, then (cash-out) the agent profile, all in one database transaction.
+  - If the party giving money back has already spent it, the reversal fails (422) and nothing changes. Balances never go negative.
+  - Blocked wallets and suspended agents do not stop a reversal: correcting money is what staff do while an account is frozen.
+  - Daily and monthly cap usage is not given back.
+  - Audited as `TRANSACTION_REVERSED` (against the original, with both wallets and amounts). Both parties get a receipt (5.13).
+  - The ledger check (4.5) counts reversals: sender −(amount + commission), recipient +(amount + fee); commission totals subtract clawed-back commission.
+- **Admin panel:** "Reverse" button on eligible rows of the transaction ledger, with a summary of who gives back and who gets back how much.
+- **Error Codes:** 403 (missing permission, non-admin token, or own transaction), 409 (not a completed transfer/cash-in/cash-out, or already reversed), 422 (missing reason, or not enough balance to take back).
+
+---
+
 ## 6. System Settings Endpoints
 
 ### 6.1 View Global System Settings
@@ -1483,7 +1511,7 @@ Granular permission catalog and dynamic admin-panel role management. Access requ
 ### 7.1 List Permissions Catalog
 - **Method & Route:** `GET /api/v1/permissions`
 - **Access:** Authenticated admin staff (`roles.view`)
-- **Description:** Returns the complete permission catalog (22 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
+- **Description:** Returns the complete permission catalog (23 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
 - **Response (200 OK):**
   ```json
   {

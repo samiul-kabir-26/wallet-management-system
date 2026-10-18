@@ -9,6 +9,7 @@ Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(
     Route::post('/admin/float-issue', [TransactionController::class, 'adminIssueFloat']);
     Route::patch('/admin/withdrawals/{transaction}/approve', [TransactionController::class, 'approveWithdrawal'])->whereNumber('transaction');
     Route::patch('/admin/withdrawals/{transaction}/reject', [TransactionController::class, 'rejectWithdrawal'])->whereNumber('transaction');
+    Route::post('/admin/{transaction}/reverse', [TransactionController::class, 'reverse'])->whereNumber('transaction')->middleware('throttle:30,1');
 });
 
 // Common authenticated query endpoints: history
