@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Schedule;
 use Modules\Payments\Jobs\ReconcilePendingTopUps;
 use Modules\Payments\Services\TopUpReconciler;
 use Modules\Transactions\Jobs\ResetStaleCaps;
+use Modules\Transactions\Services\PaymentRequestService;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -28,3 +29,6 @@ Schedule::job(new ReconcilePendingTopUps)->everyTenMinutes()->withoutOverlapping
 
 // Detects balances that drifted from the ledger; read-only, alerts through the log
 Schedule::command('wallets:verify-ledger')->dailyAt('02:00')->timezone(config('transactions.business_timezone', 'Asia/Dhaka'));
+
+// Closes payment requests nobody answered; paying an expired request is refused even before this runs
+Schedule::call(fn () => app(PaymentRequestService::class)->expireOverdue())->name('payment-requests:expire')->hourly()->withoutOverlapping();

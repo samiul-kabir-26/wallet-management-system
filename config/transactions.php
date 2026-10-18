@@ -50,6 +50,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Payment Requests
+    |--------------------------------------------------------------------------
+    |
+    | Customers asking each other for money. Amounts use the transfer limits.
+    | A request expires after "expire_days"; "max_pending_per_payer" stops one
+    | customer from flooding another with requests.
+    |
+    */
+    'payment_requests' => [
+        'expire_days' => (int) env('PAYMENT_REQUEST_EXPIRE_DAYS', 7),
+        'max_pending_per_payer' => (int) env('PAYMENT_REQUEST_MAX_PENDING_PER_PAYER', 3),
+        'max_pending_total' => (int) env('PAYMENT_REQUEST_MAX_PENDING_TOTAL', 20),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Signup Bonus (BDT)
     |--------------------------------------------------------------------------
     |

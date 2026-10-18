@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Modules\Transactions\Http\Controllers\FloatRequestController;
+use Modules\Transactions\Http\Controllers\PaymentRequestController;
 use Modules\Transactions\Http\Controllers\TransactionController;
 
 // ADMIN endpoints: admin audit & float issue
@@ -30,6 +31,13 @@ Route::middleware(['auth:sanctum', 'ability:user', 'password.changed'])->group(f
     Route::get('/quote', [TransactionController::class, 'quote']);
     Route::post('/cash-out', [TransactionController::class, 'cashOut']);
     Route::post('/transfer', [TransactionController::class, 'transfer']);
+
+    // Request money from another customer
+    Route::get('/requests', [PaymentRequestController::class, 'index']);
+    Route::post('/requests', [PaymentRequestController::class, 'store'])->middleware('throttle:10,1');
+    Route::post('/requests/{paymentRequest}/pay', [PaymentRequestController::class, 'pay'])->whereNumber('paymentRequest');
+    Route::post('/requests/{paymentRequest}/decline', [PaymentRequestController::class, 'decline'])->whereNumber('paymentRequest');
+    Route::post('/requests/{paymentRequest}/cancel', [PaymentRequestController::class, 'cancel'])->whereNumber('paymentRequest');
 });
 
 // AGENT endpoints: agent/cash-in, agent/withdrawal

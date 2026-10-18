@@ -25,6 +25,7 @@ Route::prefix('user')->name('user.')->group(function (): void {
     Route::inertia('/dashboard', 'User/Dashboard')->name('dashboard');
     Route::inertia('/wallet', 'User/Wallet')->name('wallet');
     Route::inertia('/transfer', 'User/Transfer')->name('transfer');
+    Route::inertia('/requests', 'User/Requests')->name('requests');
     Route::inertia('/history', 'User/History')->name('history');
     Route::inertia('/account', 'User/Account')->name('account');
     Route::get('/top-up/{transaction}', fn (Request $request, int $transaction) => Inertia::render('User/TopUpResult', [
