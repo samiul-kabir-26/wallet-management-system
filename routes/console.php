@@ -25,3 +25,5 @@ Schedule::command('sanctum:prune-expired --hours=24')->daily();
 
 // Settles top-ups whose IPN or browser return was lost; safe to overlap with callbacks, so only overlapping runs are prevented
 Schedule::job(new ReconcilePendingTopUps)->everyTenMinutes()->withoutOverlapping();
+// Detects balances that drifted from the ledger; read-only, alerts through the log
+Schedule::command('wallets:verify-ledger')->dailyAt('02:00')->timezone(config('transactions.business_timezone', 'Asia/Dhaka'));

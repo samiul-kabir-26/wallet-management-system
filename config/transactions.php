@@ -64,4 +64,20 @@ return [
         'max_amount' => env('SIGNUP_BONUS_MAX', 1000.00),
         'source_label' => env('SIGNUP_BONUS_SOURCE_LABEL', 'bKash'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Ledger Integrity Check
+    |--------------------------------------------------------------------------
+    |
+    | `php artisan wallets:verify-ledger` recomputes every balance from the
+    | transactions table. Wallets opened before the signup bonus became a
+    | ledger row got this amount from a column default with no transaction
+    | behind it; a difference of exactly this amount on a wallet with no
+    | SIGNUP_BONUS row is reported as a known legacy gap, not a failure.
+    |
+    */
+    'ledger_check' => [
+        'legacy_opening_balance' => env('LEDGER_LEGACY_OPENING_BALANCE', 50.00),
+    ],
 ];
