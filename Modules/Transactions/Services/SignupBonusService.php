@@ -39,6 +39,8 @@ class SignupBonusService
 
     /**
      * The bonus amount currently credited to new wallets, formatted to 2 decimal places.
+     *
+     * @return numeric-string
      */
     public function amount(): string
     {
@@ -51,6 +53,8 @@ class SignupBonusService
     /**
      * The most that may be paid in signup bonuses per business day, formatted to 2 decimals. '0.00' means
      * no limit.
+     *
+     * @return numeric-string
      */
     public function dailyBudget(): string
     {
@@ -62,6 +66,8 @@ class SignupBonusService
 
     /**
      * Signup bonuses paid so far in the current business day. Backfilled opening balances do not count.
+     *
+     * @return numeric-string
      */
     public function paidToday(): string
     {
@@ -167,6 +173,8 @@ class SignupBonusService
     /**
      * Check today's budget with the budget setting row locked, so two registrations at the same moment
      * cannot both take the last of it. Audits a withheld bonus against the new account.
+     *
+     * @param  numeric-string  $amount
      */
     private function withinDailyBudget(Wallet $wallet, string $amount): bool
     {

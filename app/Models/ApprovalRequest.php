@@ -64,16 +64,25 @@ class ApprovalRequest extends Model
         ];
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function requester(): BelongsTo
     {
         return $this->belongsTo(User::class, 'requested_by');
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function subject(): MorphTo
     {
         return $this->morphTo();

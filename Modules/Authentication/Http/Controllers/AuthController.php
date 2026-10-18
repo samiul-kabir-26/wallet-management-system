@@ -102,8 +102,8 @@ class AuthController extends Controller
         if ($currentToken instanceof PersonalAccessToken) {
             $newToken = $this->tokenIssuer->rotate($user, $currentToken);
         } else {
-            // Transient (non-persisted) tokens only occur in tests; issue a fresh token instead
-            $newToken = $this->tokenIssuer->issue($user, 'token', $currentToken?->abilities ?? []);
+            // Transient (non-persisted) tokens carry no abilities of their own; issue a fresh token instead
+            $newToken = $this->tokenIssuer->issue($user, 'token', []);
         }
 
         $abilities = $newToken->accessToken->abilities ?? [];
@@ -132,7 +132,7 @@ class AuthController extends Controller
     {
         $currentToken = $request->user()->currentAccessToken();
 
-        if ($currentToken && method_exists($currentToken, 'delete')) {
+        if ($currentToken instanceof PersonalAccessToken) {
             $currentToken->delete();
         }
 
@@ -338,7 +338,13 @@ class AuthController extends Controller
      */
     public function register(RegisterRequest $request): JsonResponse
     {
-        $user = $this->registrationService->register($request->validated());
+        $user = $this->registrationService->register([
+            'name' => (string) $request->validated('name'),
+            'phone_number' => (string) $request->validated('phone_number'),
+            'pin' => (string) $request->validated('pin'),
+            'role' => (string) $request->validated('role'),
+            'otp_code' => (string) $request->validated('otp_code'),
+        ]);
 
         $ability = strtolower($request->role);
         $token = $this->tokenIssuer->issue($user, "{$ability}-registration", [$ability])->plainTextToken;
@@ -447,7 +453,9 @@ class AuthController extends Controller
     public function me(Request $request): AuthResource
     {
         $user = $request->user()->load('roles');
-        $abilities = $user->currentAccessToken()?->abilities ?? [];
+        $currentToken = $user->currentAccessToken();
+        // Sanctum's actingAs() test double answers unknown properties with false
+        $abilities = $currentToken instanceof PersonalAccessToken ? ($currentToken->abilities ?: []) : [];
 
         return new AuthResource(
             resource: $user,

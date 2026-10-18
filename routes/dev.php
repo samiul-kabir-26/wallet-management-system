@@ -55,8 +55,8 @@ Route::prefix('dev')->group(function (): void {
         $path = storage_path('logs/laravel.log');
         $links = [];
 
-        if (is_readable($path)) {
-            $handle = fopen($path, 'r');
+        $handle = is_readable($path) ? fopen($path, 'r') : false;
+        if ($handle !== false) {
             $current = null;
 
             while (($line = fgets($handle)) !== false) {

@@ -62,6 +62,9 @@ class TransactionService
     /**
      * Assert that the existing transaction found by idempotency key matches request parameters.
      *
+     *
+     * @param  numeric-string  $expectedAmount
+     *
      * @throws IdempotencyConflictException
      */
     private function assertIdempotentParametersMatch(
@@ -93,6 +96,9 @@ class TransactionService
 
     /**
      * Guard that the formatted transaction amount is strictly greater than 0.00.
+     *
+     *
+     * @param  numeric-string  $formattedAmount
      *
      * @throws InvalidAmountException
      */
@@ -961,6 +967,9 @@ class TransactionService
 
     /**
      * Get transaction history for a specific wallet, filtered and paginated.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return LengthAwarePaginator<int, Transaction>
      */
     public function listUserHistory(
         ?Wallet $wallet = null,
@@ -982,6 +991,9 @@ class TransactionService
 
     /**
      * Get all transactions for administrative audit, filtered and paginated.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return LengthAwarePaginator<int, Transaction>
      */
     public function listAllTransactions(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
@@ -1024,6 +1036,8 @@ class TransactionService
     /**
      * Match a free-text term against the transaction ID, external reference, and the name,
      * phone number or email of any party to the transaction.
+     *
+     * @param  Builder<Transaction>  $query
      */
     protected function applySearch(Builder $query, string $term): void
     {
@@ -1052,6 +1066,9 @@ class TransactionService
 
     /**
      * Apply common transaction filters (type, status, date range).
+     *
+     * @param  Builder<Transaction>  $query
+     * @param  array<string, mixed>  $filters
      */
     protected function applyFilters(Builder $query, array $filters): void
     {

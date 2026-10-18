@@ -7,7 +7,19 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property int $user_id
+ * @property numeric-string $daily_cap
+ * @property numeric-string $monthly_cap
+ * @property numeric-string $daily_used
+ * @property numeric-string $monthly_used
+ * @property Carbon|null $last_reset_date
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ */
 #[Fillable([
     'user_id',
 ])]
@@ -32,6 +44,9 @@ class Cap extends Model
         ];
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

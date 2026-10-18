@@ -1,17 +1,42 @@
-name: tests
+name: CI
 
 on:
   push:
     branches:
-      - main
+      - master
   pull_request:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci:
     runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USERNAME: root
+      DB_PASSWORD: password
 
     steps:
       - name: Checkout code
@@ -22,7 +47,8 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
-          php-version: '8.3'
+          php-version: '8.5'
+          extensions: bcmath, intl, pdo_mysql, gd
           tools: composer:v2
           coverage: none
 
@@ -30,9 +56,38 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
+          cache: npm
 
-      - name: Setup Application
-        run: composer setup
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
 
-      - name: Run CI Checks
-        run: composer ci:check
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Security audit (Composer)
+        run: composer audit
+
+      - name: Code style (Pint)
+        run: vendor/bin/pint --test
+
+      - name: Static analysis (PHPStan, level 7)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=2G
+
+      - name: OpenAPI spec is up to date
+        run: |
+          php artisan scramble:export --path=/tmp/openapi.json
+          diff -q docs/openapi.json /tmp/openapi.json || (echo "docs/openapi.json is stale: run composer docs:openapi and commit it." && exit 1)
+
+      - name: Type check (vue-tsc)
+        run: npm run types:check
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Tests (Pest)
+        run: php artisan test --compact

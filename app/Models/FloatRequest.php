@@ -68,21 +68,33 @@ class FloatRequest extends Model
         ];
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function agent(): BelongsTo
     {
         return $this->belongsTo(User::class, 'agent_id');
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
     }
 
+    /**
+     * @return BelongsTo<ApprovalRequest, $this>
+     */
     public function approvalRequest(): BelongsTo
     {
         return $this->belongsTo(ApprovalRequest::class);
     }
 
+    /**
+     * @return BelongsTo<Transaction, $this>
+     */
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);

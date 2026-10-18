@@ -9,6 +9,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Modules\Wallets\Exceptions\WalletNotFoundException;
 use Modules\Wallets\Http\Requests\BlockWalletRequest;
 use Modules\Wallets\Resources\WalletResource;
 use Modules\Wallets\Services\WalletService;

@@ -11,6 +11,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 use Modules\Approvals\Exceptions\ApprovalConflictException;
 use Modules\Roles\Enums\Permission;
 use Modules\SystemSettings\Services\SystemSettingService;
@@ -209,7 +210,7 @@ class ApprovalService
             maker: $maker,
             payload: [
                 'agent_id' => $agent->id,
-                'previous_rate' => $currentRate !== null ? number_format((float) $currentRate, 4, '.', '') : null,
+                'previous_rate' => number_format((float) $currentRate, 4, '.', ''),
                 'commission_rate' => $newRate,
             ],
             summary: "Change {$agent->name}'s commission rate to {$newRate}",
@@ -355,18 +356,19 @@ class ApprovalService
             ],
             ApprovalRequest::TRANSACTION_REVERSAL => [
                 'transaction_id' => $this->reversalService->reverse(
-                    original: Transaction::findOrFail($payload['transaction_id']),
+                    original: Transaction::query()->findOrFail((int) $payload['transaction_id']),
                     staff: $maker,
                     reason: $payload['reason'],
                 )->id,
             ],
             ApprovalRequest::COMMISSION_RATE_UPDATE => [
                 'commission_rate' => $this->userService->updateCommissionRate(
-                    agentUser: User::findOrFail($payload['agent_id']),
+                    agentUser: User::query()->findOrFail((int) $payload['agent_id']),
                     commissionRate: $payload['commission_rate'],
                     actor: $maker,
                 )->agentInfo?->commission_rate,
             ],
+            default => throw new LogicException("Unknown approval action {$request->action}."),
         };
     }
 
@@ -381,7 +383,7 @@ class ApprovalService
 
         $transaction = $this->transactionService->issueFloat(
             admin: $maker,
-            agent: User::where('is_deleted', false)->findOrFail($payload['agent_id']),
+            agent: User::where('is_deleted', false)->findOrFail((int) $payload['agent_id']),
             amount: $payload['amount'],
             externalReference: $payload['external_reference'],
             idempotencyKey: "approval:{$request->id}",
@@ -391,7 +393,7 @@ class ApprovalService
         if (isset($payload['float_request_id'])) {
             // Resolved lazily: FloatRequestService depends on this service
             app(FloatRequestService::class)->recordIssued(
-                FloatRequest::findOrFail($payload['float_request_id']),
+                FloatRequest::query()->findOrFail((int) $payload['float_request_id']),
                 $maker,
                 $transaction,
                 $payload['review_note'] ?? null,

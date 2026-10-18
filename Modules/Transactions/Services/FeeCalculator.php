@@ -13,7 +13,8 @@ class FeeCalculator
     /**
      * Calculate the system fee for a given amount based on the system_fee_rate setting.
      *
-     * @return array{rate: string, amount: string}
+     * @param  numeric-string  $amount
+     * @return array{rate: numeric-string, amount: numeric-string}
      */
     public function calculate(string $amount): array
     {

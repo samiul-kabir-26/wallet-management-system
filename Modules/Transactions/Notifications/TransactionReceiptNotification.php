@@ -8,6 +8,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use LogicException;
 use Modules\Authentication\Notifications\Channels\SmsChannel;
 
 /**
@@ -61,7 +62,7 @@ class TransactionReceiptNotification extends Notification implements ShouldQueue
     {
         $channels = [];
 
-        if ($notifiable->routeNotificationFor('sms', $this)) {
+        if (method_exists($notifiable, 'routeNotificationFor') && $notifiable->routeNotificationFor('sms', $this)) {
             $channels[] = SmsChannel::class;
         }
 
@@ -116,7 +117,7 @@ class TransactionReceiptNotification extends Notification implements ShouldQueue
     /**
      * The receipt contents for this party.
      *
-     * @return array{headline: string, amount: string, preposition: string, counterparty: string, charges: array<string, string>, balance: string, time: string}
+     * @return array{headline: string, amount: numeric-string, preposition: string, counterparty: string, charges: array<string, numeric-string>, balance: string, time: string}
      */
     public function receipt(): array
     {
@@ -134,6 +135,7 @@ class TransactionReceiptNotification extends Notification implements ShouldQueue
             'CASH_OUT:agent' => ['Cash out received', 'from', $tx->sender, ['Commission' => $commission, 'Credited' => bcadd($amount, $commission, 2)], $tx->agent_wallet_balance_after],
             'REVERSAL:sender' => ["Reversal of #{$tx->reversed_transaction_id}: returned", 'to', $tx->recipient, $this->reversalCharges($amount, 'Commission returned', $commission), $tx->sender_wallet_balance_after],
             'REVERSAL:recipient' => ["Reversal of #{$tx->reversed_transaction_id}: you got back", 'from', $tx->sender, $this->reversalCharges($amount, 'Fee refunded', $fee), $tx->recipient_wallet_balance_after],
+            default => throw new LogicException("No receipt for {$tx->type} to the {$this->party}."),
         };
 
         return [
@@ -154,7 +156,9 @@ class TransactionReceiptNotification extends Notification implements ShouldQueue
     }
 
     /**
-     * @return array<string, string>
+     * @param  numeric-string  $amount
+     * @param  numeric-string  $fee
+     * @return array<string, numeric-string>
      */
     private function feeCharges(string $amount, string $fee): array
     {
@@ -166,7 +170,9 @@ class TransactionReceiptNotification extends Notification implements ShouldQueue
     }
 
     /**
-     * @return array<string, string>
+     * @param  numeric-string  $amount
+     * @param  numeric-string  $extra
+     * @return array<string, numeric-string>
      */
     private function reversalCharges(string $amount, string $label, string $extra): array
     {

@@ -49,12 +49,13 @@ class UserService
                 'address' => $data['address'] ?? null,
             ];
 
+            // The form request requires the credential fields of the chosen track
             if ($isAdminPanel) {
-                $userData['email'] = $data['email'];
-                $userData['password'] = $data['password'];
+                $userData['email'] = $data['email'] ?? null;
+                $userData['password'] = $data['password'] ?? null;
             } else {
-                $userData['phone_number'] = $data['phone_number'];
-                $userData['pin'] = $data['pin'];
+                $userData['phone_number'] = $data['phone_number'] ?? null;
+                $userData['pin'] = $data['pin'] ?? null;
             }
 
             // Password and PIN are automatically hashed via User::casts()

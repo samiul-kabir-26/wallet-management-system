@@ -23,6 +23,10 @@ class SmsChannel
      */
     public function send(object $notifiable, Notification $notification): void
     {
+        if (! method_exists($notifiable, 'routeNotificationFor')) {
+            return;
+        }
+
         $phoneNumber = $notifiable->routeNotificationFor('sms', $notification);
 
         if (! $phoneNumber || ! method_exists($notification, 'toSms')) {

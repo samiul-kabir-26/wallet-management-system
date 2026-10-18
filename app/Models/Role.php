@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Database\Factories\RoleFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -32,6 +33,7 @@ use Modules\Roles\Enums\RolePanel;
 ])]
 class Role extends Model
 {
+    /** @use HasFactory<RoleFactory> */
     use HasFactory;
 
     /**
@@ -49,6 +51,8 @@ class Role extends Model
 
     /**
      * The user assignments for this role (fixes P1).
+     *
+     * @return HasMany<UserRole, $this>
      */
     public function userRoles(): HasMany
     {
@@ -57,6 +61,8 @@ class Role extends Model
 
     /**
      * The permissions assigned to this role.
+     *
+     * @return BelongsToMany<Permission, $this>
      */
     public function permissions(): BelongsToMany
     {
@@ -67,6 +73,8 @@ class Role extends Model
 
     /**
      * The users holding this role.
+     *
+     * @return BelongsToMany<User, $this>
      */
     public function users(): BelongsToMany
     {
@@ -77,6 +85,8 @@ class Role extends Model
 
     /**
      * The staff user who created this role, if custom.
+     *
+     * @return BelongsTo<User, $this>
      */
     public function createdBy(): BelongsTo
     {
@@ -85,6 +95,9 @@ class Role extends Model
 
     /**
      * Scope query to roles belonging to the admin panel.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
      */
     public function scopeAdminPanel(Builder $query): Builder
     {
@@ -93,6 +106,9 @@ class Role extends Model
 
     /**
      * Scope query to custom (non-system) roles.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
      */
     public function scopeCustom(Builder $query): Builder
     {

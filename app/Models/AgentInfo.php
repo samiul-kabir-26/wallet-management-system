@@ -5,7 +5,19 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property int $user_id
+ * @property string $status
+ * @property numeric-string $commission_rate
+ * @property numeric-string $total_commission
+ * @property Carbon|null $approved_at
+ * @property int|null $approved_by
+ * @property Carbon|null $suspended_at
+ * @property int|null $suspended_by
+ */
 #[Fillable([
     'user_id',
     'status',
@@ -30,16 +42,25 @@ class AgentInfo extends Model
         ];
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function suspendedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'suspended_by');
