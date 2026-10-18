@@ -11,7 +11,7 @@ use Illuminate\Notifications\Notification;
 use Modules\Authentication\Notifications\Channels\SmsChannel;
 
 /**
- * Receipt for one party of a transfer, cash-in or cash-out.
+ * Receipt for one party of a transfer, cash-in, cash-out or reversal.
  *
  * Queued and dispatched only after the database transaction commits, so a rolled-back transaction
  * never produces a receipt. SMS always goes out; email only when the account has one and has not
@@ -132,6 +132,8 @@ class TransactionReceiptNotification extends Notification implements ShouldQueue
             'CASH_IN:agent' => ['Cash in given', 'to', $tx->recipient, [], $tx->agent_wallet_balance_after],
             'CASH_OUT:sender' => ['Cash out', 'at agent', $tx->agent, $this->feeCharges($amount, $fee), $tx->sender_wallet_balance_after],
             'CASH_OUT:agent' => ['Cash out received', 'from', $tx->sender, ['Commission' => $commission, 'Credited' => bcadd($amount, $commission, 2)], $tx->agent_wallet_balance_after],
+            'REVERSAL:sender' => ["Reversal of #{$tx->reversed_transaction_id}: returned", 'to', $tx->recipient, $this->reversalCharges($amount, 'Commission returned', $commission), $tx->sender_wallet_balance_after],
+            'REVERSAL:recipient' => ["Reversal of #{$tx->reversed_transaction_id}: you got back", 'from', $tx->sender, $this->reversalCharges($amount, 'Fee refunded', $fee), $tx->recipient_wallet_balance_after],
         };
 
         return [
@@ -158,6 +160,18 @@ class TransactionReceiptNotification extends Notification implements ShouldQueue
         }
 
         return ['Fee' => $fee, 'Total' => bcadd($amount, $fee, 2)];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function reversalCharges(string $amount, string $label, string $extra): array
+    {
+        if (bccomp($extra, '0.00', 2) === 0) {
+            return [];
+        }
+
+        return [$label => $extra, 'Total' => bcadd($amount, $extra, 2)];
     }
 
     private function describe(?User $counterparty): string

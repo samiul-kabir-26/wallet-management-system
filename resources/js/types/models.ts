@@ -68,7 +68,8 @@ export type TransactionType =
     | 'AGENT_WITHDRAWAL'
     | 'COMMISSION_PAYOUT'
     | 'FLOAT_ISSUE'
-    | 'SIGNUP_BONUS';
+    | 'SIGNUP_BONUS'
+    | 'REVERSAL';
 
 export type TransactionStatus = 'COMPLETED' | 'PENDING' | 'FAILED' | 'REJECTED';
 
@@ -101,6 +102,8 @@ export interface Transaction {
     description: string | null;
     idempotency_key?: string;
     external_reference?: string | null;
+    reversed_transaction_id?: number | null;
+    reversed_by_transaction_id?: number | null;
     meta?: Record<string, unknown> | null;
     parties?: {
         sender: TransactionParty | null;
