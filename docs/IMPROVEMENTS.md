@@ -1,7 +1,6 @@
 # Improvement Proposals
 
-Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`).
-Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 4 (branch `feat/ledger-integrity-check`).
+Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`), 4 (branch `feat/ledger-integrity-check`).
 Last reviewed against: `7afe84b` (signup bonus, commission and profile editing, directory search).
 
 Each proposal says what changes, why, which module it belongs to, and what can go wrong. Items marked **Money** move or create balance and need the full treatment: DB transaction, row locks, idempotency, audit entry, and tests for the financial invariants.
