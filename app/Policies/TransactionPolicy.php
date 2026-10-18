@@ -95,4 +95,22 @@ class TransactionPolicy
         return $user->can(Permission::AgentsApproveWithdrawal->value)
             && $transaction->agent_id !== $user->id;
     }
+
+    /**
+     * Determine whether the user can reverse a transaction.
+     *
+     * Staff can never reverse a transaction they took part in, in any role.
+     */
+    public function reverse(User $user, Transaction $transaction): bool
+    {
+        $parties = array_map('intval', array_filter([
+            $transaction->user_id,
+            $transaction->sender_id,
+            $transaction->recipient_id,
+            $transaction->agent_id,
+        ]));
+
+        return $user->can(Permission::TransactionsReverse->value)
+            && ! in_array((int) $user->id, $parties, true);
+    }
 }

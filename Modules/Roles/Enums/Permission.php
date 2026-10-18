@@ -24,6 +24,7 @@ enum Permission: string
     case WalletsUnblock = 'wallets.unblock';
 
     case TransactionsViewAny = 'transactions.view_any';
+    case TransactionsReverse = 'transactions.reverse';
 
     case SettingsUpdate = 'settings.update';
     case SettingsManageSessionTimeouts = 'settings.manage_session_timeouts';
@@ -56,6 +57,7 @@ enum Permission: string
             self::WalletsBlock => 'Block active wallets',
             self::WalletsUnblock => 'Unblock suspended or blocked wallets',
             self::TransactionsViewAny => 'View all system transactions and sensitive fields',
+            self::TransactionsReverse => 'Reverse a completed transfer, cash-in or cash-out',
             self::SettingsUpdate => 'Update global system settings and transaction caps',
             self::SettingsManageSessionTimeouts => 'Change the idle auto-logout timeout for each panel',
             self::PinResetInitiate => 'Initiate staff-assisted customer PIN reset',
@@ -89,7 +91,8 @@ enum Permission: string
             self::WalletsBlock,
             self::WalletsUnblock => 'Wallets',
 
-            self::TransactionsViewAny => 'Transactions',
+            self::TransactionsViewAny,
+            self::TransactionsReverse => 'Transactions',
 
             self::SettingsUpdate,
             self::SettingsManageSessionTimeouts => 'Settings',

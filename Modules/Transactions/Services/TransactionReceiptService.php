@@ -7,7 +7,7 @@ use App\Models\User;
 use Modules\Transactions\Notifications\TransactionReceiptNotification;
 
 /**
- * Sends a receipt to each party of a completed transfer, cash-in or cash-out.
+ * Sends a receipt to each party of a completed transfer, cash-in, cash-out or reversal.
  *
  * Call it inside the transaction that wrote the row: receipts are queued after commit, so a rollback
  * cancels them, and an idempotent replay (which returns the existing row without writing) never calls it.
@@ -35,6 +35,11 @@ class TransactionReceiptService
             'CASH_OUT' => [
                 TransactionReceiptNotification::PARTY_SENDER => $transaction->sender_id,
                 TransactionReceiptNotification::PARTY_AGENT => $transaction->agent_id,
+            ],
+            // The debited party is in the sender slot, the party getting money back in the recipient slot
+            'REVERSAL' => [
+                TransactionReceiptNotification::PARTY_SENDER => $transaction->sender_id,
+                TransactionReceiptNotification::PARTY_RECIPIENT => $transaction->recipient_id,
             ],
             default => [],
         };

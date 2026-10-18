@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Log;
 
 #[Fillable([
@@ -31,6 +32,7 @@ use Illuminate\Support\Facades\Log;
     'recipient_wallet_id',
     'agent_wallet_id',
     'external_reference',
+    'reversed_transaction_id',
     'meta',
 ])]
 class Transaction extends Model
@@ -80,6 +82,22 @@ class Transaction extends Model
     public function agent(): BelongsTo
     {
         return $this->belongsTo(User::class, 'agent_id');
+    }
+
+    /**
+     * The transaction this REVERSAL row undoes.
+     */
+    public function reversedTransaction(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class, 'reversed_transaction_id');
+    }
+
+    /**
+     * The REVERSAL row that undid this transaction, if any.
+     */
+    public function reversal(): HasOne
+    {
+        return $this->hasOne(Transaction::class, 'reversed_transaction_id');
     }
 
     public function initiatedBy(): BelongsTo

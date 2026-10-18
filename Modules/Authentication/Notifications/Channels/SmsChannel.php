@@ -3,19 +3,23 @@
 namespace Modules\Authentication\Notifications\Channels;
 
 use Illuminate\Notifications\Notification;
-use Illuminate\Support\Facades\Log;
+use Modules\Authentication\Exceptions\SmsDeliveryException;
+use Modules\Authentication\Sms\SmsSender;
 
 /**
- * Delivers text messages to a notifiable's phone number.
- *
- * No SMS gateway is configured yet, so messages are written to the log channel named by
- * services.sms.log_channel (the default log when unset), the same way MAIL_MAILER=log works for email.
- * Swap the body of send() for a gateway client when one is chosen.
+ * Delivers text messages to a notifiable's phone number through the configured SmsSender
+ * (services.sms.driver: "log" for development, "twilio" for real delivery).
  */
 class SmsChannel
 {
+    public function __construct(
+        private SmsSender $sender,
+    ) {}
+
     /**
      * Send the given notification.
+     *
+     * @throws SmsDeliveryException
      */
     public function send(object $notifiable, Notification $notification): void
     {
@@ -25,10 +29,6 @@ class SmsChannel
             return;
         }
 
-        Log::channel(config('services.sms.log_channel') ?: config('logging.default'))
-            ->info('SMS message', [
-                'to' => $phoneNumber,
-                'message' => $notification->toSms($notifiable),
-            ]);
+        $this->sender->send($phoneNumber, $notification->toSms($notifiable));
     }
 }

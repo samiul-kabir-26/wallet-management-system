@@ -17,6 +17,9 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
+use Modules\Authentication\Sms\LogSmsSender;
+use Modules\Authentication\Sms\SmsSender;
+use Modules\Authentication\Sms\TwilioSmsSender;
 use Modules\Roles\Enums\Permission as PermissionEnum;
 use Modules\SystemSettings\Services\SessionTimeoutService;
 
@@ -27,7 +30,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(SmsSender::class, fn (): SmsSender => match (config('services.sms.driver')) {
+            'twilio' => new TwilioSmsSender(
+                accountSid: (string) config('services.twilio.account_sid'),
+                authToken: (string) config('services.twilio.auth_token'),
+                from: config('services.twilio.from'),
+                messagingServiceSid: config('services.twilio.messaging_service_sid'),
+                defaultCountryCode: (string) config('services.sms.default_country_code', '880'),
+                timeoutSeconds: (int) config('services.sms.timeout_seconds', 10),
+            ),
+            default => new LogSmsSender(config('services.sms.log_channel')),
+        });
     }
 
     /**

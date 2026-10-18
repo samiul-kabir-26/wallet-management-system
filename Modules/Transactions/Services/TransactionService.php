@@ -967,7 +967,7 @@ class TransactionService
         array $filters = [],
         int $perPage = 15,
     ): LengthAwarePaginator {
-        $query = Transaction::query()->with(['sender', 'recipient', 'agent', 'user']);
+        $query = Transaction::query()->with(['sender', 'recipient', 'agent', 'user', 'reversal:id,reversed_transaction_id']);
 
         if ($wallet !== null) {
             $query->involvingWallet($wallet);
@@ -985,7 +985,7 @@ class TransactionService
      */
     public function listAllTransactions(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
-        $query = Transaction::query()->with(['sender', 'recipient', 'agent', 'user']);
+        $query = Transaction::query()->with(['sender', 'recipient', 'agent', 'user', 'reversal:id,reversed_transaction_id']);
 
         $this->applyFilters($query, $filters);
 

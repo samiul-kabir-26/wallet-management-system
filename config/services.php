@@ -35,9 +35,23 @@ return [
         ],
     ],
 
-    // No SMS gateway yet: messages are written to this log channel (default log when unset)
+    /*
+    | SMS delivery. "log" (default) writes messages, OTP codes included, to the log channel below and
+    | must not be used in production. "twilio" sends real messages; a free trial account can text
+    | numbers verified in the Twilio console. Local numbers (01XXXXXXXXX) get default_country_code.
+    */
     'sms' => [
+        'driver' => env('SMS_DRIVER', 'log'),
         'log_channel' => env('SMS_LOG_CHANNEL'),
+        'default_country_code' => env('SMS_DEFAULT_COUNTRY_CODE', '880'),
+        'timeout_seconds' => (int) env('SMS_TIMEOUT', 10),
+    ],
+
+    'twilio' => [
+        'account_sid' => env('TWILIO_ACCOUNT_SID'),
+        'auth_token' => env('TWILIO_AUTH_TOKEN'),
+        'from' => env('TWILIO_FROM'),
+        'messaging_service_sid' => env('TWILIO_MESSAGING_SERVICE_SID'),
     ],
 
 ];
