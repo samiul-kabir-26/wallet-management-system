@@ -7,8 +7,40 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Decimal columns use Laravel's decimal casts, so they read as numeric strings (fed to bcmath), not floats.
+ *
+ * @property int $id
+ * @property int|null $user_id
+ * @property int|null $sender_id
+ * @property int|null $recipient_id
+ * @property int|null $agent_id
+ * @property int $initiated_by
+ * @property string $type
+ * @property string|null $external_reference
+ * @property int|null $reversed_transaction_id
+ * @property numeric-string $amount
+ * @property numeric-string $system_fee_amount
+ * @property numeric-string $system_fee_rate
+ * @property numeric-string $agent_commission_amount
+ * @property numeric-string $agent_commission_rate
+ * @property string $currency
+ * @property string|null $description
+ * @property string $status
+ * @property string|null $idempotency_key
+ * @property numeric-string|null $sender_wallet_balance_after
+ * @property numeric-string|null $recipient_wallet_balance_after
+ * @property numeric-string|null $agent_wallet_balance_after
+ * @property int|null $sender_wallet_id
+ * @property int|null $recipient_wallet_id
+ * @property int|null $agent_wallet_id
+ * @property array<string, mixed>|null $meta
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ */
 #[Fillable([
     'user_id',
     'sender_id',
@@ -64,21 +96,33 @@ class Transaction extends Model
         ];
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sender_id');
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function recipient(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recipient_id');
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function agent(): BelongsTo
     {
         return $this->belongsTo(User::class, 'agent_id');
@@ -86,6 +130,8 @@ class Transaction extends Model
 
     /**
      * The transaction this REVERSAL row undoes.
+     *
+     * @return BelongsTo<Transaction, $this>
      */
     public function reversedTransaction(): BelongsTo
     {
@@ -94,27 +140,41 @@ class Transaction extends Model
 
     /**
      * The REVERSAL row that undid this transaction, if any.
+     *
+     * @return HasOne<Transaction, $this>
      */
     public function reversal(): HasOne
     {
         return $this->hasOne(Transaction::class, 'reversed_transaction_id');
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function initiatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'initiated_by');
     }
 
+    /**
+     * @return BelongsTo<Wallet, $this>
+     */
     public function senderWallet(): BelongsTo
     {
         return $this->belongsTo(Wallet::class, 'sender_wallet_id');
     }
 
+    /**
+     * @return BelongsTo<Wallet, $this>
+     */
     public function recipientWallet(): BelongsTo
     {
         return $this->belongsTo(Wallet::class, 'recipient_wallet_id');
     }
 
+    /**
+     * @return BelongsTo<Wallet, $this>
+     */
     public function agentWallet(): BelongsTo
     {
         return $this->belongsTo(Wallet::class, 'agent_wallet_id');
@@ -122,6 +182,8 @@ class Transaction extends Model
 
     /**
      * Scope query to transactions involving the given wallet across any of the three slots.
+     *
+     * @param  Builder<self>  $query
      */
     public function scopeInvolvingWallet(Builder $query, Wallet $wallet): void
     {

@@ -40,12 +40,11 @@ class CapFactory extends Factory
     public function usage(float|string $dailyUsed, float|string $monthlyUsed): static
     {
         return $this->afterCreating(function (Cap $cap) use ($dailyUsed, $monthlyUsed) {
-            if ($cap->daily_cap === null) {
-                $cap->refresh();
-            }
+            // Pick up the column defaults the insert left to the database
+            $cap->refresh();
 
-            $cap->daily_used = $dailyUsed;
-            $cap->monthly_used = $monthlyUsed;
+            $cap->daily_used = number_format((float) $dailyUsed, 2, '.', '');
+            $cap->monthly_used = number_format((float) $monthlyUsed, 2, '.', '');
             $cap->save();
         });
     }
@@ -56,12 +55,11 @@ class CapFactory extends Factory
     public function limits(float|string $dailyCap, float|string $monthlyCap): static
     {
         return $this->afterCreating(function (Cap $cap) use ($dailyCap, $monthlyCap) {
-            if ($cap->daily_cap === null) {
-                $cap->refresh();
-            }
+            // Pick up the column defaults the insert left to the database
+            $cap->refresh();
 
-            $cap->daily_cap = $dailyCap;
-            $cap->monthly_cap = $monthlyCap;
+            $cap->daily_cap = number_format((float) $dailyCap, 2, '.', '');
+            $cap->monthly_cap = number_format((float) $monthlyCap, 2, '.', '');
             $cap->save();
         });
     }
@@ -70,30 +68,33 @@ class CapFactory extends Factory
      * Intercept non-fillable attributes passed directly into create(),
      * assigning them via direct property assignment rather than mass assignment.
      *
-     * @param  array<string, mixed>|callable  $attributes
+     * @param  (callable(array<string, mixed>): array<string, mixed>)|array<string, mixed>  $attributes
      */
     public function create($attributes = [], ?Model $parent = null)
     {
         $intercepted = [];
-        if (is_array($attributes)) {
-            foreach (['daily_cap', 'monthly_cap', 'daily_used', 'monthly_used'] as $field) {
-                if (array_key_exists($field, $attributes)) {
-                    $intercepted[$field] = $attributes[$field];
-                    unset($attributes[$field]);
+        $passThrough = $attributes;
+        // A callable state is passed through untouched; only literal attribute arrays are intercepted
+        if (is_array($attributes) && ! is_callable($attributes)) {
+            $passThrough = [];
+            foreach ($attributes as $key => $value) {
+                if (in_array($key, ['daily_cap', 'monthly_cap', 'daily_used', 'monthly_used'], true)) {
+                    $intercepted[$key] = $value;
+                } else {
+                    $passThrough[(string) $key] = $value;
                 }
             }
         }
 
-        $result = parent::create($attributes, $parent);
+        $result = parent::create($passThrough, $parent);
 
         $apply = function (Cap $cap) use ($intercepted) {
-            if ($cap->daily_cap === null) {
-                $cap->refresh();
-            }
+            // Pick up the column defaults the insert left to the database
+            $cap->refresh();
 
             if (! empty($intercepted)) {
                 foreach ($intercepted as $field => $val) {
-                    $cap->{$field} = $val;
+                    $cap->{$field} = number_format((float) $val, 2, '.', '');
                 }
                 $cap->save();
             }

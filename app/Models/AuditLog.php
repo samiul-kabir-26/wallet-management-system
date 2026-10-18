@@ -38,6 +38,8 @@ class AuditLog extends Model
 
     /**
      * The actor (user) who performed the action.
+     *
+     * @return BelongsTo<User, $this>
      */
     public function actor(): BelongsTo
     {
@@ -46,6 +48,8 @@ class AuditLog extends Model
 
     /**
      * The polymorphic entity targeted by the action.
+     *
+     * @return MorphTo<Model, $this>
      */
     public function auditable(): MorphTo
     {

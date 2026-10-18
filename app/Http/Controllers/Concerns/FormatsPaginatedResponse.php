@@ -10,7 +10,7 @@ trait FormatsPaginatedResponse
     /**
      * Format a paginated collection and its pagination metadata into a standard JSON response.
      *
-     * @param  LengthAwarePaginator<mixed>  $paginator
+     * @param  LengthAwarePaginator<int, mixed>  $paginator
      * @param  array<string, mixed>  $extra
      */
     protected function paginatedResponse(LengthAwarePaginator $paginator, mixed $items = null, array $extra = []): JsonResponse
@@ -27,7 +27,7 @@ trait FormatsPaginatedResponse
     /**
      * Extract standard pagination metadata from a paginator instance.
      *
-     * @param  LengthAwarePaginator<mixed>  $paginator
+     * @param  LengthAwarePaginator<int, mixed>  $paginator
      * @return array{total: int, per_page: int, current_page: int, last_page: int, from: ?int, to: ?int}
      */
     protected function formatPagination(LengthAwarePaginator $paginator): array

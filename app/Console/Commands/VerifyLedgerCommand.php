@@ -29,7 +29,7 @@ class VerifyLedgerCommand extends Command
      */
     public function handle(LedgerIntegrityService $ledger): int
     {
-        $walletIds = array_map('intval', (array) $this->option('wallet'));
+        $walletIds = array_values(array_map('intval', (array) $this->option('wallet')));
         $report = $ledger->verify($walletIds === [] ? null : $walletIds);
 
         $unexplained = array_values(array_filter(

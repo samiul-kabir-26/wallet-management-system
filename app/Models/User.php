@@ -17,15 +17,26 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
+use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\TransientToken;
 use Modules\Roles\Enums\Permission as PermissionEnum;
 use Modules\Roles\Enums\RolePanel;
 
 /**
  * @property int $id
  * @property string $name
- * @property string $email
+ * @property string|null $email
+ * @property string|null $phone_number
+ * @property string|null $image
+ * @property string|null $address
+ * @property string $is_active
+ * @property bool $is_verified
+ * @property bool $is_deleted
+ * @property bool|null $receipt_emails_enabled
+ * @property string|null $pin
+ * @property Carbon|null $password_changed_at
  * @property Carbon|null $email_verified_at
- * @property string $password
+ * @property string|null $password
  * @property string|null $remember_token
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -43,8 +54,11 @@ use Modules\Roles\Enums\RolePanel;
 #[Hidden(['password', 'pin', 'totp_secret', 'totp_last_used_step'])]
 class User extends Authenticatable
 {
+    /** @use HasApiTokens<PersonalAccessToken|TransientToken> */
+    use HasApiTokens;
+
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasFactory, Notifiable;
 
     /**
      * Directory on the public disk that holds uploaded avatars.
@@ -73,6 +87,8 @@ class User extends Authenticatable
      * Match a free-text term against name, email or phone number, plus the exact user ID for "#123" or "123".
      *
      * The OR conditions are grouped so they never escape the caller's other filters (such as is_deleted).
+     *
+     * @param  Builder<self>  $query
      */
     public function scopeSearch(Builder $query, string $term): void
     {
@@ -92,17 +108,25 @@ class User extends Authenticatable
 
     /**
      * Limit to users holding at least one role that belongs to the given panel.
+     *
+     * @param  Builder<self>  $query
      */
     public function scopeInPanel(Builder $query, RolePanel $panel): void
     {
         $query->whereHas('roles', fn (Builder $q) => $q->where('panel', $panel->value));
     }
 
+    /**
+     * @return HasMany<UserRole, $this>
+     */
     public function roleAssignments(): HasMany
     {
         return $this->hasMany(UserRole::class);
     }
 
+    /**
+     * @return BelongsToMany<Role, $this>
+     */
     public function roles(): BelongsToMany
     {
         return $this->belongsToMany(Role::class, 'user_roles')
@@ -110,76 +134,121 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
+    /**
+     * @return HasMany<Wallet, $this>
+     */
     public function wallets(): HasMany
     {
         return $this->hasMany(Wallet::class);
     }
 
+    /**
+     * @return HasOne<Wallet, $this>
+     */
     public function userWallet(): HasOne
     {
         return $this->hasOne(Wallet::class)->where('kind', Wallet::KIND_USER);
     }
 
+    /**
+     * @return HasOne<Wallet, $this>
+     */
     public function agentWallet(): HasOne
     {
         return $this->hasOne(Wallet::class)->where('kind', Wallet::KIND_AGENT);
     }
 
+    /**
+     * @return HasOne<Cap, $this>
+     */
     public function cap(): HasOne
     {
         return $this->hasOne(Cap::class);
     }
 
+    /**
+     * @return HasOne<AgentInfo, $this>
+     */
     public function agentInfo(): HasOne
     {
         return $this->hasOne(AgentInfo::class);
     }
 
+    /**
+     * @return HasMany<Transaction, $this>
+     */
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
     }
 
+    /**
+     * @return HasMany<Transaction, $this>
+     */
     public function sentTransactions(): HasMany
     {
         return $this->hasMany(Transaction::class, 'sender_id');
     }
 
+    /**
+     * @return HasMany<Transaction, $this>
+     */
     public function receivedTransactions(): HasMany
     {
         return $this->hasMany(Transaction::class, 'recipient_id');
     }
 
+    /**
+     * @return HasMany<Transaction, $this>
+     */
     public function agentTransactions(): HasMany
     {
         return $this->hasMany(Transaction::class, 'agent_id');
     }
 
+    /**
+     * @return HasMany<Transaction, $this>
+     */
     public function initiatedTransactions(): HasMany
     {
         return $this->hasMany(Transaction::class, 'initiated_by');
     }
 
+    /**
+     * @return HasMany<UserRole, $this>
+     */
     public function assignedRoles(): HasMany
     {
         return $this->hasMany(UserRole::class, 'assigned_by');
     }
 
+    /**
+     * @return HasMany<SystemSetting, $this>
+     */
     public function updatedSettings(): HasMany
     {
         return $this->hasMany(SystemSetting::class, 'updated_by');
     }
 
+    /**
+     * @return HasMany<OtpToken, $this>
+     */
     public function createdOtps(): HasMany
     {
         return $this->hasMany(OtpToken::class);
     }
 
+    /**
+     * @return HasMany<AuthProvider, $this>
+     */
     public function authProviders(): HasMany
     {
         return $this->hasMany(AuthProvider::class);
     }
 
+    /**
+     * @return HasMany<LoginActivity, $this>
+     */
     public function loginActivities(): HasMany
     {
         return $this->hasMany(LoginActivity::class);

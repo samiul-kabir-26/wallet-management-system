@@ -51,7 +51,8 @@ class WalletService
     /**
      * List paginated wallets with optional filtering.
      *
-     * @param  array{is_blocked?: bool|string, user_id?: int}  $filters
+     * @param  array{is_blocked?: bool|string, user_id?: int, search?: string}  $filters
+     * @return LengthAwarePaginator<int, Wallet>
      */
     public function listWallets(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
@@ -195,7 +196,7 @@ class WalletService
     /**
      * Lock specific wallets by (user_id, kind) pairs in deterministic order by wallet id to prevent deadlocks.
      *
-     * @param  array<int|string, array{user_id: int, kind: string}>  $targets
+     * @param  array<int|string, array{user_id: int, kind?: string}|int>  $targets
      * @return Collection<int, Wallet>
      */
     public function lockWalletsForUsers(array $targets): Collection

@@ -38,6 +38,8 @@ class LoginActivity extends Model
 
     /**
      * The account the attempt was made against, when it could be resolved.
+     *
+     * @return BelongsTo<User, $this>
      */
     public function user(): BelongsTo
     {

@@ -53,7 +53,7 @@ class WalletFactory extends Factory
     public function balance(float|string $balance): static
     {
         return $this->afterCreating(function (Wallet $wallet) use ($balance) {
-            $wallet->balance = $balance;
+            $wallet->balance = number_format((float) $balance, 2, '.', '');
             $wallet->save();
         });
     }
@@ -74,26 +74,33 @@ class WalletFactory extends Factory
      * Intercept balance passed directly into create() attributes,
      * assigning it via direct property assignment rather than mass assignment.
      *
-     * @param  array<string, mixed>|callable  $attributes
+     * @param  (callable(array<string, mixed>): array<string, mixed>)|array<string, mixed>  $attributes
      */
     public function create($attributes = [], ?Model $parent = null)
     {
         $balance = null;
-        if (is_array($attributes) && array_key_exists('balance', $attributes)) {
+        $passThrough = $attributes;
+        // A callable state is passed through untouched; only literal attribute arrays are intercepted
+        if (is_array($attributes) && ! is_callable($attributes) && array_key_exists('balance', $attributes)) {
             $balance = $attributes['balance'];
-            unset($attributes['balance']);
+            $passThrough = [];
+            foreach ($attributes as $key => $value) {
+                if ($key !== 'balance') {
+                    $passThrough[(string) $key] = $value;
+                }
+            }
         }
 
-        $result = parent::create($attributes, $parent);
+        $result = parent::create($passThrough, $parent);
 
         if ($balance !== null) {
             if ($result instanceof Collection) {
                 $result->each(function (Wallet $wallet) use ($balance) {
-                    $wallet->balance = $balance;
+                    $wallet->balance = number_format((float) $balance, 2, '.', '');
                     $wallet->save();
                 });
             } elseif ($result instanceof Wallet) {
-                $result->balance = $balance;
+                $result->balance = number_format((float) $balance, 2, '.', '');
                 $result->save();
             }
         }

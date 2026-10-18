@@ -1,5 +1,6 @@
 # Improvement Proposals
 
+Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`), 4 (branch `feat/ledger-integrity-check`), 5 (branch `feat/opening-balance-backfill`), 6 (branch `feat/transaction-receipts`), 7 (branch `feat/sms-gateway`), 8 (branch `feat/transaction-reversals`), 9 (branch `feat/maker-checker`), 10 (branch `feat/agent-float-requests`), 12 (branch `feat/signup-bonus-controls`), 16 (branch `chore/engineering`).
 Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`), 4 (branch `feat/ledger-integrity-check`), 5 (branch `feat/opening-balance-backfill`), 6 (branch `feat/transaction-receipts`), 7 (branch `feat/sms-gateway`), 8 (branch `feat/transaction-reversals`), 9 (branch `feat/maker-checker`), 10 (branch `feat/agent-float-requests`), 12 (branch `feat/signup-bonus-controls`), 15 (branch `feat/security-hardening`).
 Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`), 4 (branch `feat/ledger-integrity-check`), 5 (branch `feat/opening-balance-backfill`), 6 (branch `feat/transaction-receipts`), 7 (branch `feat/sms-gateway`), 8 (branch `feat/transaction-reversals`), 9 (branch `feat/maker-checker`), 10 (branch `feat/agent-float-requests`), 12 (branch `feat/signup-bonus-controls`), 14 (branch `feat/admin-metrics-export`).
 Last reviewed against: `7afe84b` (signup bonus, commission and profile editing, directory search).
@@ -29,7 +30,7 @@ Each proposal says what changes, why, which module it belongs to, and what can g
 | 15 | Security hardening (device binding, login alerts, TOTP) — **done** (plus session list) | Authentication | Low–Medium | M–L |
 | 14 | Admin dashboard metrics and ledger export — **done** | Admin panel | Low | M |
 | 15 | Security hardening (device binding, login alerts, TOTP) | Authentication | Low–Medium | M–L |
-| 16 | Engineering (OpenAPI, CI, static analysis) | Project | Ongoing | S–M |
+| 16 | Engineering (OpenAPI, CI, static analysis) — **done** (PHPStan level 7 now covers Modules; level 8 is 82 errors away) | Project | Ongoing | S–M |
 
 ---
 
@@ -226,5 +227,6 @@ A user asks another user for an amount. The payer sees the request and pays it w
 
 - Generate an OpenAPI spec from the routes and Form Requests, and keep `docs/API.md` and the Postman collection in sync from it. Several sections had drifted before this review.
 - Add CI that runs Pint, PHPStan (`phpstan.neon` exists), `vue-tsc`, the build and the Pest suite on every PR.
-- Move `chk.php` (an ad-hoc schema inspection script in the project root) out of the repo, or into a proper Artisan command if it is still useful.
-- Raise the PHPStan level one step at a time.
+- ~~Move `chk.php` out of the repo~~ (removed).
+- Raise the PHPStan level one step at a time. Level 7 now passes over `app/` **and** `Modules/` (it previously skipped Modules and failed with 96 errors); level 8 currently reports 82 nullability errors.
+- Format the frontend: `npm run check` reports 93 files out of format. Run `vp check --fix` once the open feature branches are merged, then add it to CI.

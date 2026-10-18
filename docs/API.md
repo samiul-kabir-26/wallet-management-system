@@ -4,7 +4,8 @@ Version: `v1`
 Base URL: `/api/v1`  
 Protocol: HTTP / JSON  
 Authentication: Bearer Token (Laravel Sanctum)  
-Postman Collection: [postman_collection.json](postman_collection.json)
+Postman Collection: [postman_collection.json](postman_collection.json)  
+OpenAPI 3.1 spec: [openapi.json](openapi.json), generated from the routes, Form Requests and API Resources with `composer docs:openapi` (CI fails when it is stale). This document adds the business rules the spec cannot express: money flows, locking, audit entries and error meanings. Locally, the interactive viewer is at `/docs/api`.
 
 ---
 

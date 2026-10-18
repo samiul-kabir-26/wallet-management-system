@@ -186,7 +186,7 @@ class ReversalService
     /**
      * Who gives money back, who gets it, and how much, for a locked original transaction.
      *
-     * @return array{debit_wallet_id: int, debit_user_id: int, debit_party: string, debit_amount: string, credit_wallet_id: int|null, credit_user_id: int|null, credit_amount: string, fee: string, commission: string}
+     * @return array{debit_wallet_id: int, debit_user_id: int, debit_party: string, debit_amount: numeric-string, credit_wallet_id: int|null, credit_user_id: int|null, credit_amount: numeric-string, fee: numeric-string, commission: numeric-string}
      */
     private function legs(Transaction $original): array
     {
@@ -239,9 +239,13 @@ class ReversalService
                 'fee' => $fee,
                 'commission' => $commission,
             ],
+            default => throw new TransactionNotReversibleException,
         };
     }
 
+    /**
+     * @param  numeric-string  $commission
+     */
     private function clawBackCommission(int $agentUserId, string $commission): void
     {
         $agentInfo = AgentInfo::where('user_id', $agentUserId)->lockForUpdate()->first();

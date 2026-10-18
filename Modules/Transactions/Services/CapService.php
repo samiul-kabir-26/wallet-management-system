@@ -4,6 +4,7 @@ namespace Modules\Transactions\Services;
 
 use App\Models\Cap;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Carbon;
 use Modules\Transactions\Exceptions\DailyCapsExceededException;
 use Modules\Transactions\Exceptions\MonthlyCapsExceededException;
 
@@ -37,7 +38,7 @@ class CapService
             $lockedCap->monthly_used = '0.00';
         }
 
-        $lockedCap->last_reset_date = $today->toDateString();
+        $lockedCap->last_reset_date = Carbon::parse($today->toDateString());
         $lockedCap->save();
     }
 
@@ -47,7 +48,7 @@ class CapService
      * Counters from an earlier day or month are reported as zero even if no transaction
      * has reset them yet.
      *
-     * @return array{daily_limit: string, daily_used: string, daily_remaining: string, monthly_limit: string, monthly_used: string, monthly_remaining: string}
+     * @return array{daily_limit: numeric-string, daily_used: numeric-string, daily_remaining: numeric-string, monthly_limit: numeric-string, monthly_used: numeric-string, monthly_remaining: numeric-string}
      */
     public function usageSnapshot(Cap $cap): array
     {
@@ -89,6 +90,10 @@ class CapService
 
     /**
      * Compute the remaining allowance, never below zero.
+     *
+     * @param  numeric-string  $limit
+     * @param  numeric-string  $used
+     * @return numeric-string
      */
     private function remaining(string $limit, string $used): string
     {
@@ -130,6 +135,8 @@ class CapService
 
     /**
      * Increment the user's daily and monthly used amounts.
+     *
+     * @param  numeric-string  $amount
      */
     public function increment(Cap $lockedCap, string $amount): void
     {

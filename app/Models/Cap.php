@@ -7,7 +7,19 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property int $user_id
+ * @property numeric-string $daily_cap
+ * @property numeric-string $monthly_cap
+ * @property numeric-string $daily_used
+ * @property numeric-string $monthly_used
+ * @property Carbon|null $last_reset_date
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ */
 #[Fillable([
     'user_id',
 ])]
@@ -34,25 +46,8 @@ class Cap extends Model
     }
 
     /**
-     * New cap rows take their limits from the owner's KYC tier unless limits were set explicitly.
+     * @return BelongsTo<User, $this>
      */
-    protected static function booted(): void
-    {
-        static::creating(function (Cap $cap): void {
-            if ($cap->daily_cap !== null && $cap->monthly_cap !== null) {
-                return;
-            }
-
-            $tier = config('kyc.tiers.'.(User::whereKey($cap->user_id)->value('kyc_tier') ?? 'STANDARD'));
-            if (! is_array($tier)) {
-                return;
-            }
-
-            $cap->daily_cap ??= number_format((float) $tier['daily_cap'], 2, '.', '');
-            $cap->monthly_cap ??= number_format((float) $tier['monthly_cap'], 2, '.', '');
-        });
-    }
-
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

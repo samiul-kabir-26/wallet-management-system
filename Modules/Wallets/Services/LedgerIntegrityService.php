@@ -72,7 +72,7 @@ class LedgerIntegrityService
      * The balance each wallet should have according to the ledger, keyed by wallet id.
      *
      * @param  list<int>|null  $walletIds
-     * @return array<int, string>
+     * @return array<int, numeric-string>
      */
     public function ledgerBalances(?array $walletIds = null): array
     {
@@ -80,8 +80,12 @@ class LedgerIntegrityService
 
         $add = function (Builder $query) use (&$totals): void {
             foreach ($query->get() as $row) {
+                $total = (string) $row->total;
+                if (! is_numeric($total)) {
+                    continue;
+                }
                 $current = $totals[(int) $row->wallet_id] ?? '0.00';
-                $totals[(int) $row->wallet_id] = bcadd($current, (string) $row->total, 2);
+                $totals[(int) $row->wallet_id] = bcadd($current, $total, 2);
             }
         };
 

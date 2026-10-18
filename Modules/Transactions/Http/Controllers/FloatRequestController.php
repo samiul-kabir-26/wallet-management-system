@@ -42,7 +42,12 @@ class FloatRequestController extends Controller
     {
         $floatRequest = $this->floatRequests->submit(
             agent: $request->user(),
-            data: $request->safe()->except('slip'),
+            data: [
+                'amount' => (string) $request->validated('amount'),
+                'bank_reference' => (string) $request->validated('bank_reference'),
+                'deposited_at' => (string) $request->validated('deposited_at'),
+                'note' => $request->validated('note'),
+            ],
             slip: $request->file('slip'),
         );
 

@@ -14,7 +14,9 @@ class CommissionCalculator
     /**
      * Calculate agent commission for a given amount.
      *
-     * @return array{rate: string, amount: string}
+     * @param  numeric-string  $amount
+     * @param  numeric-string|null  $maxCommission
+     * @return array{rate: numeric-string, amount: numeric-string}
      */
     public function calculate(string $amount, AgentInfo $agentInfo, ?string $maxCommission = null): array
     {

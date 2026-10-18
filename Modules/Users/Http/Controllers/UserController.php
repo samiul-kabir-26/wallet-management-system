@@ -94,8 +94,27 @@ class UserController extends Controller
      */
     public function register(RegisterUserRequest $request): JsonResponse
     {
+        // The form request decides which credential fields the chosen role needs
+        $data = ['name' => (string) $request->validated('name'), 'role' => (string) $request->validated('role')];
+        if ($request->filled('email')) {
+            $data['email'] = (string) $request->validated('email');
+        }
+        if ($request->filled('password')) {
+            $data['password'] = (string) $request->validated('password');
+        }
+        if ($request->filled('phone_number')) {
+            $data['phone_number'] = (string) $request->validated('phone_number');
+        }
+        if ($request->filled('pin')) {
+            $data['pin'] = (string) $request->validated('pin');
+        }
+        if ($request->has('address')) {
+            $address = $request->validated('address');
+            $data['address'] = $address !== null ? (string) $address : null;
+        }
+
         $user = $this->userService->register(
-            data: $request->validated(),
+            data: $data,
             actor: $request->user(),
         );
 

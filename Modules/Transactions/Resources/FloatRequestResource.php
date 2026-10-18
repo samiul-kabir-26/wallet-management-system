@@ -27,7 +27,7 @@ class FloatRequestResource extends JsonResource
             'agent' => $agent ? ['id' => $agent->id, 'name' => $agent->name, 'phone_number' => $agent->phone_number] : null,
             'amount' => (float) $this->resource->amount,
             'bank_reference' => $this->resource->bank_reference,
-            'deposited_at' => $this->resource->deposited_at?->toDateString(),
+            'deposited_at' => $this->resource->deposited_at->toDateString(),
             'note' => $this->resource->note,
             'slip' => [
                 'name' => $this->resource->slip_original_name,
