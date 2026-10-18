@@ -1,5 +1,6 @@
 # Improvement Proposals
 
+Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`).
 Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 4 (branch `feat/ledger-integrity-check`).
 Last reviewed against: `7afe84b` (signup bonus, commission and profile editing, directory search).
 
@@ -13,7 +14,7 @@ Each proposal says what changes, why, which module it belongs to, and what can g
 |---|---|---|---|---|
 | 1 | Top-up through the SSLCommerz sandbox — **done** | Transactions, User panel | High | L |
 | 2 | Remove the PIN from top-up — **done** | Transactions, User panel | High (ships with 1) | S |
-| 3 | Reconcile stuck gateway payments | Transactions | High (ships with 1) | M |
+| 3 | Reconcile stuck gateway payments — **done** | Transactions | High (ships with 1) | M |
 | 4 | Ledger integrity check — **done** | Wallets, Transactions | High | S |
 | 5 | Opening-balance backfill for legacy wallets | Wallets | Medium | S |
 | 6 | Transaction receipts (SMS / email) | Transactions, Notifications | Medium | M |

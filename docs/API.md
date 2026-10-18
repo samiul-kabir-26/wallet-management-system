@@ -1013,6 +1013,18 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 - **Access:** User only, own top-ups only (404 otherwise). Throttled 10/min.
 - **Description:** asks SSLCommerz for the latest state of the top-up (same rules as above) and returns `{ data: { transaction } }`. The result page calls it once on load and from its "Check again" button, which matters in local development where SSLCommerz cannot reach the IPN URL.
 
+#### 5.1b Top-Up Reconciliation
+IPNs get lost and customers close the tab, so unfinished top-ups are swept by a scheduled job (`ReconcilePendingTopUps`, every 10 minutes; run it by hand with `php artisan payments:reconcile-top-ups`, which exits 1 if the gateway could not be reached).
+- **Which rows:** `PENDING` gateway top-ups older than `payments.reconciliation.check_after_minutes` (default 10). Rows held for `WALLET_BLOCKED` are included, so they are credited automatically once the wallet is unblocked. Rows held for `AMOUNT_MISMATCH` or `HIGH_RISK` are left for staff.
+- **What happens:** each row is looked up by `tran_id` and settled exactly like a callback (paid → credited once, confirmed unpaid → `FAILED` with `meta.failure.reason = NOT_PAID`).
+- **Expiry:** a row the gateway still has no payment for after `payments.reconciliation.expire_after_hours` (default 24) becomes `FAILED` with reason `EXPIRED`. Nothing is expired when the gateway cannot be reached. A payment confirmed after expiry is still credited.
+
+#### 5.1c Staff: Unfinished Top-Ups
+- **List:** `GET /api/v1/payments/admin/top-ups?state=all|awaiting_payment|on_hold` (admin token **and** `transactions.view_any`). Paginated `PENDING` gateway top-ups, oldest first, in the admin ledger item shape (with `parties` and `meta.on_hold`).
+- **Check now:** `POST /api/v1/payments/admin/top-ups/{transaction}/reconcile` (same access, throttled 30/min). Runs the reconciliation rules for one top-up immediately and returns `{ data: { transaction } }`. Audited as `TOP_UP_RECONCILED` with the status and hold reason before and after. 404 for anything that is not a gateway top-up.
+- **Admin panel:** "Pending Top-ups" (`/admin/top-ups`).
+- **Not included yet:** releasing or refunding a held payment needs a staff decision and belongs with reversals and maker-checker (IMPROVEMENTS.md 8 and 9).
+
 ---
 
 ### 5.2 P2P Balance Transfer
