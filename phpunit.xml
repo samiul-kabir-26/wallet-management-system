@@ -35,6 +35,7 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="TOP_UP_GATEWAY" value="simulated"/>
         <env name="MAKER_CHECKER_ENABLED" value="false"/>
+        <env name="DEVICE_BINDING_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
     </php>
 </phpunit>

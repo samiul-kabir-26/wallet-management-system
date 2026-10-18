@@ -52,4 +52,22 @@ return [
         // Signup codes a single IP may request per 10 minutes (no account yet, and IPs are shared)
         'phone_otp_per_ip' => (int) env('AUTH_RATE_LIMIT_PHONE_OTP_PER_IP', 10),
     ],
+
+    /*
+    | Device binding: a PIN login from a device the account has not proved before needs a one-time SMS
+    | code. Clients send a stable random device_id (kept in local storage / secure storage).
+    */
+    'device_binding' => [
+        'enabled' => (bool) env('DEVICE_BINDING_ENABLED', true),
+        'challenge_minutes' => (int) env('DEVICE_CHALLENGE_MINUTES', 10),
+    ],
+
+    /*
+    | Authenticator-app (TOTP, RFC 6238) second factor for staff, as an alternative to the emailed code.
+    */
+    'totp' => [
+        'issuer' => env('TOTP_ISSUER', env('APP_NAME', 'WalletMS')),
+        // Wrong codes allowed per account per 10 minutes before the login step is locked
+        'max_attempts' => (int) env('TOTP_MAX_ATTEMPTS', 5),
+    ],
 ];

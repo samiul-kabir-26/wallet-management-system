@@ -6,7 +6,7 @@ import { required } from '@/composables/validators';
 import TextField from '@/components/Forms/TextField.vue';
 
 const emit = defineEmits<{
-    (e: 'otp-sent', identifier: string): void;
+    (e: 'otp-sent', identifier: string, secondFactor: 'email' | 'totp'): void;
 }>();
 
 const authStore = useAuthStore();
@@ -22,9 +22,9 @@ const { handleSubmit } = useForm<{ identifier: string; password: string }>({
 
 const onSubmit = handleSubmit(async (values) => {
     try {
-        const { message, email } = await authStore.adminLogin(values.identifier, values.password);
+        const { message, email, secondFactor } = await authStore.adminLogin(values.identifier, values.password);
         toast.success(message);
-        emit('otp-sent', email);
+        emit('otp-sent', email, secondFactor);
     } catch (err: unknown) {
         toast.error((err as Error).message);
     }

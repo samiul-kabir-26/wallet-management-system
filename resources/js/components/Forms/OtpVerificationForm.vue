@@ -6,9 +6,13 @@ import { useToastStore } from '@/stores/toast';
 import { otp } from '@/composables/validators';
 import TextField from '@/components/Forms/TextField.vue';
 
-const props = defineProps<{
-    identifier: string;
-}>();
+const props = withDefaults(
+    defineProps<{
+        identifier: string;
+        secondFactor?: 'email' | 'totp';
+    }>(),
+    { secondFactor: 'email' },
+);
 
 const emit = defineEmits<{
     (e: 'cancel'): void;
@@ -34,10 +38,13 @@ const onSubmit = handleSubmit(async (values) => {
 
 <template>
     <form class="space-y-4" novalidate @submit.prevent="onSubmit">
-        <p class="text-sm text-zinc-600 dark:text-zinc-400">
+        <p v-if="secondFactor === 'totp'" class="text-sm text-zinc-600 dark:text-zinc-400">
+            Open your authenticator app and enter the current 6-digit code for
+            <span class="font-medium text-zinc-900 dark:text-zinc-200">{{ identifier }}</span>.
+        </p>
+        <p v-else class="text-sm text-zinc-600 dark:text-zinc-400">
             A 6-digit verification code has been dispatched to
-            <span class="font-medium text-zinc-900 dark:text-zinc-200">{{ identifier }}</span
-            >.
+            <span class="font-medium text-zinc-900 dark:text-zinc-200">{{ identifier }}</span>.
         </p>
 
         <TextField name="otpCode" label="Enter 6-Digit OTP" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" />

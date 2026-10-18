@@ -2,13 +2,18 @@
 
 namespace Modules\Authentication\Services;
 
+use App\Models\LoginActivity;
 use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Modules\Authentication\Exceptions\AccountInactiveException;
 use Modules\Authentication\Exceptions\InsufficientRoleException;
 use Modules\Authentication\Exceptions\InvalidCredentialsException;
 use Modules\Authentication\Exceptions\InvalidOtpException;
+use Modules\Authentication\Notifications\AdminLoginAlertNotification;
 use Modules\Authentication\Notifications\OtpCodeNotification;
 
 class AdminAuthService
@@ -23,6 +28,7 @@ class AdminAuthService
 
     public function __construct(
         private OtpService $otpService,
+        private TotpService $totp,
     ) {}
 
     /**
@@ -120,6 +126,13 @@ class AdminAuthService
             throw new InsufficientRoleException;
         }
 
+        // Authenticator-app users get no email; the code step must still follow a correct password
+        if ($user->usesTotp()) {
+            Cache::put($this->passwordProvenKey($user), true, now()->addMinutes((int) config('auth_settings.otp.expiry_minutes', 5)));
+
+            return $user;
+        }
+
         $otp = $this->otpService->createOtp($user->id, 'LOGIN');
 
         $user->notify(new OtpCodeNotification($otp->otp_code, 'LOGIN', (int) config('auth_settings.otp.expiry_minutes', 5)));
@@ -143,8 +156,16 @@ class AdminAuthService
             throw new InvalidOtpException('Invalid or expired OTP.');
         }
 
-        // 2. Secret proof first: verify active token existence, lockout, expiry, and code
-        $this->otpService->verify($user->id, 'LOGIN', $otpCode);
+        // 2. Secret proof first: the authenticator code (after a correct password step) or the emailed code
+        if ($user->usesTotp()) {
+            if (! Cache::has($this->passwordProvenKey($user))) {
+                throw new InvalidOtpException('Invalid or expired OTP.');
+            }
+            $this->totp->verifyForLogin($user, $otpCode);
+            Cache::forget($this->passwordProvenKey($user));
+        } else {
+            $this->otpService->verify($user->id, 'LOGIN', $otpCode);
+        }
 
         // 3. Post-proof freshness checks (only evaluated after secret has been proven)
         if ($user->is_active !== 'ACTIVE') {
@@ -156,5 +177,36 @@ class AdminAuthService
         }
 
         return $user;
+    }
+
+    /**
+     * Email the staff member when this sign-in comes from an IP and browser pair their account has never
+     * signed in from before. The first sign-in ever is not alerted (there is nothing to compare with).
+     * Call after the successful sign-in has been recorded.
+     */
+    public function alertOnNewDevice(User $user, Request $request): void
+    {
+        if (! $user->email) {
+            return;
+        }
+
+        $successes = LoginActivity::where('user_id', $user->id)->where('panel', 'admin')->where('status', 'SUCCESS');
+        $sameDevice = (clone $successes)
+            ->where('ip_address', $request->ip())
+            ->where('user_agent', $request->userAgent())
+            ->count();
+
+        if ($successes->count() > 1 && $sameDevice <= 1) {
+            $user->notify(new AdminLoginAlertNotification(
+                (string) $request->ip(),
+                Str::limit((string) $request->userAgent(), 200),
+                now(config('transactions.business_timezone', 'Asia/Dhaka'))->format('d M Y, H:i T'),
+            ));
+        }
+    }
+
+    private function passwordProvenKey(User $user): string
+    {
+        return "admin-password-proven:{$user->id}";
     }
 }

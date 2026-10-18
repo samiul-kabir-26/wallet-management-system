@@ -518,6 +518,28 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
+### 2.17 Device Binding (Customer and Agent PIN Login)
+With `DEVICE_BINDING_ENABLED=true` (default; the test suite turns it off), a correct PIN from a device the account has not proved before does **not** return a token.
+- Clients send a stable random `device_id` (16–100 chars, letters/digits/`-`/`_`) with `POST /auth/user/login`, `/auth/agent/login` and `/auth/register`. The web app keeps one in `localStorage`; the Flutter app should keep one in secure storage. Only an HMAC of it is stored.
+- New device: **202** `{ data: { requires_device_verification: true, challenge_id, phone_number (masked) } }`, and a 6-digit code is texted to the account's phone (OTP purpose `DEVICE_VERIFICATION`). A wrong PIN never reaches this step.
+- `POST /api/v1/auth/verify-device` `{ challenge_id, otp_code }` (throttled like login): checks the code (attempt lockout as for other OTPs), trusts the device, re-checks the account and panel, and returns the normal login response with a token. The challenge expires after `DEVICE_CHALLENGE_MINUTES` (10) and can be used once (401 afterwards).
+- Logins without a `device_id` are always challenged. The device used to register is trusted at once (the phone was just proved). A PIN reset (2.13) forgets every trusted device.
+- `GET /api/v1/auth/devices` and `DELETE /api/v1/auth/devices/{id}` list and forget the account's trusted devices (audited `TRUSTED_DEVICE_REMOVED`).
+
+### 2.18 Sessions
+Every access token records the IP address and browser it was issued to (`personal_access_tokens.ip_address`, `user_agent`).
+- `GET /api/v1/auth/sessions` (any panel): the account's unexpired sessions, most recently active first: `{ id, panel, ip_address, user_agent, created_at, last_used_at, expires_at, current }`.
+- `DELETE /api/v1/auth/sessions/{id}`: signs that session out (any of the account's own, including this one; 404 for anyone else's). Audited `SESSION_REVOKED`.
+- My Account shows the list with "Sign out", plus trusted devices for customers and agents.
+
+### 2.19 Staff Authenticator App (TOTP) and Sign-in Alerts
+Staff can use an authenticator app (RFC 6238: SHA-1, 30 s, 6 digits; implemented in `TotpService`, no package) instead of the emailed code.
+- `GET /api/v1/auth/totp` → `{ enabled }`. `POST /api/v1/auth/totp/setup` → `{ secret, otpauth_uri }` (stored encrypted, not active yet; 409 if already on). `POST /api/v1/auth/totp/confirm` `{ code }` switches it on (audited `TOTP_ENABLED`). `POST /api/v1/auth/totp/disable` `{ password, code }` switches it off (audited `TOTP_DISABLED`). Admin token, `password.changed`.
+- Sign-in: 2.4 then returns `data.second_factor: "totp"` and sends no email; 2.5 takes the app code as `otp_code`. The code step only works within the OTP expiry after a correct password step, a code is accepted once (the last used time step is stored), the window is ±1 step, and `TOTP_MAX_ATTEMPTS` (5) wrong codes per 10 minutes lock the step.
+- Sign-in alert: after a successful staff sign-in from an IP address and browser pair the account has never signed in from, an email is queued with the time, IP and browser. The very first sign-in is not alerted.
+
+---
+
 ## 3. User & Agent Management Endpoints
 
 ### 3.1 List All Users (Admin Audit)

@@ -35,6 +35,7 @@ use Modules\Authentication\Http\Requests\VerifyOtpRequest;
 use Modules\Authentication\Resources\AuthResource;
 use Modules\Authentication\Services\AccountInviteService;
 use Modules\Authentication\Services\AdminAuthService;
+use Modules\Authentication\Services\DeviceBindingService;
 use Modules\Authentication\Services\LoginActivityRecorder;
 use Modules\Authentication\Services\PinAuthService;
 use Modules\Authentication\Services\PinChangeService;
@@ -55,6 +56,7 @@ class AuthController extends Controller
         private TokenIssuer $tokenIssuer,
         private LoginActivityRecorder $loginActivity,
         private PinChangeService $pinChangeService,
+        private DeviceBindingService $deviceBinding,
     ) {}
 
     /**
@@ -338,7 +340,8 @@ class AuthController extends Controller
      */
     public function register(RegisterRequest $request): JsonResponse
     {
-        $user = $this->registrationService->register($request->validated());
+        $user = $this->registrationService->register($request->safe()->except('device_id'));
+        $this->deviceBinding->trust($user, $request->validated('device_id'), $request);
 
         $ability = strtolower($request->role);
         $token = $this->tokenIssuer->issue($user, "{$ability}-registration", [$ability])->plainTextToken;
@@ -355,19 +358,9 @@ class AuthController extends Controller
      * @throws AccountInactiveException
      * @throws InsufficientRoleException
      */
-    public function loginAgent(PinLoginRequest $request): AuthResource
+    public function loginAgent(PinLoginRequest $request): AuthResource|JsonResponse
     {
-        $user = $this->loginActivity->track($request, 'agent', (string) $request->phone_number, function () use ($request): User {
-            $user = $this->pinAuthService->attempt($request->phone_number, $request->pin);
-            $this->assertCanEnterAgentPanel($user);
-
-            return $user;
-        });
-
-        $token = $this->tokenIssuer->issue($user, 'agent-login', ['agent'])->plainTextToken;
-        $user->load('roles');
-
-        return new AuthResource($user, $token, ['agent'], 'Login successful');
+        return $this->pinLogin($request, 'agent', fn (User $user) => $this->assertCanEnterAgentPanel($user));
     }
 
     /**
@@ -377,19 +370,74 @@ class AuthController extends Controller
      * @throws AccountInactiveException
      * @throws InsufficientRoleException
      */
-    public function loginUser(PinLoginRequest $request): AuthResource
+    public function loginUser(PinLoginRequest $request): AuthResource|JsonResponse
     {
-        $user = $this->loginActivity->track($request, 'user', (string) $request->phone_number, function () use ($request): User {
-            $user = $this->pinAuthService->attempt($request->phone_number, $request->pin);
-            $this->assertCanEnterUserPanel($user);
+        return $this->pinLogin($request, 'user', fn (User $user) => $this->assertCanEnterUserPanel($user));
+    }
 
-            return $user;
-        });
+    /**
+     * Complete a PIN login from a new device with the SMS code (device binding).
+     *
+     * @throws InvalidOtpException
+     */
+    public function verifyDevice(Request $request): AuthResource
+    {
+        $validated = $request->validate([
+            'challenge_id' => ['required', 'string', 'size:48'],
+            'otp_code' => ['required', 'string', 'digits:6'],
+        ]);
 
-        $token = $this->tokenIssuer->issue($user, 'user-login', ['user'])->plainTextToken;
+        ['user' => $user, 'panel' => $panel] = $this->deviceBinding->complete($validated['challenge_id'], $validated['otp_code'], $request);
+
+        // The account may have changed while the code was on its way
+        if ($user->is_active !== 'ACTIVE') {
+            throw new AccountInactiveException;
+        }
+        $panel === 'agent' ? $this->assertCanEnterAgentPanel($user) : $this->assertCanEnterUserPanel($user);
+
+        $this->loginActivity->recordSuccess($request, $panel, (string) $user->phone_number, $user);
+        $token = $this->tokenIssuer->issue($user, "{$panel}-login", [$panel])->plainTextToken;
         $user->load('roles');
 
-        return new AuthResource($user, $token, ['user'], 'Login successful');
+        return new AuthResource($user, $token, [$panel], 'Login successful');
+    }
+
+    /**
+     * PIN login for the agent and customer panels. With device binding on, a correct PIN from an
+     * unproved device gets an SMS challenge (202) instead of a token.
+     *
+     * @param  'agent'|'user'  $panel
+     * @param  callable(User): void  $assertPanel
+     */
+    private function pinLogin(PinLoginRequest $request, string $panel, callable $assertPanel): AuthResource|JsonResponse
+    {
+        $user = $this->loginActivity->track($request, $panel, (string) $request->phone_number, function () use ($request, $assertPanel): User {
+            $user = $this->pinAuthService->attempt($request->phone_number, $request->pin);
+            $assertPanel($user);
+
+            return $user;
+        }, recordSuccess: false);
+
+        $deviceId = $request->validated('device_id');
+        if ($this->deviceBinding->isEnabled() && ! $this->deviceBinding->isTrusted($user, $deviceId)) {
+            $challengeId = $this->deviceBinding->challenge($user, $panel, $deviceId, $request);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'New device. Enter the code we sent by SMS to finish signing in.',
+                'data' => [
+                    'requires_device_verification' => true,
+                    'challenge_id' => $challengeId,
+                    'phone_number' => $user->maskedPhoneNumber(),
+                ],
+            ], 202);
+        }
+
+        $this->loginActivity->recordSuccess($request, $panel, (string) $request->phone_number, $user);
+        $token = $this->tokenIssuer->issue($user, "{$panel}-login", [$panel])->plainTextToken;
+        $user->load('roles');
+
+        return new AuthResource($user, $token, [$panel], 'Login successful');
     }
 
     /**
@@ -412,9 +460,12 @@ class AuthController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'OTP sent to your email. Please check your inbox.',
+            'message' => $user->usesTotp()
+                ? 'Enter the code from your authenticator app.'
+                : 'OTP sent to your email. Please check your inbox.',
             'data' => [
                 'email' => $user->email,
+                'second_factor' => $user->usesTotp() ? 'totp' : 'email',
             ],
         ]);
     }
@@ -435,6 +486,7 @@ class AuthController extends Controller
             fn (): User => $this->adminAuthService->verifyOtp($request->email, $request->otp_code),
         );
 
+        $this->adminAuthService->alertOnNewDevice($user, $request);
         $token = $this->tokenIssuer->issue($user, 'admin-login', ['admin'])->plainTextToken;
         $user->load('roles');
 

@@ -16,7 +16,8 @@ import ChangePinForm from '@/components/Forms/ChangePinForm.vue';
 import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
 import AddPhoneCard from '@/components/Account/AddPhoneCard.vue';
 import PhoneVerificationCard from '@/components/Account/PhoneVerificationCard.vue';
-import KycCard from '@/components/Account/KycCard.vue';
+import SessionsCard from '@/components/Account/SessionsCard.vue';
+import TotpCard from '@/components/Account/TotpCard.vue';
 import UserAvatar from '@/components/Account/UserAvatar.vue';
 import type { User } from '@/types/models';
 
@@ -286,6 +287,12 @@ onMounted(() => {
                     @verified="applyProfile"
                 />
             </template>
+        </template>
+
+        <!-- Sessions, trusted devices and (staff) authenticator app -->
+        <template v-if="!forcedPasswordChange">
+            <TotpCard v-if="panel === 'admin'" />
+            <SessionsCard :show-devices="panel !== 'admin'" />
         </template>
 
         <!-- Security -->

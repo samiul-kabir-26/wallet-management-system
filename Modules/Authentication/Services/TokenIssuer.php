@@ -16,7 +16,7 @@ class TokenIssuer
      */
     public function issue(User $user, string $name, array $abilities): NewAccessToken
     {
-        return $user->createToken($name, $abilities, $this->expiresAtFor($abilities));
+        return $this->stamp($user->createToken($name, $abilities, $this->expiresAtFor($abilities)));
     }
 
     /**
@@ -31,7 +31,21 @@ class TokenIssuer
 
         $currentToken->delete();
 
-        return $user->createToken($currentToken->name, $abilities, $expiresAt);
+        return $this->stamp($user->createToken($currentToken->name, $abilities, $expiresAt));
+    }
+
+    /**
+     * Remember the IP and browser a session started from, for the session list.
+     */
+    private function stamp(NewAccessToken $token): NewAccessToken
+    {
+        $request = request();
+        $token->accessToken->forceFill([
+            'ip_address' => $request->ip(),
+            'user_agent' => mb_substr((string) $request->userAgent(), 0, 255),
+        ])->save();
+
+        return $token;
     }
 
     /**
