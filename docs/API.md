@@ -951,6 +951,17 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 
 ---
 
+### 4.5 Ledger Integrity Check (operations, no endpoint)
+`php artisan wallets:verify-ledger` recomputes every wallet balance from the `transactions` table and compares it with `wallets.balance`. It also compares each agent's `agent_info.total_commission` with the commission on their completed cash-outs. It never changes data.
+- **Rules:** see the table in `Modules/Wallets/Services/LedgerIntegrityService.php`. In short: only rows whose status applied the movement count (`COMPLETED`, plus `PENDING` agent withdrawals, whose amount is already held); pending and failed gateway top-ups count as zero; `COMMISSION_PAYOUT` is a memo row because `CASH_OUT` already credits the commission.
+- **Snapshot:** all reads run in one database transaction, so a transaction committing mid-check cannot produce a false mismatch.
+- **Legacy wallets:** wallets opened before the signup bonus became a ledger row got 50.00 from a column default. A difference of exactly `transactions.ledger_check.legacy_opening_balance` on a wallet with no `SIGNUP_BONUS` row is classified `LEGACY_OPENING_BALANCE` and logged as a warning, not a failure (IMPROVEMENTS.md proposal 5 backfills them).
+- **Options:** `--wallet=ID` (repeatable) limits the wallet check and skips the commission check; `--json` prints the full report.
+- **Result:** exit code 0 when consistent. Any `UNEXPLAINED` wallet difference or commission difference exits 1 and writes a `critical` log entry with the details.
+- **Schedule:** daily at 02:00 business time (`routes/console.php`).
+
+---
+
 ## 5. Financial Transaction Endpoints
 
 ### 5.1 Balance Top-Up (SSLCommerz)
