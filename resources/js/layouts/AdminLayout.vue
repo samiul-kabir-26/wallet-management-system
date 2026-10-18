@@ -24,6 +24,7 @@ const navItems: NavItem[] = [
     { name: 'Roles & Permissions', href: '/admin/roles', icon: '🔑', permission: 'roles.view' },
     { name: 'Agent Approvals', href: '/admin/agents', icon: '🤝', permission: 'agents.approve' },
     { name: 'Agent Withdrawals', href: '/admin/withdrawals', icon: '🏦', permission: 'agents.approve_withdrawal' },
+    { name: 'Float Requests', href: '/admin/float-requests', icon: '💵', permission: 'agents.issue_float' },
     { name: 'Wallets & Freeze', href: '/admin/wallets', icon: '💳', permission: 'wallets.view_any' },
     { name: 'Platform Transactions', href: '/admin/transactions', icon: '📜', permission: 'transactions.view_any' },
     { name: 'Pending Top-ups', href: '/admin/top-ups', icon: '⏳', permission: 'transactions.view_any' },

@@ -4,6 +4,7 @@ namespace Modules\Approvals\Services;
 
 use App\Models\ApprovalRequest;
 use App\Models\AuditLog;
+use App\Models\FloatRequest;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Modules\Approvals\Exceptions\ApprovalConflictException;
 use Modules\Roles\Enums\Permission;
 use Modules\SystemSettings\Services\SystemSettingService;
+use Modules\Transactions\Services\FloatRequestService;
 use Modules\Transactions\Services\ReversalService;
 use Modules\Transactions\Services\TransactionService;
 use Modules\Users\Exceptions\AgentNotApprovedException;
@@ -97,7 +99,7 @@ class ApprovalService
     /**
      * Store a float issuance for approval.
      *
-     * @param  array{amount: string, external_reference: string, description?: string|null}  $details
+     * @param  array{amount: string, external_reference: string, description?: string|null, float_request_id?: int, review_note?: string|null}  $details
      */
     public function requestFloatIssue(User $maker, User $agent, array $details): ApprovalRequest
     {
@@ -119,13 +121,17 @@ class ApprovalService
         return $this->store(
             action: ApprovalRequest::FLOAT_ISSUE,
             maker: $maker,
-            payload: [
+            payload: array_filter([
                 'agent_id' => $agent->id,
                 'amount' => $amount,
                 'external_reference' => $reference,
                 'description' => $details['description'] ?? null,
-            ],
-            summary: "Issue Tk {$amount} float to {$agent->name} (ref {$reference})",
+                // Set when staff approved an agent's float request; completing this approval completes it
+                'float_request_id' => $details['float_request_id'] ?? null,
+                'review_note' => $details['review_note'] ?? null,
+            ], fn ($value): bool => $value !== null),
+            summary: (isset($details['float_request_id']) ? "Float request #{$details['float_request_id']}: " : '')
+                ."Issue Tk {$amount} float to {$agent->name} (ref {$reference})",
             subject: $agent,
         );
     }
@@ -259,6 +265,7 @@ class ApprovalService
             ])->save();
 
             $this->audit('APPROVAL_REJECTED', $locked, $checker, $note);
+            $this->releaseFloatRequest($locked);
 
             return $locked;
         });
@@ -281,6 +288,7 @@ class ApprovalService
 
             $locked->forceFill(['status' => ApprovalRequest::CANCELLED])->save();
             $this->audit('APPROVAL_CANCELLED', $locked, $maker, null);
+            $this->releaseFloatRequest($locked);
 
             return $locked;
         });
@@ -338,16 +346,7 @@ class ApprovalService
         $payload = $request->payload;
 
         return match ($request->action) {
-            ApprovalRequest::FLOAT_ISSUE => [
-                'transaction_id' => $this->transactionService->issueFloat(
-                    admin: $maker,
-                    agent: User::where('is_deleted', false)->findOrFail($payload['agent_id']),
-                    amount: $payload['amount'],
-                    externalReference: $payload['external_reference'],
-                    idempotencyKey: "approval:{$request->id}",
-                    description: $payload['description'] ?? null,
-                )->id,
-            ],
+            ApprovalRequest::FLOAT_ISSUE => $this->applyFloatIssue($request, $maker),
             ApprovalRequest::SETTINGS_UPDATE => [
                 'settings' => $this->settingService->updateSettings(
                     settings: array_map(fn (array $change): mixed => $change['after'], $payload['changes']),
@@ -369,6 +368,48 @@ class ApprovalService
                 )->agentInfo?->commission_rate,
             ],
         };
+    }
+
+    /**
+     * Issue the float, and complete the agent's float request when the approval came from one.
+     *
+     * @return array{transaction_id: int}
+     */
+    private function applyFloatIssue(ApprovalRequest $request, User $maker): array
+    {
+        $payload = $request->payload;
+
+        $transaction = $this->transactionService->issueFloat(
+            admin: $maker,
+            agent: User::where('is_deleted', false)->findOrFail($payload['agent_id']),
+            amount: $payload['amount'],
+            externalReference: $payload['external_reference'],
+            idempotencyKey: "approval:{$request->id}",
+            description: $payload['description'] ?? null,
+        );
+
+        if (isset($payload['float_request_id'])) {
+            // Resolved lazily: FloatRequestService depends on this service
+            app(FloatRequestService::class)->recordIssued(
+                FloatRequest::findOrFail($payload['float_request_id']),
+                $maker,
+                $transaction,
+                $payload['review_note'] ?? null,
+            );
+        }
+
+        return ['transaction_id' => $transaction->id];
+    }
+
+    /**
+     * Put an agent's float request back in the review queue when the approval forwarded from it ends
+     * without being applied.
+     */
+    private function releaseFloatRequest(ApprovalRequest $request): void
+    {
+        if ($request->action === ApprovalRequest::FLOAT_ISSUE && isset($request->payload['float_request_id'])) {
+            app(FloatRequestService::class)->releaseFromApproval($request);
+        }
     }
 
     /**

@@ -1478,6 +1478,35 @@ There is no endpoint for this. Every completed `TRANSFER`, `CASH_IN` and `CASH_O
 
 ---
 
+### 5.15 Agent Float Requests
+Agents ask for e-money float against a bank deposit instead of waiting for staff to push it (5.9).
+
+**Agent** (`ability:agent`, `password.changed`):
+
+| Method & Route | Body / Notes |
+|---|---|
+| `POST /api/v1/transactions/agent/float-requests` | multipart: `amount` (float-issue limits, 2 decimals), `bank_reference` (4–100 chars, letters/numbers/space and `- / _ .`, must not already be a transaction's `external_reference`), `deposited_at` (date, within the last 30 days, not in the future), `slip` (JPG/PNG/WebP/PDF, max 5 MB), `note?`. Approved agents with an unblocked agent wallet only (409 / 403). One pending request per bank reference (422). Throttled 10/min. Returns 201 `{ data: { float_request } }`. |
+| `GET /api/v1/transactions/agent/float-requests` | Own requests, newest first, paginated. |
+| `POST /api/v1/transactions/agent/float-requests/{id}/cancel` | Own `PENDING` request only (403 otherwise); 409 once staff forwarded it for a second approval. |
+| `GET /api/v1/transactions/agent/float-requests/{id}/slip` | Own slip (404 for others). |
+
+**Staff** (admin token **and** `agents.issue_float`, 403 otherwise):
+
+| Method & Route | Body / Notes |
+|---|---|
+| `GET /api/v1/transactions/admin/float-requests?status=` | `PENDING` lists oldest first; other statuses newest first. |
+| `GET /api/v1/transactions/admin/float-requests/{id}/slip` | Streams the slip with its stored content type, `nosniff`, `no-store`. |
+| `POST /api/v1/transactions/admin/float-requests/{id}/approve` | `note?`. Issues the float through 5.9 with the bank reference as `external_reference` (unique, so one deposit is never credited twice) and marks the request `APPROVED` with `transaction_id`. With maker-checker on (section 8) it returns **202** with a `FLOAT_ISSUE` approval request carrying `float_request_id`; the float request shows `awaiting_second_approval: true` and is completed when a second staff member approves. If that approval is rejected or cancelled, the request returns to the queue. |
+| `POST /api/v1/transactions/admin/float-requests/{id}/reject` | `reason` (5–500, required). 409 while awaiting a second approval (reject the approval request instead). |
+
+- Slips live on the private `local` disk under `float-slips/{agent_id}/` and are only served through the two slip endpoints; `slip_path` is never returned.
+- Staff who are also the requesting agent cannot review their own request (403). A request can be reviewed once (409 afterwards).
+- The agent gets an SMS when the request is approved or rejected (with the reason).
+- Audited as `FLOAT_REQUEST_SUBMITTED`, `FLOAT_REQUEST_APPROVED`, `FLOAT_REQUEST_REJECTED`, `FLOAT_REQUEST_CANCELLED` against the agent, plus the usual `FLOAT_ISSUED`.
+- Panels: agent "Request Float" page; admin "Float Requests" page.
+
+---
+
 ## 6. System Settings Endpoints
 
 ### 6.1 View Global System Settings
