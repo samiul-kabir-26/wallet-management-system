@@ -841,7 +841,7 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 | Method & Route | Body | Notes |
 |---|---|---|
 | `GET /api/v1/users/me` | none | Own profile. |
-| `PATCH /api/v1/users/me` | `name`, `address` | `email`, `phone_number` and `image` are prohibited (422). |
+| `PATCH /api/v1/users/me` | `name`, `address`, `receipt_emails_enabled` | `email`, `phone_number` and `image` are prohibited (422). `receipt_emails_enabled` (boolean, default `true`) turns the email copy of transaction receipts off or on; SMS receipts cannot be turned off (5.13). |
 | `POST /api/v1/users/me/avatar` | multipart `avatar` | JPG/PNG/WebP, max 2 MB, 64–4000 px per side; SVG is refused. Stored on the `public` disk under `avatars/` (needs `php artisan storage:link`); the previous file is deleted. Throttled 10/min. |
 | `DELETE /api/v1/users/me/avatar` | none | Deletes the file and clears `avatar_url`. |
 | `POST /api/v1/users/me/phone` | `phone_number` (`01[3-9]XXXXXXXX`, unique) | For accounts **without** a phone (409 otherwise). Texts a 6-digit code to that number (OTP purpose `ADD_PHONE`, number kept in `otp_tokens.target`). Nothing is saved yet. Limited to 3 per 10 minutes per account **and** per destination number. |
@@ -955,10 +955,19 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 `php artisan wallets:verify-ledger` recomputes every wallet balance from the `transactions` table and compares it with `wallets.balance`. It also compares each agent's `agent_info.total_commission` with the commission on their completed cash-outs. It never changes data.
 - **Rules:** see the table in `Modules/Wallets/Services/LedgerIntegrityService.php`. In short: only rows whose status applied the movement count (`COMPLETED`, plus `PENDING` agent withdrawals, whose amount is already held); pending and failed gateway top-ups count as zero; `COMMISSION_PAYOUT` is a memo row because `CASH_OUT` already credits the commission.
 - **Snapshot:** all reads run in one database transaction, so a transaction committing mid-check cannot produce a false mismatch.
-- **Legacy wallets:** wallets opened before the signup bonus became a ledger row got 50.00 from a column default. A difference of exactly `transactions.ledger_check.legacy_opening_balance` on a wallet with no `SIGNUP_BONUS` row is classified `LEGACY_OPENING_BALANCE` and logged as a warning, not a failure (IMPROVEMENTS.md proposal 5 backfills them).
+- **Legacy wallets:** wallets opened before the signup bonus became a ledger row got 50.00 from a column default. A difference of exactly `transactions.ledger_check.legacy_opening_balance` on a wallet with no `SIGNUP_BONUS` row is classified `LEGACY_OPENING_BALANCE` and logged as a warning, not a failure. 4.6 records the missing rows.
 - **Options:** `--wallet=ID` (repeatable) limits the wallet check and skips the commission check; `--json` prints the full report.
 - **Result:** exit code 0 when consistent. Any `UNEXPLAINED` wallet difference or commission difference exits 1 and writes a `critical` log entry with the details.
 - **Schedule:** daily at 02:00 business time (`routes/console.php`).
+
+### 4.6 Opening-Balance Backfill (operations, no endpoint)
+`php artisan wallets:backfill-opening-balances` writes the ledger row that legacy wallets never got for their 50.00 opening balance.
+- **Dry run by default:** without `--apply` it only lists the wallets it would touch. In production `--apply` asks for confirmation unless `--force` is given.
+- **Which wallets:** those the ledger check classifies `LEGACY_OPENING_BALANCE`. Each one is re-checked with the wallet row locked before writing, so a wallet that moved money meanwhile is judged on its current state.
+- **What is written:** a `COMPLETED` `SIGNUP_BONUS` row for the legacy amount with `meta.backfilled = true`, `meta.reason = LEGACY_OPENING_BALANCE` and `meta.effective_at` = the wallet's opening date. It is dated now (not back-dated), and `recipient_wallet_balance_after` is the current balance. **The wallet balance is not changed**: the money was always there, only its record was missing.
+- **One per wallet:** it uses the signup bonus idempotency key (`signup-bonus:{wallet_id}`) and skips wallets that already have a `SIGNUP_BONUS` row, so it can be re-run safely and a wallet can never hold two bonus rows.
+- **Audit:** each row writes `OPENING_BALANCE_BACKFILLED` against the wallet (actor null: run from the CLI) with the ledger balance before.
+- Afterwards `wallets:verify-ledger` reports no legacy gaps.
 
 ---
 
@@ -1372,6 +1381,27 @@ There is no endpoint for this. The bonus is credited by `SignupBonusService::cre
 - **Settings:** `signup_bonus_enabled` and `signup_bonus_amount` (6.1). Nothing is credited when the bonus is disabled or the amount is 0. Defaults and the `source_label` come from `config/transactions.php` → `signup_bonus` (`SIGNUP_BONUS_*` env variables).
 - **Not credited:** wallets opened later through role assignment (3.9) and wallets that existed before this feature (they were never backfilled).
 - **Caps:** the bonus is incoming money and does not count toward daily or monthly caps.
+
+---
+
+### 5.13 Transaction Receipts
+There is no endpoint for this. Every completed `TRANSFER`, `CASH_IN` and `CASH_OUT` sends a receipt to both parties (`TransactionReceiptNotification`).
+- **Who gets what:**
+
+  | Type | Party | Receipt |
+  |---|---|---|
+  | `TRANSFER` | sender | "You sent", fee and total when there is a fee, sender balance |
+  | `TRANSFER` | recipient | "You received", recipient balance |
+  | `CASH_IN` | customer | "Cash in … from agent", customer balance |
+  | `CASH_IN` | agent | "Cash in given", agent float balance |
+  | `CASH_OUT` | customer | "Cash out … at agent", fee and total, customer balance |
+  | `CASH_OUT` | agent | "Cash out received", commission and amount credited, agent balance |
+
+  Each receipt includes the transaction ID and time (business timezone). The counterparty is masked like the recipient lookup: `R***l K***r (017*****678)`.
+- **Channels:** SMS always (it cannot be turned off, so a customer always hears about money leaving their wallet). Email as well when the account has an email and `receipt_emails_enabled` is true (3.13).
+- **Delivery:** queued, and dispatched only after the database transaction commits, so a rolled-back transaction never produces a receipt. An idempotent replay returns the existing row and sends nothing. Run a queue worker (`php artisan queue:work`) for receipts to go out when `QUEUE_CONNECTION` is not `sync`.
+- **SMS gateway:** SMS still goes to the log (`SmsChannel`, see 3.13) until a provider is configured (IMPROVEMENTS.md 7).
+- Top-ups, signup bonuses, float issuance and withdrawals do not send these receipts.
 
 ---
 

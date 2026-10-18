@@ -9,6 +9,7 @@ export interface User {
     is_active?: string;
     address?: string | null;
     avatar_url?: string | null;
+    receipt_emails_enabled?: boolean;
     must_change_password?: boolean;
     created_at?: string;
     updated_at?: string;

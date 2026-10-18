@@ -26,6 +26,7 @@ class UpdateAccountRequest extends FormRequest
         return [
             'name' => ['sometimes', 'required', 'string', 'min:2', 'max:255'],
             'address' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'receipt_emails_enabled' => ['sometimes', 'boolean'],
             'email' => ['prohibited'],
             'phone_number' => ['prohibited'],
             'image' => ['prohibited'],

@@ -77,7 +77,7 @@ class VerifyLedgerCommand extends Command
         }
 
         if ($legacy > 0) {
-            $this->warn("{$legacy} wallet(s) carry the legacy opening balance with no ledger row (see IMPROVEMENTS.md proposal 5).");
+            $this->warn("{$legacy} wallet(s) carry the legacy opening balance with no ledger row (run wallets:backfill-opening-balances).");
         }
 
         if ($report['commission_mismatches'] !== []) {
