@@ -14,6 +14,7 @@ const navItems = [
     { name: 'Dashboard', href: '/user/dashboard' },
     { name: 'My Wallet', href: '/user/wallet' },
     { name: 'Transfer & Cash-Out', href: '/user/transfer' },
+    { name: 'Request Money', href: '/user/requests' },
     { name: 'Transaction History', href: '/user/history' },
     { name: 'My Account', href: '/user/account' },
 ];

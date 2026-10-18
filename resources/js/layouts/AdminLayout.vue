@@ -29,6 +29,7 @@ const navItems: NavItem[] = [
     { name: 'Platform Transactions', href: '/admin/transactions', icon: '📜', permission: 'transactions.view_any' },
     { name: 'Pending Top-ups', href: '/admin/top-ups', icon: '⏳', permission: 'transactions.view_any' },
     { name: 'Approvals', href: '/admin/approvals', icon: '✅' },
+    { name: 'KYC Reviews', href: '/admin/kyc', icon: '🪪', permission: 'users.manage_kyc' },
     { name: 'System Settings', href: '/admin/settings', icon: '⚙️' },
     { name: 'My Account', href: '/admin/account', icon: '👤' },
 ];

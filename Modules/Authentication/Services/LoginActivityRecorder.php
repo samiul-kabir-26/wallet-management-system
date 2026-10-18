@@ -50,6 +50,16 @@ class LoginActivityRecorder
     }
 
     /**
+     * Record a successful sign-in that completed in a later step (device verification).
+     *
+     * @param  'admin'|'agent'|'user'  $panel
+     */
+    public function recordSuccess(Request $request, string $panel, string $identifier, User $user): void
+    {
+        $this->record($request, $panel, $identifier, 'SUCCESS', $user);
+    }
+
+    /**
      * Persist one login attempt.
      *
      * @param  'admin'|'agent'|'user'  $panel

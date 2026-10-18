@@ -41,6 +41,7 @@ class Cap extends Model
             'daily_used' => 'decimal:2',
             'monthly_used' => 'decimal:2',
             'last_reset_date' => 'date',
+            'is_custom' => 'boolean',
         ];
     }
 

@@ -12,6 +12,7 @@ enum Permission: string
     case UsersGrantAdminAccess = 'users.grant_admin_access';
     case UsersVerifyPhone = 'users.verify_phone';
     case UsersViewActivity = 'users.view_activity';
+    case UsersManageKyc = 'users.manage_kyc';
 
     case AgentsApprove = 'agents.approve';
     case AgentsSuspend = 'agents.suspend';
@@ -25,6 +26,7 @@ enum Permission: string
 
     case TransactionsViewAny = 'transactions.view_any';
     case TransactionsReverse = 'transactions.reverse';
+    case TransactionsExport = 'transactions.export';
 
     case SettingsUpdate = 'settings.update';
     case SettingsManageSessionTimeouts = 'settings.manage_session_timeouts';
@@ -48,6 +50,7 @@ enum Permission: string
             self::UsersGrantAdminAccess => 'Grant administrative access invite to users',
             self::UsersVerifyPhone => 'Mark a user phone number as verified after an identity check',
             self::UsersViewActivity => 'View user activity: login records and audit trail',
+            self::UsersManageKyc => 'Review identity documents and change KYC tiers and limits',
             self::AgentsApprove => 'Approve pending agent applications',
             self::AgentsSuspend => 'Suspend active agents',
             self::AgentsIssueFloat => 'Issue e-money float to agents against external bank deposit',
@@ -58,6 +61,7 @@ enum Permission: string
             self::WalletsUnblock => 'Unblock suspended or blocked wallets',
             self::TransactionsViewAny => 'View all system transactions and sensitive fields',
             self::TransactionsReverse => 'Reverse a completed transfer, cash-in or cash-out',
+            self::TransactionsExport => 'Export the transaction ledger as CSV',
             self::SettingsUpdate => 'Update global system settings and transaction caps',
             self::SettingsManageSessionTimeouts => 'Change the idle auto-logout timeout for each panel',
             self::PinResetInitiate => 'Initiate staff-assisted customer PIN reset',
@@ -79,7 +83,8 @@ enum Permission: string
             self::UsersAssignRole,
             self::UsersGrantAdminAccess,
             self::UsersVerifyPhone,
-            self::UsersViewActivity => 'Users',
+            self::UsersViewActivity,
+            self::UsersManageKyc => 'Users',
 
             self::AgentsApprove,
             self::AgentsSuspend,
@@ -92,7 +97,8 @@ enum Permission: string
             self::WalletsUnblock => 'Wallets',
 
             self::TransactionsViewAny,
-            self::TransactionsReverse => 'Transactions',
+            self::TransactionsReverse,
+            self::TransactionsExport => 'Transactions',
 
             self::SettingsUpdate,
             self::SettingsManageSessionTimeouts => 'Settings',

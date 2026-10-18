@@ -519,6 +519,28 @@ All API responses follow a consistent JSON envelope structure.
 
 ---
 
+### 2.17 Device Binding (Customer and Agent PIN Login)
+With `DEVICE_BINDING_ENABLED=true` (default; the test suite turns it off), a correct PIN from a device the account has not proved before does **not** return a token.
+- Clients send a stable random `device_id` (16–100 chars, letters/digits/`-`/`_`) with `POST /auth/user/login`, `/auth/agent/login` and `/auth/register`. The web app keeps one in `localStorage`; the Flutter app should keep one in secure storage. Only an HMAC of it is stored.
+- New device: **202** `{ data: { requires_device_verification: true, challenge_id, phone_number (masked) } }`, and a 6-digit code is texted to the account's phone (OTP purpose `DEVICE_VERIFICATION`). A wrong PIN never reaches this step.
+- `POST /api/v1/auth/verify-device` `{ challenge_id, otp_code }` (throttled like login): checks the code (attempt lockout as for other OTPs), trusts the device, re-checks the account and panel, and returns the normal login response with a token. The challenge expires after `DEVICE_CHALLENGE_MINUTES` (10) and can be used once (401 afterwards).
+- Logins without a `device_id` are always challenged. The device used to register is trusted at once (the phone was just proved). A PIN reset (2.13) forgets every trusted device.
+- `GET /api/v1/auth/devices` and `DELETE /api/v1/auth/devices/{id}` list and forget the account's trusted devices (audited `TRUSTED_DEVICE_REMOVED`).
+
+### 2.18 Sessions
+Every access token records the IP address and browser it was issued to (`personal_access_tokens.ip_address`, `user_agent`).
+- `GET /api/v1/auth/sessions` (any panel): the account's unexpired sessions, most recently active first: `{ id, panel, ip_address, user_agent, created_at, last_used_at, expires_at, current }`.
+- `DELETE /api/v1/auth/sessions/{id}`: signs that session out (any of the account's own, including this one; 404 for anyone else's). Audited `SESSION_REVOKED`.
+- My Account shows the list with "Sign out", plus trusted devices for customers and agents.
+
+### 2.19 Staff Authenticator App (TOTP) and Sign-in Alerts
+Staff can use an authenticator app (RFC 6238: SHA-1, 30 s, 6 digits; implemented in `TotpService`, no package) instead of the emailed code.
+- `GET /api/v1/auth/totp` → `{ enabled }`. `POST /api/v1/auth/totp/setup` → `{ secret, otpauth_uri }` (stored encrypted, not active yet; 409 if already on). `POST /api/v1/auth/totp/confirm` `{ code }` switches it on (audited `TOTP_ENABLED`). `POST /api/v1/auth/totp/disable` `{ password, code }` switches it off (audited `TOTP_DISABLED`). Admin token, `password.changed`.
+- Sign-in: 2.4 then returns `data.second_factor: "totp"` and sends no email; 2.5 takes the app code as `otp_code`. The code step only works within the OTP expiry after a correct password step, a code is accepted once (the last used time step is stored), the window is ±1 step, and `TOTP_MAX_ATTEMPTS` (5) wrong codes per 10 minutes lock the step.
+- Sign-in alert: after a successful staff sign-in from an IP address and browser pair the account has never signed in from, an email is queued with the time, IP and browser. The very first sign-in is not alerted.
+
+---
+
 ## 3. User & Agent Management Endpoints
 
 ### 3.1 List All Users (Admin Audit)
@@ -875,6 +897,44 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
   - Only future cash-outs use the new rate. Past transactions keep the `agent_commission_rate` they were charged at.
   - Writes an `AGENT_COMMISSION_UPDATED` audit entry with `previous_rate` and `new_rate`. Submitting the current rate is a no-op and writes no audit entry.
 - **Error Codes:** 403 (Missing permission, non-admin token, or own account), 404 (User is not an agent), 409 (Agent is pending approval), 422 (Validation error).
+
+---
+
+### 3.15 KYC Tiers, Identity Verification and Limits
+A customer's tier sets their daily and monthly limits for cash-outs and transfers (5.5b). Tiers live in `config/kyc.php`:
+
+| Tier | Meaning | Daily | Monthly | Needs verified identity |
+|---|---|---|---|---|
+| `BASIC` | New self- or staff-registered account (phone verified) | 5,000 | 20,000 | no |
+| `STANDARD` | Identity documents approved by staff | 10,000 | 50,000 | yes |
+| `PREMIUM` | Higher limits granted by staff | 25,000 | 100,000 | yes |
+
+- The tier's limits are written to the user's caps row, which is still the only thing `CapService` enforces. Usage counters are never reset by a tier change.
+- Accounts that existed before tiers were introduced are `STANDARD` with their old 10,000 / 50,000 limits (not verified; grandfathered).
+- `UserResource` carries `kyc: { tier, label, verified_at }`; the caps row carries `is_custom`.
+
+**Customer** (`/users/me`, customer token for submitting):
+
+| Method & Route | Body / Notes |
+|---|---|
+| `GET /api/v1/users/me/kyc` | `{ tier, label, verified_at, custom_limits, caps (5.5b shape), tiers: [{ tier, label, description, daily_cap, monthly_cap, requires_verification }], latest_submission }`. |
+| `POST /api/v1/users/me/kyc` | multipart: `document_type` (`NID`, `PASSPORT`, `DRIVING_LICENSE`), `document_number` (5–30 letters/digits/spaces), `full_name`, `date_of_birth` (18+), `front` and `back` (JPG/PNG/WebP, max 5 MB each). USER role only (403). One pending submission at a time (409). Throttled 5 per 10 minutes. |
+
+**Staff** (admin token **and** `users.manage_kyc`, granted to ADMIN by default; staff never act on their own account, 403):
+
+| Method & Route | Body / Notes |
+|---|---|
+| `GET /api/v1/users/kyc-submissions?status=` | `PENDING` oldest first. Staff see the full document number; the customer only ever sees it masked (`*********6789`). |
+| `GET /api/v1/users/kyc-submissions/{id}/documents/{front\|back}` | Streams the image (`nosniff`, `no-store`). |
+| `POST /api/v1/users/kyc-submissions/{id}/approve` | `note?`. Sets `kyc_verified_at`; a `BASIC` account moves to `STANDARD` (higher tiers and custom limits are left alone). SMS to the customer with the new tier and daily limit. 409 if already reviewed. |
+| `POST /api/v1/users/kyc-submissions/{id}/reject` | `reason` (5–500). SMS with the reason; the customer can submit again. |
+| `PATCH /api/v1/users/{user}/kyc-tier` | `tier`, `reason`. Resets limits to the tier's (clears custom limits). `STANDARD`/`PREMIUM` need verified identity (422). |
+| `PATCH /api/v1/users/{user}/caps` | `daily_cap`, `monthly_cap`, `reason`. Custom limits up to `kyc.max_custom_daily_cap` / `max_custom_monthly_cap`; daily ≤ monthly (422). |
+
+- Document images are stored on the private `local` disk under `kyc/{user_id}/`; the document number is encrypted at rest (`encrypted` cast).
+- Audited: `KYC_SUBMITTED`, `KYC_APPROVED`, `KYC_REJECTED`, `KYC_TIER_CHANGED` and `CAPS_CUSTOMIZED` (both with limits before/after and the reason), against the customer.
+- Panels: customer "Verification & limits" card on My Account; admin "KYC Reviews" page; "Manage" next to the tier on the admin user profile.
+- Agent operations are not capped, so tiers only affect customer wallets.
 
 ---
 
@@ -1473,6 +1533,24 @@ Agents ask for e-money float against a bank deposit instead of waiting for staff
 
 ---
 
+### 5.17 Reports: Dashboard Metrics and Ledger Export
+**Metrics:** `GET /api/v1/reports/overview?days=14` (admin token **and** `transactions.view_any`; `days` 1–90).
+- Groups `COMPLETED` transactions by business day (`transactions.business_timezone`, fixed offset, correct for Asia/Dhaka which has no daylight saving).
+- `totals`: `volume` and `transactions` (new money only; `COMMISSION_PAYOUT` memo rows and `REVERSAL` rows excluded), `by_type` counts and amounts, `fees_earned` (cash-out and transfer fees less fees refunded by reversals), `commission_paid` (less clawed-back commission), `signup_bonus_paid` (backfilled opening balances excluded, less clawbacks), `signups` (new USER/AGENT accounts).
+- `daily`: one entry per day with `volume`, `count`, `signups` (zeros included).
+- `queues` (now): pending agent withdrawals (count and held amount), pending float requests, unfinished gateway top-ups, pending approvals.
+- `e_money`: total balance held in user and agent wallets.
+- Admin dashboard "Activity" panel (range selector, cards, daily bar chart, queue links).
+
+**Export:** `GET /api/v1/reports/ledger.csv` (admin token **and** `transactions.export`). Same filters as 5.8 (`type`, `status`, `search`, `party_id`, `from_date`, `to_date`), via the same query, so the file always matches the ledger on screen.
+- `transactions.export` is not granted to ADMIN by default (bulk personal and financial data); SUPER_ADMIN has it and can grant it.
+- Streamed in chunks of 1,000 rows; UTF-8 with BOM; times in the business timezone. Columns: `id, created_at, type, status, amount, fee, commission, currency, sender_name, sender_phone, recipient_name, recipient_phone, agent_name, agent_phone, external_reference, reversed_transaction_id, description`.
+- Cells starting with `= + - @` or a control character (other than plain numbers) are prefixed with `'` to stop spreadsheet formula injection.
+- More than `REPORTS_EXPORT_MAX_ROWS` (50,000) rows is refused (422): narrow the filters. Throttled 6/min. Audited as `TRANSACTIONS_EXPORTED` with the filters, row count and IP. The `X-Export-Rows` header carries the row count.
+- "Export CSV" button on the admin transaction ledger.
+
+---
+
 ## 6. System Settings Endpoints
 
 ### 6.1 View Global System Settings
@@ -1548,7 +1626,7 @@ Granular permission catalog and dynamic admin-panel role management. Access requ
 ### 7.1 List Permissions Catalog
 - **Method & Route:** `GET /api/v1/permissions`
 - **Access:** Authenticated admin staff (`roles.view`)
-- **Description:** Returns the complete permission catalog (23 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
+- **Description:** Returns the complete permission catalog (24 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
 - **Response (200 OK):**
   ```json
   {

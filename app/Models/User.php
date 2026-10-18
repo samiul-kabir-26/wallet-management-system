@@ -51,7 +51,7 @@ use Modules\Roles\Enums\RolePanel;
     'address',
     'receipt_emails_enabled',
 ])]
-#[Hidden(['password', 'pin'])]
+#[Hidden(['password', 'pin', 'totp_secret', 'totp_last_used_step'])]
 class User extends Authenticatable
 {
     /** @use HasApiTokens<PersonalAccessToken|TransientToken> */
@@ -76,7 +76,10 @@ class User extends Authenticatable
             'password' => 'hashed',
             'pin' => 'hashed',
             'password_changed_at' => 'datetime',
+            'totp_secret' => 'encrypted',
+            'totp_confirmed_at' => 'datetime',
             'receipt_emails_enabled' => 'boolean',
+            'kyc_verified_at' => 'datetime',
         ];
     }
 
@@ -249,6 +252,22 @@ class User extends Authenticatable
     public function loginActivities(): HasMany
     {
         return $this->hasMany(LoginActivity::class);
+    }
+
+    /**
+     * Devices this customer or agent proved with an SMS code.
+     */
+    public function trustedDevices(): HasMany
+    {
+        return $this->hasMany(TrustedDevice::class);
+    }
+
+    /**
+     * Whether staff sign in with an authenticator app instead of an emailed code.
+     */
+    public function usesTotp(): bool
+    {
+        return $this->totp_confirmed_at !== null && $this->totp_secret !== null;
     }
 
     /**
