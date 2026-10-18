@@ -65,6 +65,7 @@ class User extends Authenticatable
             'totp_secret' => 'encrypted',
             'totp_confirmed_at' => 'datetime',
             'receipt_emails_enabled' => 'boolean',
+            'kyc_verified_at' => 'datetime',
         ];
     }
 

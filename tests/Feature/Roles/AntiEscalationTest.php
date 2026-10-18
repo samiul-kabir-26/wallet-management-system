@@ -433,7 +433,7 @@ test('permissions catalog returns is_super_admin_only: true for users.grant_admi
         ->not->toHaveKey('catalog');
 
     $allPerms = collect($data['permissions']);
-    expect($allPerms)->toHaveCount(23);
+    expect($allPerms)->toHaveCount(24);
 
     foreach ($allPerms as $perm) {
         if ($perm['name'] === 'users.grant_admin_access') {

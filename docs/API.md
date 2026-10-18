@@ -899,6 +899,44 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 
 ---
 
+### 3.15 KYC Tiers, Identity Verification and Limits
+A customer's tier sets their daily and monthly limits for cash-outs and transfers (5.5b). Tiers live in `config/kyc.php`:
+
+| Tier | Meaning | Daily | Monthly | Needs verified identity |
+|---|---|---|---|---|
+| `BASIC` | New self- or staff-registered account (phone verified) | 5,000 | 20,000 | no |
+| `STANDARD` | Identity documents approved by staff | 10,000 | 50,000 | yes |
+| `PREMIUM` | Higher limits granted by staff | 25,000 | 100,000 | yes |
+
+- The tier's limits are written to the user's caps row, which is still the only thing `CapService` enforces. Usage counters are never reset by a tier change.
+- Accounts that existed before tiers were introduced are `STANDARD` with their old 10,000 / 50,000 limits (not verified; grandfathered).
+- `UserResource` carries `kyc: { tier, label, verified_at }`; the caps row carries `is_custom`.
+
+**Customer** (`/users/me`, customer token for submitting):
+
+| Method & Route | Body / Notes |
+|---|---|
+| `GET /api/v1/users/me/kyc` | `{ tier, label, verified_at, custom_limits, caps (5.5b shape), tiers: [{ tier, label, description, daily_cap, monthly_cap, requires_verification }], latest_submission }`. |
+| `POST /api/v1/users/me/kyc` | multipart: `document_type` (`NID`, `PASSPORT`, `DRIVING_LICENSE`), `document_number` (5–30 letters/digits/spaces), `full_name`, `date_of_birth` (18+), `front` and `back` (JPG/PNG/WebP, max 5 MB each). USER role only (403). One pending submission at a time (409). Throttled 5 per 10 minutes. |
+
+**Staff** (admin token **and** `users.manage_kyc`, granted to ADMIN by default; staff never act on their own account, 403):
+
+| Method & Route | Body / Notes |
+|---|---|
+| `GET /api/v1/users/kyc-submissions?status=` | `PENDING` oldest first. Staff see the full document number; the customer only ever sees it masked (`*********6789`). |
+| `GET /api/v1/users/kyc-submissions/{id}/documents/{front\|back}` | Streams the image (`nosniff`, `no-store`). |
+| `POST /api/v1/users/kyc-submissions/{id}/approve` | `note?`. Sets `kyc_verified_at`; a `BASIC` account moves to `STANDARD` (higher tiers and custom limits are left alone). SMS to the customer with the new tier and daily limit. 409 if already reviewed. |
+| `POST /api/v1/users/kyc-submissions/{id}/reject` | `reason` (5–500). SMS with the reason; the customer can submit again. |
+| `PATCH /api/v1/users/{user}/kyc-tier` | `tier`, `reason`. Resets limits to the tier's (clears custom limits). `STANDARD`/`PREMIUM` need verified identity (422). |
+| `PATCH /api/v1/users/{user}/caps` | `daily_cap`, `monthly_cap`, `reason`. Custom limits up to `kyc.max_custom_daily_cap` / `max_custom_monthly_cap`; daily ≤ monthly (422). |
+
+- Document images are stored on the private `local` disk under `kyc/{user_id}/`; the document number is encrypted at rest (`encrypted` cast).
+- Audited: `KYC_SUBMITTED`, `KYC_APPROVED`, `KYC_REJECTED`, `KYC_TIER_CHANGED` and `CAPS_CUSTOMIZED` (both with limits before/after and the reason), against the customer.
+- Panels: customer "Verification & limits" card on My Account; admin "KYC Reviews" page; "Manage" next to the tier on the admin user profile.
+- Agent operations are not capped, so tiers only affect customer wallets.
+
+---
+
 ## 4. Wallet Management Endpoints
 
 ### 4.1 View Current Wallet
@@ -1494,6 +1532,24 @@ Agents ask for e-money float against a bank deposit instead of waiting for staff
 
 ---
 
+### 5.17 Reports: Dashboard Metrics and Ledger Export
+**Metrics:** `GET /api/v1/reports/overview?days=14` (admin token **and** `transactions.view_any`; `days` 1–90).
+- Groups `COMPLETED` transactions by business day (`transactions.business_timezone`, fixed offset, correct for Asia/Dhaka which has no daylight saving).
+- `totals`: `volume` and `transactions` (new money only; `COMMISSION_PAYOUT` memo rows and `REVERSAL` rows excluded), `by_type` counts and amounts, `fees_earned` (cash-out and transfer fees less fees refunded by reversals), `commission_paid` (less clawed-back commission), `signup_bonus_paid` (backfilled opening balances excluded, less clawbacks), `signups` (new USER/AGENT accounts).
+- `daily`: one entry per day with `volume`, `count`, `signups` (zeros included).
+- `queues` (now): pending agent withdrawals (count and held amount), pending float requests, unfinished gateway top-ups, pending approvals.
+- `e_money`: total balance held in user and agent wallets.
+- Admin dashboard "Activity" panel (range selector, cards, daily bar chart, queue links).
+
+**Export:** `GET /api/v1/reports/ledger.csv` (admin token **and** `transactions.export`). Same filters as 5.8 (`type`, `status`, `search`, `party_id`, `from_date`, `to_date`), via the same query, so the file always matches the ledger on screen.
+- `transactions.export` is not granted to ADMIN by default (bulk personal and financial data); SUPER_ADMIN has it and can grant it.
+- Streamed in chunks of 1,000 rows; UTF-8 with BOM; times in the business timezone. Columns: `id, created_at, type, status, amount, fee, commission, currency, sender_name, sender_phone, recipient_name, recipient_phone, agent_name, agent_phone, external_reference, reversed_transaction_id, description`.
+- Cells starting with `= + - @` or a control character (other than plain numbers) are prefixed with `'` to stop spreadsheet formula injection.
+- More than `REPORTS_EXPORT_MAX_ROWS` (50,000) rows is refused (422): narrow the filters. Throttled 6/min. Audited as `TRANSACTIONS_EXPORTED` with the filters, row count and IP. The `X-Export-Rows` header carries the row count.
+- "Export CSV" button on the admin transaction ledger.
+
+---
+
 ## 6. System Settings Endpoints
 
 ### 6.1 View Global System Settings
@@ -1569,7 +1625,7 @@ Granular permission catalog and dynamic admin-panel role management. Access requ
 ### 7.1 List Permissions Catalog
 - **Method & Route:** `GET /api/v1/permissions`
 - **Access:** Authenticated admin staff (`roles.view`)
-- **Description:** Returns the complete permission catalog (23 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
+- **Description:** Returns the complete permission catalog (24 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
 - **Response (200 OK):**
   ```json
   {

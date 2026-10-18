@@ -60,6 +60,47 @@ watch(
 );
 watch(() => [filters.type, filters.status, filters.from, filters.to], () => fetchTransactions(1));
 
+// CSV export of the same filtered ledger (transactions.export). The file needs the bearer token,
+// so it is fetched as a blob and saved through a temporary link.
+const exporting = ref(false);
+const canExport = computed(() => authStore.can('transactions.export'));
+
+const exportCsv = async () => {
+    exporting.value = true;
+    try {
+        const params: Record<string, string | number> = {};
+        if (props.partyId) params.party_id = props.partyId;
+        if (filters.search.trim()) params.search = filters.search.trim();
+        if (filters.type) params.type = filters.type;
+        if (filters.status) params.status = filters.status;
+        if (filters.from) params.from_date = filters.from;
+        if (filters.to) params.to_date = filters.to;
+
+        const res = await api.get('/reports/ledger.csv', { params, responseType: 'blob' });
+        const url = URL.createObjectURL(res.data as Blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `ledger-${new Date().toISOString().slice(0, 10)}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast.success(`Exported ${res.headers['x-export-rows'] ?? ''} rows.`);
+    } catch (err: unknown) {
+        // Error bodies arrive as blobs too; read them for the message
+        const blob = (err as { response?: { data?: Blob } }).response?.data;
+        const text = blob instanceof Blob ? await blob.text() : '';
+        let message = 'Export failed.';
+        try {
+            const body = JSON.parse(text) as { message?: string; errors?: Record<string, string[]> };
+            message = Object.values(body.errors ?? {})[0]?.[0] ?? body.message ?? message;
+        } catch {
+            // keep the generic message
+        }
+        toast.error(message);
+    } finally {
+        exporting.value = false;
+    }
+};
+
 const resetFilters = () => {
     Object.assign(filters, { search: '', type: '', status: '', from: '', to: '' });
 };
@@ -199,6 +240,15 @@ defineExpose({ refresh: () => fetchTransactions(pagination.value?.current_page ?
                     @click="resetFilters"
                 >
                     Reset
+                </button>
+                <button
+                    v-if="canExport"
+                    type="button"
+                    :disabled="exporting"
+                    class="rounded-lg border border-indigo-300 px-3 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                    @click="exportCsv"
+                >
+                    {{ exporting ? 'Exporting…' : 'Export CSV' }}
                 </button>
             </div>
         </div>

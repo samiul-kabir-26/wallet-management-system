@@ -247,6 +247,9 @@ onMounted(() => {
                     </div>
                 </div>
 
+                <!-- KYC: customers verify their identity to raise their limits -->
+                <KycCard v-if="panel === 'user'" />
+
                 <!-- Transaction receipts: SMS always, email copy optional -->
                 <div
                     v-if="panel !== 'admin'"

@@ -6,6 +6,7 @@ import { api } from '@/services/api';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import Alert from '@/components/Alert.vue';
 import Skeleton from '@/components/Skeleton.vue';
+import DashboardMetrics from '@/components/Admin/DashboardMetrics.vue';
 
 const { authStore } = useAuthGuard('ADMIN');
 
@@ -127,6 +128,8 @@ onMounted(() => {
                     </div>
                 </div>
             </div>
+
+            <DashboardMetrics v-if="authStore.can('transactions.view_any')" />
 
             <!-- Quick Management Shortcuts -->
             <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900">
