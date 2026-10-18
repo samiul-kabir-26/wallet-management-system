@@ -36,6 +36,11 @@ class UserResource extends JsonResource
             'roles' => $this->whenLoaded('roles', fn () => $this->resource->roles->pluck('name')),
             'is_active' => $this->resource->is_active,
             'is_verified' => (bool) $this->resource->is_verified,
+            'kyc' => [
+                'tier' => $this->resource->kyc_tier,
+                'label' => config("kyc.tiers.{$this->resource->kyc_tier}.label", $this->resource->kyc_tier),
+                'verified_at' => $this->resource->kyc_verified_at,
+            ],
             'wallets' => $this->whenLoaded('wallets'),
             'caps' => $this->whenLoaded('cap'),
             'agent_info' => $this->whenLoaded('agentInfo', fn () => $this->resource->agentInfo ? new AgentResource($this->resource->agentInfo) : null),

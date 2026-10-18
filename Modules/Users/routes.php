@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Modules\Users\Http\Controllers\AccountController;
+use Modules\Users\Http\Controllers\KycController;
 use Modules\Users\Http\Controllers\UserController;
 
 // The signed-in account managing itself (any panel). Registered before /{user} so "me" is not bound as an ID.
@@ -14,6 +15,8 @@ Route::middleware(['auth:sanctum', 'ability:admin,agent,user', 'password.changed
     Route::post('/phone/confirm', [AccountController::class, 'confirmPhoneAddition'])->middleware('throttle:10,1');
     Route::post('/phone-verification', [AccountController::class, 'requestPhoneVerification'])->middleware('throttle:phone-otp');
     Route::post('/phone-verification/confirm', [AccountController::class, 'confirmPhoneVerification'])->middleware('throttle:10,1');
+    Route::get('/kyc', [KycController::class, 'mine']);
+    Route::post('/kyc', [KycController::class, 'submit'])->middleware('throttle:5,10');
 });
 
 // Administrative staff routes
@@ -27,6 +30,14 @@ Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(
     Route::patch('/{user}/verify-phone', [UserController::class, 'verifyPhone']);
     Route::get('/{user}/login-activity', [UserController::class, 'loginActivity']);
     Route::get('/{user}/audit-trail', [UserController::class, 'auditTrail']);
+
+    // KYC review and limits (users.manage_kyc is checked in the controller)
+    Route::get('/kyc-submissions', [KycController::class, 'index']);
+    Route::get('/kyc-submissions/{submission}/documents/{side}', [KycController::class, 'document'])->whereNumber('submission')->whereIn('side', ['front', 'back']);
+    Route::post('/kyc-submissions/{submission}/approve', [KycController::class, 'approve'])->whereNumber('submission');
+    Route::post('/kyc-submissions/{submission}/reject', [KycController::class, 'reject'])->whereNumber('submission');
+    Route::patch('/{user}/kyc-tier', [KycController::class, 'changeTier']);
+    Route::patch('/{user}/caps', [KycController::class, 'setLimits']);
 });
 
 // Profile detail and update routes (Admin, Agent, User - UserPolicy enforces self or admin)
