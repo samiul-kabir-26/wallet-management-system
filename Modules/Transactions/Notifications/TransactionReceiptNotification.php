@@ -140,7 +140,10 @@ class TransactionReceiptNotification extends Notification implements ShouldQueue
             'headline' => $headline,
             'amount' => $amount,
             'preposition' => $preposition,
-            'counterparty' => $this->describe($counterparty),
+            // A clawed-back signup bonus has no recipient: the money goes back to where the bonus came from
+            'counterparty' => $counterparty === null && $tx->type === 'REVERSAL'
+                ? (string) config('transactions.signup_bonus.source_label', 'bKash')
+                : $this->describe($counterparty),
             'charges' => $charges,
             'balance' => (string) $balance,
             'time' => $tx->created_at

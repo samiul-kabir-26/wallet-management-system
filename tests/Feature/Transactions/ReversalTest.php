@@ -210,7 +210,7 @@ test('only completed transfers, cash-ins and cash-outs can be reversed', functio
 
     reverseAs($this, reversalActor('SUPER_ADMIN'), $topUp)
         ->assertStatus(409)
-        ->assertJsonPath('message', 'Only completed transfers, cash-ins and cash-outs can be reversed.');
+        ->assertJsonPath('message', 'Only completed transfers, cash-ins, cash-outs and signup bonuses can be reversed.');
 });
 
 test('a reversal itself cannot be reversed', function () {

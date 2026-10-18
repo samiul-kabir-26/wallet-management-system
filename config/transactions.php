@@ -63,6 +63,13 @@ return [
         'default_amount' => env('SIGNUP_BONUS_AMOUNT', 50.00),
         'max_amount' => env('SIGNUP_BONUS_MAX', 1000.00),
         'source_label' => env('SIGNUP_BONUS_SOURCE_LABEL', 'bKash'),
+
+        // Abuse controls. A daily budget of 0 means no limit; once the bonuses paid today (business
+        // day) reach the budget, new accounts still register but get no bonus. Staff can claw a bonus
+        // back (as a REVERSAL) within clawback_days.
+        'default_daily_budget' => env('SIGNUP_BONUS_DAILY_BUDGET', 0),
+        'max_daily_budget' => env('SIGNUP_BONUS_MAX_DAILY_BUDGET', 1000000.00),
+        'clawback_days' => (int) env('SIGNUP_BONUS_CLAWBACK_DAYS', 30),
     ],
 
     /*

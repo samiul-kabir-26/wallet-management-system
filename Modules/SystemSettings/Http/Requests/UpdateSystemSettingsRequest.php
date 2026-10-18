@@ -45,6 +45,7 @@ class UpdateSystemSettingsRequest extends FormRequest
             'agent_commission_rate' => ['sometimes', 'numeric', 'min:0', 'max:1'],
             SignupBonusService::SETTING_ENABLED => ['sometimes', 'boolean'],
             SignupBonusService::SETTING_AMOUNT => ['sometimes', 'numeric', 'decimal:0,2', 'min:0', "max:{$maxSignupBonus}"],
+            SignupBonusService::SETTING_DAILY_BUDGET => ['sometimes', 'numeric', 'decimal:0,2', 'min:0', 'max:'.(float) config('transactions.signup_bonus.max_daily_budget', 1000000.00)],
         ];
     }
 
@@ -54,7 +55,7 @@ class UpdateSystemSettingsRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            if (! $this->hasAny(['system_fee_rate', 'agent_commission_rate', SignupBonusService::SETTING_ENABLED, SignupBonusService::SETTING_AMOUNT])) {
+            if (! $this->hasAny(['system_fee_rate', 'agent_commission_rate', SignupBonusService::SETTING_ENABLED, SignupBonusService::SETTING_AMOUNT, SignupBonusService::SETTING_DAILY_BUDGET])) {
                 $validator->errors()->add('settings', 'At least one system setting must be provided.');
             }
         });

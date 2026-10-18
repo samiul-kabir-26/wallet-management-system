@@ -30,13 +30,25 @@ const bonusAmountRule: Rule = (value) => {
     return /^\d+(\.\d{1,2})?$/.test(String(value)) ? true : 'Signup bonus amount must be 0 or more, with at most 2 decimal places.';
 };
 
-const { handleSubmit, setValues, setErrors, values } = useForm<{ feeRate: string; commissionRate: string; bonusAmount: string }>({
+/** Daily bonus budget: 0 (no limit) or more, at most 2 decimal places. */
+const bonusBudgetRule: Rule = (value) => {
+    if (value === undefined || value === null || String(value).trim() === '') {
+        return 'Daily budget is required (0 means no limit).';
+    }
+    return /^\d+(\.\d{1,2})?$/.test(String(value)) ? true : 'Daily budget must be 0 or more, with at most 2 decimal places.';
+};
+
+const paidToday = ref(0);
+const clawbackDays = ref(30);
+
+const { handleSubmit, setValues, setErrors, values } = useForm<{ feeRate: string; commissionRate: string; bonusAmount: string; bonusBudget: string }>({
     validationSchema: {
         feeRate: rate('Transaction fee rate'),
         commissionRate: rate('Agent commission rate'),
         bonusAmount: bonusAmountRule,
+        bonusBudget: bonusBudgetRule,
     },
-    initialValues: { feeRate: '', commissionRate: '', bonusAmount: '' },
+    initialValues: { feeRate: '', commissionRate: '', bonusAmount: '', bonusBudget: '0.00' },
 });
 
 const asPercent = (value: string): string => (value === '' || Number.isNaN(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(2)}%`);
@@ -51,7 +63,10 @@ const fetchSettings = async () => {
                 feeRate: String(settings.system_fee_rate),
                 commissionRate: String(settings.agent_commission_rate),
                 bonusAmount: Number(settings.signup_bonus_amount ?? 0).toFixed(2),
+                bonusBudget: Number(settings.signup_bonus_daily_budget ?? 0).toFixed(2),
             });
+            paidToday.value = Number(settings.signup_bonus_paid_today ?? 0);
+            clawbackDays.value = Number(settings.signup_bonus_clawback_days ?? 30);
             bonusEnabled.value = Boolean(settings.signup_bonus_enabled);
         }
     } catch (err: unknown) {
@@ -69,6 +84,7 @@ const handleSaveSettings = handleSubmit(async (formValues) => {
             agent_commission_rate: Number(formValues.commissionRate),
             signup_bonus_enabled: bonusEnabled.value,
             signup_bonus_amount: Number(formValues.bonusAmount),
+            signup_bonus_daily_budget: Number(formValues.bonusBudget),
         });
         if (res.status === 202) {
             toast.info('Changes submitted for approval. They take effect once another staff member approves them.');
@@ -82,6 +98,7 @@ const handleSaveSettings = handleSubmit(async (formValues) => {
         if (fieldErrors.system_fee_rate) mapped.feeRate = fieldErrors.system_fee_rate;
         if (fieldErrors.agent_commission_rate) mapped.commissionRate = fieldErrors.agent_commission_rate;
         if (fieldErrors.signup_bonus_amount) mapped.bonusAmount = fieldErrors.signup_bonus_amount;
+        if (fieldErrors.signup_bonus_daily_budget) mapped.bonusBudget = fieldErrors.signup_bonus_daily_budget;
         setErrors(mapped);
         toast.error(message);
     } finally {
@@ -162,7 +179,15 @@ onMounted(() => {
                         <div class="w-48">
                             <TextField name="bonusAmount" label="Bonus amount" type="number" step="0.01" min="0" inputmode="decimal" />
                         </div>
+                        <div class="w-48">
+                            <TextField name="bonusBudget" label="Daily budget (0 = no limit)" type="number" step="0.01" min="0" inputmode="decimal" />
+                        </div>
                     </div>
+                    <p class="text-xs text-zinc-500">
+                        Paid today: ৳{{ paidToday.toFixed(2) }}<template v-if="Number(values.bonusBudget) > 0"> of ৳{{ Number(values.bonusBudget).toFixed(2) }}</template>.
+                        Once the budget is used up, new accounts still register but get no bonus until tomorrow. Staff can claw a bonus back from
+                        the transaction ledger within {{ clawbackDays }} days.
+                    </p>
 
                     <div v-if="authStore.can('settings.update')" class="flex justify-end border-t border-zinc-100 pt-6 dark:border-zinc-800">
                         <button

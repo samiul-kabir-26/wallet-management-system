@@ -2,7 +2,10 @@
 
 namespace Modules\Transactions\Services;
 
+use App\Models\AuditLog;
+use App\Models\SystemSetting;
 use App\Models\Transaction;
+use App\Models\User;
 use App\Models\Wallet;
 use Illuminate\Support\Facades\DB;
 use Modules\SystemSettings\Services\SystemSettingService;
@@ -13,6 +16,8 @@ class SignupBonusService
     public const string SETTING_ENABLED = 'signup_bonus_enabled';
 
     public const string SETTING_AMOUNT = 'signup_bonus_amount';
+
+    public const string SETTING_DAILY_BUDGET = 'signup_bonus_daily_budget';
 
     public const string TYPE = 'SIGNUP_BONUS';
 
@@ -44,6 +49,36 @@ class SignupBonusService
     }
 
     /**
+     * The most that may be paid in signup bonuses per business day, formatted to 2 decimals. '0.00' means
+     * no limit.
+     */
+    public function dailyBudget(): string
+    {
+        $stored = $this->settingService->get(self::SETTING_DAILY_BUDGET);
+        $budget = $stored ?? config('transactions.signup_bonus.default_daily_budget', 0);
+
+        return number_format(max(0, (float) $budget), 2, '.', '');
+    }
+
+    /**
+     * Signup bonuses paid so far in the current business day. Backfilled opening balances do not count.
+     */
+    public function paidToday(): string
+    {
+        $timezone = config('transactions.business_timezone', 'Asia/Dhaka');
+        $start = now($timezone)->startOfDay()->utc();
+
+        $sum = Transaction::where('type', self::TYPE)
+            ->where('status', 'COMPLETED')
+            ->where('created_at', '>=', $start)
+            ->where('created_at', '<', $start->copy()->addDay())
+            ->where(fn ($query) => $query->whereNull('meta->backfilled')->orWhere('meta->backfilled', false))
+            ->sum('amount');
+
+        return number_format((float) $sum, 2, '.', '');
+    }
+
+    /**
      * The idempotency key that limits each wallet to a single signup bonus.
      */
     public static function idempotencyKey(Wallet $wallet): string
@@ -55,7 +90,8 @@ class SignupBonusService
      * Credit the signup bonus to a newly opened wallet and record it in the ledger.
      *
      * Call inside the registration transaction so the account and its bonus commit or roll back together.
-     * Returns null when the bonus is disabled or set to zero. Calling it twice for the same wallet returns
+     * Returns null when the bonus is disabled, set to zero, or today's budget is used up (the account
+     * still registers; the withheld bonus is audited). Calling it twice for the same wallet returns
      * the original transaction instead of crediting again.
      *
      * @throws WalletNotFoundException
@@ -71,7 +107,11 @@ class SignupBonusService
             return null;
         }
 
-        return DB::transaction(function () use ($wallet, $amount): Transaction {
+        return DB::transaction(function () use ($wallet, $amount): ?Transaction {
+            if (! $this->withinDailyBudget($wallet, $amount)) {
+                return null;
+            }
+
             $lockedWallet = Wallet::whereKey($wallet->id)->lockForUpdate()->first();
             if (! $lockedWallet) {
                 throw new WalletNotFoundException;
@@ -122,5 +162,48 @@ class SignupBonusService
                 ],
             ]);
         });
+    }
+
+    /**
+     * Check today's budget with the budget setting row locked, so two registrations at the same moment
+     * cannot both take the last of it. Audits a withheld bonus against the new account.
+     */
+    private function withinDailyBudget(Wallet $wallet, string $amount): bool
+    {
+        // Lock first: the sum below must not change until this bonus is written
+        SystemSetting::where('key', self::SETTING_DAILY_BUDGET)->lockForUpdate()->first();
+
+        $budget = $this->dailyBudget();
+        if (bccomp($budget, '0.00', 2) === 0) {
+            return true;
+        }
+
+        $alreadyPaid = Transaction::where('initiated_by', $wallet->user_id)
+            ->where('idempotency_key', self::idempotencyKey($wallet))
+            ->exists();
+        if ($alreadyPaid) {
+            return true;
+        }
+
+        $paidToday = $this->paidToday();
+        if (bccomp(bcadd($paidToday, $amount, 2), $budget, 2) <= 0) {
+            return true;
+        }
+
+        AuditLog::create([
+            'actor_id' => null,
+            'action' => 'SIGNUP_BONUS_WITHHELD',
+            'auditable_type' => (new User)->getMorphClass(),
+            'auditable_id' => $wallet->user_id,
+            'metadata' => [
+                'reason' => 'DAILY_BUDGET_EXHAUSTED',
+                'amount' => $amount,
+                'daily_budget' => $budget,
+                'paid_today' => $paidToday,
+                'wallet_id' => $wallet->id,
+            ],
+        ]);
+
+        return false;
     }
 }

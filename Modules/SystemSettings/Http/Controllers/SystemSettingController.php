@@ -115,7 +115,7 @@ class SystemSettingController extends Controller
      * have not stored an override yet.
      *
      * @param  array<string, float>  $settings
-     * @return array<string, float|bool>
+     * @return array<string, float|int|bool>
      */
     private function withEffectiveSignupBonus(array $settings): array
     {
@@ -123,6 +123,9 @@ class SystemSettingController extends Controller
             ...$settings,
             SignupBonusService::SETTING_ENABLED => $this->signupBonus->isEnabled(),
             SignupBonusService::SETTING_AMOUNT => (float) $this->signupBonus->amount(),
+            SignupBonusService::SETTING_DAILY_BUDGET => (float) $this->signupBonus->dailyBudget(),
+            'signup_bonus_paid_today' => (float) $this->signupBonus->paidToday(),
+            'signup_bonus_clawback_days' => (int) config('transactions.signup_bonus.clawback_days', 30),
         ];
     }
 }
