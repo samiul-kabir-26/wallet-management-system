@@ -47,7 +47,8 @@ test('ADMIN can register a USER', function () {
     expect($registeredUser->userWallet)->not->toBeNull()
         ->and((float) $registeredUser->userWallet->balance)->toBe(50.00)
         ->and($registeredUser->cap)->not->toBeNull()
-        ->and((float) $registeredUser->cap->daily_cap)->toBe(10000.00)
+        ->and($registeredUser->kyc_tier)->toBe('BASIC')
+        ->and((float) $registeredUser->cap->daily_cap)->toBe(5000.00)
         ->and($registeredUser->hasRole('USER'))->toBeTrue()
         ->and($registeredUser->roles->first()->pivot->assigned_by)->toBe($admin->id);
 });

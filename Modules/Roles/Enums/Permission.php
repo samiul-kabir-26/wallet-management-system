@@ -12,6 +12,7 @@ enum Permission: string
     case UsersGrantAdminAccess = 'users.grant_admin_access';
     case UsersVerifyPhone = 'users.verify_phone';
     case UsersViewActivity = 'users.view_activity';
+    case UsersManageKyc = 'users.manage_kyc';
 
     case AgentsApprove = 'agents.approve';
     case AgentsSuspend = 'agents.suspend';
@@ -49,6 +50,7 @@ enum Permission: string
             self::UsersGrantAdminAccess => 'Grant administrative access invite to users',
             self::UsersVerifyPhone => 'Mark a user phone number as verified after an identity check',
             self::UsersViewActivity => 'View user activity: login records and audit trail',
+            self::UsersManageKyc => 'Review identity documents and change KYC tiers and limits',
             self::AgentsApprove => 'Approve pending agent applications',
             self::AgentsSuspend => 'Suspend active agents',
             self::AgentsIssueFloat => 'Issue e-money float to agents against external bank deposit',
@@ -81,7 +83,8 @@ enum Permission: string
             self::UsersAssignRole,
             self::UsersGrantAdminAccess,
             self::UsersVerifyPhone,
-            self::UsersViewActivity => 'Users',
+            self::UsersViewActivity,
+            self::UsersManageKyc => 'Users',
 
             self::AgentsApprove,
             self::AgentsSuspend,

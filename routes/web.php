@@ -25,6 +25,7 @@ Route::prefix('user')->name('user.')->group(function (): void {
     Route::inertia('/dashboard', 'User/Dashboard')->name('dashboard');
     Route::inertia('/wallet', 'User/Wallet')->name('wallet');
     Route::inertia('/transfer', 'User/Transfer')->name('transfer');
+    Route::inertia('/requests', 'User/Requests')->name('requests');
     Route::inertia('/history', 'User/History')->name('history');
     Route::inertia('/account', 'User/Account')->name('account');
     Route::get('/top-up/{transaction}', fn (Request $request, int $transaction) => Inertia::render('User/TopUpResult', [
@@ -59,7 +60,7 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
     Route::inertia('/withdrawals', 'Admin/Withdrawals')->name('withdrawals');
     Route::inertia('/top-ups', 'Admin/TopUps')->name('top-ups');
     Route::inertia('/approvals', 'Admin/Approvals')->name('approvals');
-    Route::inertia('/float-requests', 'Admin/FloatRequests')->name('float-requests');
+    Route::inertia('/kyc', 'Admin/KycReviews')->name('kyc');
     Route::inertia('/roles', 'Admin/Roles')->name('roles');
     Route::inertia('/agents', 'Admin/Agents')->name('agents');
     Route::inertia('/wallets', 'Admin/Wallets')->name('wallets');
