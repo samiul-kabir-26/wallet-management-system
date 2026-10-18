@@ -862,6 +862,18 @@
                                 {
                                     "key": "per_page",
                                     "value": "15"
+                                },
+                                {
+                                    "key": "search",
+                                    "value": "",
+                                    "description": "Name, email, phone or #ID (max 100 chars)",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "panel",
+                                    "value": "agent",
+                                    "description": "admin | agent | user",
+                                    "disabled": true
                                 }
                             ]
                         },
@@ -1023,7 +1035,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{}"
+                            "raw": "{\n    \"reason\": \"Suspicious counter transaction patterns\"\n}"
                         },
                         "url": {
                             "raw": "{{baseUrl}}/users/:user/suspend-agent",
@@ -1044,6 +1056,52 @@
                             ]
                         },
                         "description": "Suspends agent and revokes cash-in/cash-out/withdrawal capabilities."
+                    }
+                },
+                {
+                    "name": "Change Agent Commission Rate (Admin)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"commission_rate\": 0.015\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/users/:user/commission-rate",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                ":user",
+                                "commission-rate"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "user",
+                                    "value": "{{userId}}",
+                                    "description": "Agent User ID"
+                                }
+                            ]
+                        },
+                        "description": "Requires agents.update_commission. Approved or suspended agents only (409 when pending); staff cannot change their own rate. Audited as AGENT_COMMISSION_UPDATED. Past transactions keep their original rate."
                     }
                 },
                 {
@@ -1069,7 +1127,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"role\": \"ADMIN\"\n}"
+                            "raw": "{\n    \"email\": \"promoted.staff@wallet.local\",\n    \"role\": \"ADMIN\"\n}"
                         },
                         "url": {
                             "raw": "{{baseUrl}}/users/:user/grant-admin-access",
@@ -1089,7 +1147,7 @@
                                 }
                             ]
                         },
-                        "description": "Super admin promotes existing user to admin and sends signed invitation link with temporary password."
+                        "description": "Super admin promotes existing user to admin and sends signed invitation link with temporary password. SUPER_ADMIN cannot be granted here (422)."
                     }
                 }
             ]
@@ -1600,7 +1658,7 @@
         },
         {
             "name": "5. System Settings",
-            "description": "Global financial configuration for system fee rates and default agent commission rates.",
+            "description": "Global financial configuration: system fee rate, default agent commission rate and signup bonus.",
             "item": [
                 {
                     "name": "Get System Settings",
@@ -1632,7 +1690,7 @@
                                 "system-settings"
                             ]
                         },
-                        "description": "Returns global fee and default commission configuration values."
+                        "description": "Returns the fee rate, default commission rate and the signup bonus values in force."
                     }
                 },
                 {
@@ -1658,7 +1716,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"transaction_fee_rate\": 0.015,\n    \"agent_commission_rate\": 0.02\n}"
+                            "raw": "{\n    \"system_fee_rate\": 0.015,\n    \"agent_commission_rate\": 0.02,\n    \"signup_bonus_enabled\": true,\n    \"signup_bonus_amount\": 50.00\n}"
                         },
                         "url": {
                             "raw": "{{baseUrl}}/system-settings",
@@ -1669,7 +1727,7 @@
                                 "system-settings"
                             ]
                         },
-                        "description": "Updates global transaction fee rates and commission rates."
+                        "description": "Updates the fee rate, default commission rate and signup bonus (enabled flag and amount, 0-1000). Requires settings.update; audited as SETTINGS_UPDATED."
                     }
                 }
             ]

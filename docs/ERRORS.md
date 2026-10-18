@@ -84,6 +84,8 @@ All API errors return a consistent JSON response structure:
 | `UserNotAnAgentException` | 404 | `Target user does not have an agent profile.` | Attempting agent actions on a user without an `agent_info` record. |
 | `AgentNotApprovedException` | 409 | `Agent is not approved.` / `This action is only allowed for approved agents.` | Transaction attempted through an unapproved or suspended agent. |
 | `AgentNotPendingException` | 409 | `Agent is not pending approval.` | Attempting to approve an agent whose status is already `APPROVED` or `SUSPENDED`. |
+| `AgentNotApprovedException` | 409 | `Approve the agent before changing their commission rate.` | Changing the commission rate of a `PENDING` agent (`PATCH /users/{user}/commission-rate`). |
+| `AuthorizationException` | 403 | `Administrators cannot change their own commission rate.` | Staff changing the commission rate on their own agent profile. |
 
 ---
 

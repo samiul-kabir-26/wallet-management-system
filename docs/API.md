@@ -71,7 +71,7 @@ All API responses follow a consistent JSON envelope structure.
 ### 2.1 Public Registration (Step 2)
 - **Method & Route:** `POST /api/v1/auth/register`
 - **Access:** Public (Rate limited: 5 req/min per IP)
-- **Description:** Registers a new `USER` or `AGENT`. For users, provisions a wallet (50.00 BDT bonus) and caps. For agents, provisions a pending profile. Requires the code from 2.0 for this exact `phone_number`; the account starts with `is_verified = true`. A wrong or expired code returns 401 and nothing is created; attempts count toward the code's lockout.
+- **Description:** Registers a new `USER` or `AGENT`. For users, provisions a wallet and caps. For agents, provisions a pending profile and an agent wallet. Wallets open at 0.00; when the signup bonus is enabled (6.1), its amount (default 50.00 BDT) is then credited as a `SIGNUP_BONUS` transaction in the same database transaction (see 5.12). Requires the code from 2.0 for this exact `phone_number`; the account starts with `is_verified = true`. A wrong or expired code returns 401 and nothing is created; attempts count toward the code's lockout.
 - **Request Body:**
   ```json
   {
@@ -523,7 +523,9 @@ All API responses follow a consistent JSON envelope structure.
 ### 3.1 List All Users (Admin Audit)
 - **Method & Route:** `GET /api/v1/users/all-users`
 - **Access:** Admin only (`auth:sanctum`, `ability:admin`, `password.changed`)
-- **Query Params:** `role`, `is_active`, `is_verified`, `per_page` (1-100), `page`
+- **Query Params:** `search`, `panel`, `role`, `is_active`, `is_verified`, `per_page` (1-100), `page`
+  - `search` (max 100 characters) matches name, email or phone number, or the user ID written as `#123`. LIKE wildcards (`%`, `_`) are matched literally. Deleted users never match.
+  - `panel` (`admin`, `agent`, `user`) returns users holding at least one role on that panel, so custom staff roles count as `admin`.
 - **Response (200 OK):**
   ```json
   {
@@ -557,7 +559,8 @@ All API responses follow a consistent JSON envelope structure.
 
 ### 3.2 Admin Register User or Staff
 - **Method & Route:** `POST /api/v1/users/register`
-- **Access:** Admin only (`ability:admin`, `password.changed`). Registering `ADMIN` requires `SUPER_ADMIN` role.
+- **Access:** Admin only (`ability:admin`, `password.changed`). Registering `ADMIN` requires `SUPER_ADMIN` role. `SUPER_ADMIN` can never be registered through this endpoint, even by a `SUPER_ADMIN` (422, `role.not_in`).
+- **Signup bonus:** `USER` and `AGENT` registrations receive the signup bonus exactly like self-registration (5.12).
 - **Request Body:**
   ```json
   {
@@ -652,8 +655,9 @@ All API responses follow a consistent JSON envelope structure.
 
 ### 3.5 Update User Profile
 - **Method & Route:** `PATCH /api/v1/users/{user}`
-- **Access:** Authenticated caller updating self, or Admin (`UserPolicy`)
-- **Notes:** `email`, `phone_number`, `password`, `role` and `image` are prohibited. Avatars are uploaded through 3.13.
+- **Access:** Authenticated caller updating self, or staff holding `users.update` (`UserPolicy::update`). Only a `SUPER_ADMIN` may edit a `SUPER_ADMIN` account.
+- **Notes:** `email`, `phone_number`, `password`, `role` and `image` are prohibited. Email and phone are login/recovery identifiers, so staff cannot change them here. Avatars are uploaded through 3.13.
+- **Audit:** when staff edit someone else's profile and at least one field actually changes, a `PROFILE_UPDATED` audit entry is written against the user with `metadata.fields` and `metadata.changes.{field}.{before,after}`. Self-edits and submissions that change nothing are not audited.
 - **Request Body:**
   ```json
   {
@@ -685,9 +689,11 @@ All API responses follow a consistent JSON envelope structure.
 - **Request Body:**
   ```json
   {
-    "email": "promoted.staff@wallet.local"
+    "email": "promoted.staff@wallet.local",
+    "role": "ADMIN"
   }
   ```
+  `role` must be an admin-panel role. `SUPER_ADMIN` is rejected with 422 (`role.not_in`).
 - **Response (200 OK):**
   ```json
   {
@@ -698,7 +704,7 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 403 (Caller not SUPER_ADMIN), 422 (Phone unverified or email collision).
+- **Error Codes:** 403 (Caller not SUPER_ADMIN), 422 (Phone unverified, email collision, or `role` is `SUPER_ADMIN`).
 
 ---
 
@@ -736,7 +742,7 @@ All API responses follow a consistent JSON envelope structure.
 ### 3.8 Suspend Approved Agent
 - **Method & Route:** `PATCH /api/v1/users/{user}/suspend-agent`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
-- **Request Body:**
+- **Request Body:** `reason` is required, 3–500 characters.
   ```json
   {
     "reason": "Suspicious counter transaction patterns"
@@ -757,7 +763,7 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 404 (User is not an agent), 409 (Agent is not in APPROVED status).
+- **Error Codes:** 404 (User is not an agent), 409 (Agent is not in APPROVED status), 422 (Missing or invalid `reason`).
 
 ---
 
@@ -844,6 +850,25 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 | `POST /api/v1/users/me/phone-verification/confirm` | `otp_code` | Sets `is_verified`, audited as `PHONE_VERIFIED` with `metadata.method = "OTP"` (staff verification in 3.10 records `"STAFF"`). 401 wrong/expired code (attempts are counted and lock the code), 409 already verified. |
 
 **SMS delivery:** no SMS gateway is configured yet. `SmsChannel` writes each message to the log channel named by `SMS_LOG_CHANNEL` (default log), so in development the code appears in `storage/logs/laravel.log` as `SMS message`.
+
+---
+
+### 3.14 Change Agent Commission Rate
+- **Method & Route:** `PATCH /api/v1/users/{user}/commission-rate`
+- **Access:** Admin only (`ability:admin`, `password.changed`) **and** `agents.update_commission` (`UserPolicy::updateCommission`). ADMIN holds it by default. Staff cannot change their own rate (403).
+- **Request Body:** `commission_rate` is required, between 0 and 1, at most 4 decimal places (`0.0125` = 1.25%).
+  ```json
+  {
+    "commission_rate": 0.015
+  }
+  ```
+- **Response (200 OK):** `{ "success": true, "message": "Commission rate updated successfully", "data": { "agent": { ... } } }`, the same agent shape as 3.7.
+- **Behavior & Rules:**
+  - Locks the `agent_info` row inside a database transaction.
+  - Applies to approved and suspended agents. A pending agent's rate is set when they are approved (3.7), so pending agents are refused with 409.
+  - Only future cash-outs use the new rate. Past transactions keep the `agent_commission_rate` they were charged at.
+  - Writes an `AGENT_COMMISSION_UPDATED` audit entry with `previous_rate` and `new_rate`. Submitting the current rate is a no-op and writes no audit entry.
+- **Error Codes:** 403 (Missing permission, non-admin token, or own account), 404 (User is not an agent), 409 (Agent is pending approval), 422 (Validation error).
 
 ---
 
@@ -1161,7 +1186,7 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 ### 5.6 User Transaction History
 - **Method & Route:** `GET /api/v1/transactions/history`
 - **Access:** Authenticated (`ability:admin,agent,user`, `password.changed`)
-- **Query Params:** `type`, `status`, `from_date`, `to_date`, `per_page`, `page`
+- **Query Params:** `type` (`TOP_UP`, `CASH_IN`, `CASH_OUT`, `TRANSFER`, `AGENT_WITHDRAWAL`, `COMMISSION_PAYOUT`, `FLOAT_ISSUE`, `SIGNUP_BONUS`), `status`, `from_date`, `to_date`, `per_page`, `page`
 - **Description:** Paginated transactions list scoped directly to the authenticated caller's active wallet panel (determined by token ability: `user` -> USER wallet, `agent` -> AGENT wallet; admins view unscoped history).
 - **Response (200 OK):**
   ```json
@@ -1239,7 +1264,7 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 ### 5.8 Admin Audit (All System Transactions)
 - **Method & Route:** `GET /api/v1/transactions/admin/all`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
-- **Query Params:** `type`, `status` (`COMPLETED`, `PENDING`, `FAILED`, `REJECTED`), `search`, `party_id`, `user_id`, `sender_id`, `recipient_id`, `agent_id`, `from_date`, `to_date`, `per_page`, `page`
+- **Query Params:** `type` (any value listed in 5.6), `status` (`COMPLETED`, `PENDING`, `FAILED`, `REJECTED`), `search`, `party_id`, `user_id`, `sender_id`, `recipient_id`, `agent_id`, `from_date`, `to_date`, `per_page`, `page`
   - `search` matches the name, phone or email of any party, the `external_reference`, or the transaction ID (`123` or `#123`). LIKE wildcards are matched literally.
   - `party_id` returns transactions where that user is the user, sender, recipient or agent.
 - **Response (200 OK):** Full paginated system transactions list. For staff each item includes `parties: { sender, recipient, agent }` with `{ id, name, phone_number }`.
@@ -1302,6 +1327,17 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 
 ---
 
+### 5.12 Signup Bonus (`SIGNUP_BONUS`)
+There is no endpoint for this. The bonus is credited by `SignupBonusService::credit()` during registration (2.1 and 3.2).
+- **Ledger:** wallets open at 0.00 and the bonus is written as a `COMPLETED` `SIGNUP_BONUS` transaction with no sender: `recipient_id` and `initiated_by` are the new user, `recipient_wallet_balance_after` is set, fee and commission are zero. `meta` is `{ "source": "SYSTEM", "source_label": "bKash", "wallet_kind": "USER" | "AGENT" }` and the description is `Signup bonus from bKash`. A wallet's balance therefore always equals the sum of its ledger rows.
+- **Atomicity:** it runs inside the registration database transaction with the wallet row locked, so the account and its bonus commit or roll back together.
+- **One per wallet:** the idempotency key `signup-bonus:{wallet_id}` (unique per initiator) means a second call returns the original transaction instead of paying again.
+- **Settings:** `signup_bonus_enabled` and `signup_bonus_amount` (6.1). Nothing is credited when the bonus is disabled or the amount is 0. Defaults and the `source_label` come from `config/transactions.php` → `signup_bonus` (`SIGNUP_BONUS_*` env variables).
+- **Not credited:** wallets opened later through role assignment (3.9) and wallets that existed before this feature (they were never backfilled).
+- **Caps:** the bonus is incoming money and does not count toward daily or monthly caps.
+
+---
+
 ## 6. System Settings Endpoints
 
 ### 6.1 View Global System Settings
@@ -1314,24 +1350,34 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
     "data": {
       "settings": {
         "system_fee_rate": 0.05,
-        "agent_commission_rate": 0.02
+        "agent_commission_rate": 0.02,
+        "signup_bonus_enabled": true,
+        "signup_bonus_amount": 50
       }
     }
   }
   ```
+- **Note:** `signup_bonus_enabled` and `signup_bonus_amount` always report the values in force. When staff have not stored an override, they come from `config/transactions.php` → `signup_bonus`.
 
 ---
 
 ### 6.2 Update Global System Settings
 - **Method & Route:** `PATCH /api/v1/system-settings`
-- **Access:** Admin only (`ability:admin`)
-- **Request Body:**
+- **Access:** Admin only (`ability:admin`) **and** `settings.update`
+- **Request Body:** send at least one of the keys below (422 `settings` otherwise). The legacy aliases `transactionFee` and `agentCommission` are also accepted.
   ```json
   {
     "system_fee_rate": 0.04,
-    "agent_commission_rate": 0.015
+    "agent_commission_rate": 0.015,
+    "signup_bonus_enabled": true,
+    "signup_bonus_amount": 75.00
   }
   ```
+  | Key | Rule |
+  |---|---|
+  | `system_fee_rate`, `agent_commission_rate` | number, 0 to 1 |
+  | `signup_bonus_enabled` | boolean |
+  | `signup_bonus_amount` | number, 0 to `signup_bonus.max_amount` (default 1000), at most 2 decimal places |
 - **Response (200 OK):**
   ```json
   {
@@ -1345,7 +1391,8 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
     }
   }
   ```
-- **Error Codes:** 403 (Non-admin token), 422 (Rate must be between 0 and 1).
+- **Error Codes:** 403 (Non-admin token or missing `settings.update`), 422 (Rate outside 0–1, invalid bonus amount, or no setting provided).
+- **Effect:** bonus changes apply to registrations from that moment on. Wallets that already received a bonus are not adjusted.
 - **Audit:** each update writes a `SETTINGS_UPDATED` audit entry with the before and after value of every changed key.
 
 ---
@@ -1365,7 +1412,7 @@ Granular permission catalog and dynamic admin-panel role management. Access requ
 ### 7.1 List Permissions Catalog
 - **Method & Route:** `GET /api/v1/permissions`
 - **Access:** Authenticated admin staff (`roles.view`)
-- **Description:** Returns the complete 16-permission catalog flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
+- **Description:** Returns the complete permission catalog (22 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
 - **Response (200 OK):**
   ```json
   {
