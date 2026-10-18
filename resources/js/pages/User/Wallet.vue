@@ -6,7 +6,7 @@ import { storeToRefs } from 'pinia';
 import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { parseApiError } from '@/composables/useApiError';
-import { money, pin } from '@/composables/validators';
+import { money } from '@/composables/validators';
 import { api } from '@/services/api';
 import { useToastStore } from '@/stores/toast';
 import { useWalletStore } from '@/stores/wallet';
@@ -22,22 +22,37 @@ const walletStore = useWalletStore();
 const { wallet, loading } = storeToRefs(walletStore);
 const topUpLoading = ref(false);
 
-const { handleSubmit, resetForm, setErrors } = useForm<{ amount: string; pin: string }>({
+const { handleSubmit, resetForm, setErrors } = useForm<{ amount: string }>({
     validationSchema: {
         amount: money('Amount'),
-        pin,
     },
-    initialValues: { amount: '', pin: '' },
+    initialValues: { amount: '' },
 });
+
+type TopUpResponse = {
+    data: {
+        transaction: { id: number; status: string };
+        payment: { gateway: string; redirect_url: string | null } | null;
+    };
+};
 
 const handleTopUp = handleSubmit(async (values) => {
     topUpLoading.value = true;
+    let leavingForCheckout = false;
     try {
-        await api.post('/transactions/top-up', {
+        const { data } = await api.post<TopUpResponse>('/transactions/top-up', {
             amount: Number(values.amount).toFixed(2),
-            pin: values.pin,
             idempotency_key: newIdempotencyKey(),
         });
+
+        // SSLCommerz: leave for the checkout page; the wallet is credited once the payment is validated
+        const redirectUrl = data.data.payment?.redirect_url;
+        if (redirectUrl) {
+            leavingForCheckout = true;
+            window.location.assign(redirectUrl);
+            return;
+        }
+
         toast.success(`Successfully added ৳${Number(values.amount).toFixed(2)} to your wallet!`);
         resetForm();
         await walletStore.fetchWallet();
@@ -45,13 +60,15 @@ const handleTopUp = handleSubmit(async (values) => {
         const { message, fieldErrors } = parseApiError(err, 'Top-up failed.');
         const mapped: Record<string, string> = {};
         if (fieldErrors.amount) mapped.amount = fieldErrors.amount;
-        if (fieldErrors.pin) mapped.pin = fieldErrors.pin;
         if (Object.keys(mapped).length > 0) {
             setErrors(mapped);
         }
         toast.error(message);
     } finally {
-        topUpLoading.value = false;
+        // Keep the button disabled while the browser leaves, so a second click cannot open another payment
+        if (!leavingForCheckout) {
+            topUpLoading.value = false;
+        }
     }
 });
 
@@ -107,26 +124,19 @@ onMounted(async () => {
 
                     <!-- Top-Up Form -->
                     <div class="pt-6 border-t border-zinc-100 dark:border-zinc-800">
-                        <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">Simulate Direct Top-Up</h3>
-                        <p class="text-xs text-zinc-500 mb-4">Add demo balance into your personal wallet.</p>
+                        <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">Add Money</h3>
+                        <p class="text-xs text-zinc-500 mb-4">
+                            Pay by card or mobile banking on the SSLCommerz sandbox. Your balance updates once the payment is confirmed.
+                        </p>
 
                         <form class="space-y-3" novalidate @submit.prevent="handleTopUp">
                             <TextField name="amount" label="Amount (BDT)" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="500.00" />
-                            <TextField
-                                name="pin"
-                                label="Your 5-Digit PIN"
-                                type="password"
-                                inputmode="numeric"
-                                maxlength="10"
-                                placeholder="•••••"
-                                autocomplete="current-password"
-                            />
                             <button
                                 type="submit"
                                 :disabled="topUpLoading || wallet?.is_blocked"
                                 class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 disabled:opacity-50 transition"
                             >
-                                {{ topUpLoading ? 'Processing...' : 'Load Funds' }}
+                                {{ topUpLoading ? 'Redirecting...' : 'Continue to Payment' }}
                             </button>
                         </form>
                     </div>

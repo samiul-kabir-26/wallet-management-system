@@ -1,6 +1,6 @@
 # Improvement Proposals
 
-Status: proposals, nothing here is implemented yet.
+Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`).
 Last reviewed against: `7afe84b` (signup bonus, commission and profile editing, directory search).
 
 Each proposal says what changes, why, which module it belongs to, and what can go wrong. Items marked **Money** move or create balance and need the full treatment: DB transaction, row locks, idempotency, audit entry, and tests for the financial invariants.
@@ -11,8 +11,8 @@ Each proposal says what changes, why, which module it belongs to, and what can g
 
 | # | Proposal | Area | Priority | Effort |
 |---|---|---|---|---|
-| 1 | Top-up through the SSLCommerz sandbox | Transactions, User panel | High | L |
-| 2 | Remove the PIN from top-up | Transactions, User panel | High (ships with 1) | S |
+| 1 | Top-up through the SSLCommerz sandbox — **done** | Transactions, User panel | High | L |
+| 2 | Remove the PIN from top-up — **done** | Transactions, User panel | High (ships with 1) | S |
 | 3 | Reconcile stuck gateway payments | Transactions | High (ships with 1) | M |
 | 4 | Ledger integrity check | Wallets, Transactions | High | S |
 | 5 | Opening-balance backfill for legacy wallets | Wallets | Medium | S |

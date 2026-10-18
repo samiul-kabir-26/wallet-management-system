@@ -1356,7 +1356,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"amount\": 500\n}"
+                            "raw": "{\n    \"amount\": 500.0,\n    \"idempotency_key\": \"{{$guid}}\"\n}"
                         },
                         "url": {
                             "raw": "{{baseUrl}}/transactions/top-up",
@@ -1368,7 +1368,7 @@
                                 "top-up"
                             ]
                         },
-                        "description": "Customer simulates loading money into their personal wallet."
+                        "description": "Starts an SSLCommerz sandbox top-up (no PIN). Returns a PENDING transaction and payment.redirect_url; the wallet is credited after the payment is validated."
                     }
                 },
                 {

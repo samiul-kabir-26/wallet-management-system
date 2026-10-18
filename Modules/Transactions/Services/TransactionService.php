@@ -15,6 +15,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Modules\Authentication\Exceptions\UserNotFoundException;
 use Modules\Authentication\Services\PinVerifier;
 use Modules\Transactions\Exceptions\DailyCapsExceededException;
@@ -102,9 +103,12 @@ class TransactionService
     }
 
     /**
-     * Top-up user's own wallet balance.
+     * Credit the user's own wallet immediately, with no payment behind it.
+     *
+     * Only used by the "simulated" top-up gateway (tests and offline demos). Real top-ups go through
+     * createPendingTopUp() and completePendingTopUp(). No PIN is asked: a top-up only brings money in.
      */
-    public function topUp(User $user, string|float $amount, string $idempotencyKey, string $pin, ?string $description = null): Transaction
+    public function topUp(User $user, string|float $amount, string $idempotencyKey, ?string $description = null): Transaction
     {
         $formattedAmount = number_format((float) $amount, 2, '.', '');
         $this->assertValidAmount($formattedAmount);
@@ -115,8 +119,6 @@ class TransactionService
 
             return $existing;
         }
-
-        $this->pinVerifier->verify($user, $pin);
 
         try {
             return DB::transaction(function () use ($user, $formattedAmount, $idempotencyKey, $description): Transaction {
@@ -164,6 +166,233 @@ class TransactionService
 
             throw $e;
         }
+    }
+
+    /**
+     * Record a top-up the customer is about to pay through a payment gateway. Nothing is credited yet.
+     *
+     * The row is PENDING with no balance effect, and the gateway reference is stored in
+     * external_reference (unique), so a payment can only ever settle one row. Replaying the same
+     * idempotency key returns the existing row.
+     *
+     * @throws WalletNotFoundException
+     * @throws WalletBlockedException
+     * @throws IdempotencyConflictException
+     */
+    public function createPendingTopUp(
+        User $user,
+        string|float $amount,
+        string $idempotencyKey,
+        string $gatewayReference,
+        string $gateway,
+        ?string $description = null,
+    ): Transaction {
+        $formattedAmount = number_format((float) $amount, 2, '.', '');
+        $this->assertValidAmount($formattedAmount);
+
+        $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
+        if ($existing) {
+            $this->assertIdempotentParametersMatch($existing, 'TOP_UP', $formattedAmount);
+
+            return $existing;
+        }
+
+        // Refuse up front: a blocked wallet cannot receive, so the customer must not be sent to pay
+        $wallet = Wallet::where('user_id', $user->id)->where('kind', Wallet::KIND_USER)->first();
+        if (! $wallet) {
+            throw new WalletNotFoundException;
+        }
+        if ($wallet->is_blocked) {
+            throw new WalletBlockedException;
+        }
+
+        try {
+            return Transaction::create([
+                'user_id' => $user->id,
+                'sender_id' => null,
+                'recipient_id' => $user->id,
+                'agent_id' => null,
+                'initiated_by' => $user->id,
+                'type' => 'TOP_UP',
+                'external_reference' => $gatewayReference,
+                'amount' => $formattedAmount,
+                'system_fee_amount' => '0.00',
+                'system_fee_rate' => '0.0000',
+                'agent_commission_amount' => '0.00',
+                'agent_commission_rate' => '0.0000',
+                'currency' => $wallet->currency ?? 'BDT',
+                'description' => $description,
+                'status' => 'PENDING',
+                'idempotency_key' => $idempotencyKey,
+                'sender_wallet_balance_after' => null,
+                'recipient_wallet_balance_after' => null,
+                'agent_wallet_balance_after' => null,
+                'sender_wallet_id' => null,
+                'recipient_wallet_id' => $wallet->id,
+                'agent_wallet_id' => null,
+                'meta' => ['gateway' => $gateway],
+            ]);
+        } catch (UniqueConstraintViolationException $e) {
+            $existing = $this->findByIdempotencyKey($user, $idempotencyKey);
+            if ($existing) {
+                $this->assertIdempotentParametersMatch($existing, 'TOP_UP', $formattedAmount);
+
+                return $existing;
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Credit a gateway top-up whose payment has been confirmed by the gateway.
+     *
+     * Safe to call any number of times and from concurrent callbacks: the row is locked and a
+     * COMPLETED top-up is returned unchanged, so the wallet is credited exactly once. A FAILED row is
+     * still credited, because a confirmed payment outranks an earlier failure signal (e.g. the
+     * customer retried on the gateway page after a decline). If the wallet was blocked while the
+     * customer was paying, the money is held instead: the row stays PENDING and is flagged for staff.
+     *
+     * @param  array<string, mixed>  $payment  Gateway details to keep in meta.payment.
+     *
+     * @throws WalletNotFoundException
+     */
+    public function completePendingTopUp(Transaction $topUp, array $payment): Transaction
+    {
+        return DB::transaction(function () use ($topUp, $payment): Transaction {
+            $locked = $this->lockGatewayTopUp($topUp);
+
+            if ($locked->status === 'COMPLETED') {
+                return $locked;
+            }
+
+            $wallet = Wallet::whereKey($locked->recipient_wallet_id)->lockForUpdate()->first();
+            if (! $wallet) {
+                throw new WalletNotFoundException;
+            }
+
+            if ($wallet->is_blocked) {
+                return $this->putTopUpOnHold($locked, 'WALLET_BLOCKED', $payment);
+            }
+
+            $balanceBefore = number_format((float) $wallet->balance, 2, '.', '');
+            $balanceAfter = bcadd($balanceBefore, number_format((float) $locked->amount, 2, '.', ''), 2);
+            $wallet->balance = $balanceAfter;
+            $wallet->save();
+
+            $meta = $locked->meta ?? [];
+            unset($meta['on_hold']);
+
+            $locked->forceFill([
+                'status' => 'COMPLETED',
+                'recipient_wallet_balance_after' => $balanceAfter,
+                'meta' => [...$meta, 'payment' => $payment],
+            ])->save();
+
+            return $locked;
+        });
+    }
+
+    /**
+     * Keep a paid gateway top-up uncredited for staff review (amount mismatch, high-risk payment,
+     * blocked wallet). The customer has paid, so the row must never be marked FAILED from here on.
+     *
+     * @param  array<string, mixed>  $payment
+     */
+    public function holdPendingTopUp(Transaction $topUp, string $reason, array $payment): Transaction
+    {
+        return DB::transaction(function () use ($topUp, $reason, $payment): Transaction {
+            $locked = $this->lockGatewayTopUp($topUp);
+
+            if ($locked->status === 'COMPLETED') {
+                return $locked;
+            }
+
+            return $this->putTopUpOnHold($locked, $reason, $payment);
+        });
+    }
+
+    /**
+     * Mark an unpaid gateway top-up as FAILED. Rows that are completed or on hold (paid) are left alone.
+     *
+     * @param  array<string, mixed>  $details
+     */
+    public function failPendingTopUp(Transaction $topUp, string $reason, array $details = []): Transaction
+    {
+        return DB::transaction(function () use ($topUp, $reason, $details): Transaction {
+            $locked = $this->lockGatewayTopUp($topUp);
+
+            if ($locked->status !== 'PENDING' || isset($locked->meta['on_hold'])) {
+                return $locked;
+            }
+
+            $locked->forceFill([
+                'status' => 'FAILED',
+                'meta' => [
+                    ...($locked->meta ?? []),
+                    'failure' => [
+                        'reason' => $reason,
+                        'failed_at' => now()->toIso8601String(),
+                        ...$details,
+                    ],
+                ],
+            ])->save();
+
+            return $locked;
+        });
+    }
+
+    /**
+     * Lock a gateway top-up row for a status change.
+     */
+    private function lockGatewayTopUp(Transaction $topUp): Transaction
+    {
+        $locked = Transaction::whereKey($topUp->id)->lockForUpdate()->firstOrFail();
+
+        if ($locked->type !== 'TOP_UP' || $locked->external_reference === null) {
+            throw new InvalidArgumentException('Only gateway top-ups can be settled.');
+        }
+
+        return $locked;
+    }
+
+    /**
+     * Flag a locked top-up as paid but not credited, auditing the first time each reason is raised.
+     *
+     * @param  array<string, mixed>  $payment
+     */
+    private function putTopUpOnHold(Transaction $locked, string $reason, array $payment): Transaction
+    {
+        $previousReason = $locked->meta['on_hold']['reason'] ?? null;
+
+        $locked->forceFill([
+            'status' => 'PENDING',
+            'meta' => [
+                ...($locked->meta ?? []),
+                'payment' => $payment,
+                'on_hold' => [
+                    'reason' => $reason,
+                    'held_at' => now()->toIso8601String(),
+                ],
+            ],
+        ])->save();
+
+        if ($previousReason !== $reason) {
+            AuditLog::create([
+                'actor_id' => null,
+                'action' => 'TOP_UP_ON_HOLD',
+                'auditable_type' => (new User)->getMorphClass(),
+                'auditable_id' => $locked->user_id,
+                'metadata' => [
+                    'transaction_id' => $locked->id,
+                    'amount' => $locked->amount,
+                    'reason' => $reason,
+                    'external_reference' => $locked->external_reference,
+                ],
+            ]);
+        }
+
+        return $locked;
     }
 
     /**

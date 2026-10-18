@@ -26,7 +26,7 @@ function createActorWithRoleForTopUp(string $roleName, string $pin = '12345'): U
     return $user;
 }
 
-test('user can successfully top-up their wallet with correct pin', function () {
+test('user can successfully top-up their wallet without a pin', function () {
     $user = createActorWithRoleForTopUp('USER', '12345');
     $wallet = Wallet::factory()->for($user)->balance(100.00)->create();
 
@@ -34,7 +34,6 @@ test('user can successfully top-up their wallet with correct pin', function () {
 
     $response = $this->postJson('/api/v1/transactions/top-up', [
         'amount' => 500.00,
-        'pin' => '12345',
         'description' => 'Self top-up via card',
         'idempotency_key' => 'topup-key-001',
     ]);
@@ -68,7 +67,6 @@ test('submitting same idempotency_key on top-up returns same transaction and cre
 
     $payload = [
         'amount' => 300.00,
-        'pin' => '12345',
         'idempotency_key' => 'topup-idem-test',
     ];
 
@@ -93,7 +91,6 @@ test('top-up fails on a blocked wallet and leaves zero transaction rows', functi
 
     $response = $this->postJson('/api/v1/transactions/top-up', [
         'amount' => 200.00,
-        'pin' => '12345',
         'idempotency_key' => 'topup-blocked-key',
     ]);
 
@@ -113,7 +110,6 @@ test('agent or admin cannot perform top-up', function () {
 
     $this->postJson('/api/v1/transactions/top-up', [
         'amount' => 100.00,
-        'pin' => '12345',
         'idempotency_key' => 'agent-topup',
     ])->assertStatus(403);
 
@@ -124,86 +120,36 @@ test('agent or admin cannot perform top-up', function () {
 
     $this->postJson('/api/v1/transactions/top-up', [
         'amount' => 100.00,
-        'pin' => '12345',
         'idempotency_key' => 'admin-topup',
     ])->assertStatus(403);
 });
 
-test('top-up validates required parameters including pin', function () {
+test('top-up validates required parameters and does not require a pin', function () {
     $user = createActorWithRoleForTopUp('USER');
     Wallet::factory()->for($user)->balance(100.00)->create();
 
     Sanctum::actingAs($user, ['user']);
 
-    $response = $this->postJson('/api/v1/transactions/top-up', []);
-
-    $response->assertStatus(422)
-        ->assertJsonValidationErrors(['amount', 'idempotency_key', 'pin']);
+    $this->postJson('/api/v1/transactions/top-up', [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['amount', 'idempotency_key'])
+        ->assertJsonMissingValidationErrors(['pin']);
 });
 
-test('top-up rejects invalid pin format', function () {
-    $user = createActorWithRoleForTopUp('USER');
-    Wallet::factory()->for($user)->balance(100.00)->create();
-
-    Sanctum::actingAs($user, ['user']);
-
-    $response = $this->postJson('/api/v1/transactions/top-up', [
-        'amount' => 100.00,
-        'pin' => '123', // < 5 digits
-        'idempotency_key' => 'pin-short',
-    ]);
-
-    $response->assertStatus(422)
-        ->assertJsonValidationErrors(['pin']);
-});
-
-test('top-up rejects incorrect pin with 422', function () {
+test('top-up ignores the pin and never counts toward the pin lockout', function () {
     $user = createActorWithRoleForTopUp('USER', '12345');
     $wallet = Wallet::factory()->for($user)->balance(100.00)->create();
 
     Sanctum::actingAs($user, ['user']);
 
-    $response = $this->postJson('/api/v1/transactions/top-up', [
-        'amount' => 100.00,
-        'pin' => '99999',
-        'idempotency_key' => 'wrong-pin-topup',
-    ]);
-
-    $response->assertStatus(422)
-        ->assertJsonPath('message', 'Wrong PIN. 4 attempt(s) left.');
-
-    $wallet->refresh();
-    expect((float) $wallet->balance)->toBe(100.00);
-    expect(Transaction::count())->toBe(0);
-});
-
-test('top-up locks account after 5 consecutive failed pin attempts and returns 429', function () {
-    $user = createActorWithRoleForTopUp('USER', '12345');
-    Wallet::factory()->for($user)->balance(100.00)->create();
-
-    Sanctum::actingAs($user, ['user']);
-
-    for ($i = 1; $i <= 4; $i++) {
-        $this->postJson('/api/v1/transactions/top-up', [
-            'amount' => 100.00,
-            'pin' => '99999',
-            'idempotency_key' => "lockout-test-{$i}",
-        ])->assertStatus(422);
-    }
-
-    // 5th failed attempt triggers lockout and returns 429
     $this->postJson('/api/v1/transactions/top-up', [
         'amount' => 100.00,
         'pin' => '99999',
-        'idempotency_key' => 'lockout-test-5',
-    ])->assertStatus(429);
+        'idempotency_key' => 'wrong-pin-is-ignored',
+    ])->assertCreated();
 
-    // 6th attempt with correct PIN is still locked out with 429
-    $this->postJson('/api/v1/transactions/top-up', [
-        'amount' => 100.00,
-        'pin' => '12345',
-        'idempotency_key' => 'lockout-test-6',
-    ])->assertStatus(429);
+    expect((float) $wallet->refresh()->balance)->toBe(200.00)
+        ->and(RateLimiter::attempts(PinVerifier::getThrottleKey($user->id)))->toBe(0);
 });
 
 test('top-up rejects zero or negative amounts', function () {
@@ -214,13 +160,11 @@ test('top-up rejects zero or negative amounts', function () {
 
     $this->postJson('/api/v1/transactions/top-up', [
         'amount' => 0,
-        'pin' => '12345',
         'idempotency_key' => 'key-0',
     ])->assertStatus(422)->assertJsonValidationErrors(['amount']);
 
     $this->postJson('/api/v1/transactions/top-up', [
         'amount' => -50,
-        'pin' => '12345',
         'idempotency_key' => 'key-neg',
     ])->assertStatus(422)->assertJsonValidationErrors(['amount']);
 });

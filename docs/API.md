@@ -953,40 +953,54 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 
 ## 5. Financial Transaction Endpoints
 
-### 5.1 Balance Top-Up
+### 5.1 Balance Top-Up (SSLCommerz)
 - **Method & Route:** `POST /api/v1/transactions/top-up`
-- **Access:** User only (`ability:user`, `password.changed`)
+- **Access:** User only (`ability:user`, `password.changed`). **No PIN:** a top-up only brings money in, and the payer authenticates at the gateway. Top-ups never touch the PIN lockout counter.
 - **Request Body:**
   ```json
   {
-    "amount": 5000.00,
-    "pin": "12345",
+    "amount": 500.00,
     "idempotency_key": "topup-uuid-1234",
-    "description": "Bank transfer deposit"
+    "description": "Card top-up"
   }
   ```
-- **Response (201 Created):**
+  `amount` is limited by `config/transactions.php` → `limits.top_up` (default 10–50,000, 2 decimals).
+- **Response (201 Created):** the top-up is recorded as `PENDING` and nothing is credited yet. Send the customer to `payment.redirect_url` (the SSLCommerz checkout).
   ```json
   {
     "success": true,
-    "message": "Top-up completed successfully.",
+    "message": "Continue to the payment page to complete your top-up.",
     "data": {
       "transaction": {
         "id": 101,
-        "user_id": 10,
         "type": "TOP_UP",
-        "amount": 5000.00,
-        "status": "COMPLETED",
-        "idempotency_key": "topup-uuid-1234",
-        "recipient_wallet_balance_after": 5050.00
+        "amount": 500.00,
+        "status": "PENDING",
+        "external_reference": "TOPUP-01JABCDXYZ...",
+        "recipient_wallet_balance_after": null
+      },
+      "payment": {
+        "gateway": "sslcommerz",
+        "redirect_url": "https://sandbox.sslcommerz.com/EasyCheckOut/testcde..."
       }
     }
   }
   ```
-- **Behavior & Rules:**
-  - **Simulation:** `TOP_UP` stands in for a bank or card payment gateway and creates new e-money. In a production system the credit would only be applied after a verified gateway callback.
-  - Requires the user's transaction PIN (shared lockout counter with PIN login).
-- **Error Codes:** 403 (Wallet blocked), 422 (Validation error or wrong PIN), 429 (PIN locked out).
+  Replaying the same `idempotency_key` returns the same transaction and checkout URL. `redirect_url` is `null` once the top-up is no longer awaiting payment.
+- **How the wallet gets credited:**
+  1. SSLCommerz notifies `POST /api/v1/payments/sslcommerz/ipn` (server to server) and sends the customer's browser back with a POST to `/payments/sslcommerz/{success|fail|cancel}` (web, CSRF-exempt), which redirects to `/user/top-up/{id}`.
+  2. Neither request is trusted. Each one only names the `tran_id` (stored in `external_reference`). The server then asks SSLCommerz itself: the validation API for a `val_id`, or the transaction query API by `tran_id`.
+  3. The wallet is credited only when SSLCommerz reports `VALID`/`VALIDATED` for this `tran_id` **and** the paid amount and currency match the stored row. The row is locked while it is settled, so the IPN and the redirect can arrive in any order, any number of times, and credit once. Validated payment details (`val_id`, `bank_tran_id`, masked card, risk level) are kept in `meta.payment`.
+  4. `FAILED` is set only when SSLCommerz confirms nothing was paid (`FAILED`, `CANCELLED`, `EXPIRED`, `UNATTEMPTED`, or `INVALID` for a tran_id it never saw). An open checkout (`PROCESSING`) stays `PENDING`. A payment confirmed after an earlier failure is still credited.
+  5. **Held for staff** (status stays `PENDING`, `meta.on_hold.reason`, audited once as `TOP_UP_ON_HOLD`): `AMOUNT_MISMATCH`, `HIGH_RISK` (SSLCommerz `risk_level = 1`), `WALLET_BLOCKED` (blocked while the customer was paying). Paid money is never marked `FAILED`.
+- **Configuration:** `config/payments.php`. `SSLCOMMERZ_STORE_ID` / `SSLCOMMERZ_STORE_PASSWORD` default to the public sandbox store (`testbox` / `qwerty`), `SSLCOMMERZ_SANDBOX=true`. `TOP_UP_GATEWAY=simulated` credits instantly with no payment (used by the test suite); it is ignored in production.
+- **Sandbox test payment:** card `4111 1111 1111 1111`, any future expiry (e.g. 12/26), CVV `111`; mobile banking OTP `111111` or `123456`.
+- **Error Codes:** 403 (Wallet blocked, or not a user token), 409 (Idempotency key reused with different parameters), 422 (Validation error), 502 (SSLCommerz refused or could not be reached; the top-up is marked `FAILED`).
+
+#### 5.1a Re-check a Top-Up
+- **Method & Route:** `POST /api/v1/transactions/top-up/{transaction}/refresh`
+- **Access:** User only, own top-ups only (404 otherwise). Throttled 10/min.
+- **Description:** asks SSLCommerz for the latest state of the top-up (same rules as above) and returns `{ data: { transaction } }`. The result page calls it once on load and from its "Check again" button, which matters in local development where SSLCommerz cannot reach the IPN URL.
 
 ---
 
