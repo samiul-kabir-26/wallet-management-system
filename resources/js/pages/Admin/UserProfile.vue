@@ -14,6 +14,7 @@ import Skeleton from '@/components/Skeleton.vue';
 import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
 import Modal from '@/components/Modal.vue';
 import TransactionLedger from '@/components/Admin/TransactionLedger.vue';
+import KycLimitsModal from '@/components/Admin/KycLimitsModal.vue';
 import type { AuditLogRecord, LoginActivityRecord, Pagination as PaginationType, UserProfile } from '@/types/models';
 
 const props = defineProps<{ userId: number }>();
@@ -111,6 +112,15 @@ const saveProfile = async () => {
     } finally {
         savingProfile.value = false;
     }
+};
+
+// KYC tier and limits (users.manage_kyc); staff never change their own
+const showKycModal = ref(false);
+const canManageKyc = computed(() => !!profile.value?.caps && authStore.can('users.manage_kyc') && profile.value.id !== authStore.user?.id);
+
+const onKycUpdated = (user: UserProfile) => {
+    if (profile.value) profile.value = { ...profile.value, kyc: user.kyc, caps: user.caps ?? profile.value.caps };
+    if (activeTab.value === 'audit') fetchAudits();
 };
 
 // Change commission rate (agents.update_commission)
@@ -325,6 +335,25 @@ onMounted(async () => {
                         <dl class="mt-4 space-y-3 text-sm">
                             <template v-if="profile.caps">
                                 <div class="flex justify-between gap-4">
+                                    <dt class="text-zinc-500">KYC tier</dt>
+                                    <dd class="flex items-center gap-2">
+                                        <Badge :variant="profile.kyc?.verified_at ? 'success' : 'warning'">{{ profile.kyc?.label ?? '—' }}</Badge>
+                                        <span v-if="profile.caps.is_custom" class="text-xs text-zinc-500">custom limits</span>
+                                        <button
+                                            v-if="canManageKyc"
+                                            type="button"
+                                            class="text-xs font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+                                            @click="showKycModal = true"
+                                        >
+                                            Manage
+                                        </button>
+                                    </dd>
+                                </div>
+                                <div class="flex justify-between gap-4">
+                                    <dt class="text-zinc-500">Identity</dt>
+                                    <dd class="text-xs">{{ profile.kyc?.verified_at ? `Verified ${new Date(profile.kyc.verified_at).toLocaleDateString()}` : 'Not verified' }}</dd>
+                                </div>
+                                <div class="flex justify-between gap-4">
                                     <dt class="text-zinc-500">Daily cap</dt><dd>{{ money(profile.caps.daily_cap) }}</dd>
                                 </div>
                                 <div class="flex justify-between gap-4">
@@ -497,6 +526,8 @@ onMounted(async () => {
                 </div>
             </form>
         </Modal>
+
+        <KycLimitsModal v-if="profile" :show="showKycModal" :profile="profile" @close="showKycModal = false" @updated="onKycUpdated" />
 
         <Modal :show="showCommissionModal" title="Change Commission Rate" @close="showCommissionModal = false">
             <form class="space-y-4" novalidate @submit.prevent="saveCommission">
