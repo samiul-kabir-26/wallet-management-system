@@ -33,4 +33,20 @@ return [
         'live_url' => 'https://securepay.sslcommerz.com',
         'timeout_seconds' => (int) env('SSLCOMMERZ_TIMEOUT', 15),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Top-up Reconciliation
+    |--------------------------------------------------------------------------
+    |
+    | IPNs get lost and customers close the tab, so a scheduled job asks the
+    | gateway about top-ups still PENDING after "check_after_minutes". Ones the
+    | gateway still has no payment for after "expire_after_hours" are marked
+    | FAILED. A payment confirmed later is still credited.
+    |
+    */
+    'reconciliation' => [
+        'check_after_minutes' => (int) env('TOP_UP_RECONCILE_AFTER_MINUTES', 10),
+        'expire_after_hours' => (int) env('TOP_UP_EXPIRE_AFTER_HOURS', 24),
+    ],
 ];

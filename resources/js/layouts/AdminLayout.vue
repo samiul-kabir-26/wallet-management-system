@@ -26,6 +26,7 @@ const navItems: NavItem[] = [
     { name: 'Agent Withdrawals', href: '/admin/withdrawals', icon: '🏦', permission: 'agents.approve_withdrawal' },
     { name: 'Wallets & Freeze', href: '/admin/wallets', icon: '💳', permission: 'wallets.view_any' },
     { name: 'Platform Transactions', href: '/admin/transactions', icon: '📜', permission: 'transactions.view_any' },
+    { name: 'Pending Top-ups', href: '/admin/top-ups', icon: '⏳', permission: 'transactions.view_any' },
     { name: 'System Settings', href: '/admin/settings', icon: '⚙️' },
     { name: 'My Account', href: '/admin/account', icon: '👤' },
 ];
