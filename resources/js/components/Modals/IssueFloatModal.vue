@@ -50,14 +50,18 @@ const handleIssue = handleSubmit(async (values) => {
     if (!props.agent) return;
     loading.value = true;
     try {
-        await api.post('/transactions/admin/float-issue', {
+        const res = await api.post('/transactions/admin/float-issue', {
             agent_id: props.agent.id,
             amount: Number(values.amount).toFixed(2),
             external_reference: values.externalReference.trim(),
             description: values.description || null,
             idempotency_key: idempotencyKey.value,
         });
-        toast.success(`Issued ৳${Number(values.amount).toFixed(2)} float to ${props.agent.name}.`);
+        if (res.status === 202) {
+            toast.info(`Float of ৳${Number(values.amount).toFixed(2)} for ${props.agent.name} submitted for approval.`);
+        } else {
+            toast.success(`Issued ৳${Number(values.amount).toFixed(2)} float to ${props.agent.name}.`);
+        }
         emit('issued');
     } catch (err: unknown) {
         const { message, fieldErrors } = parseApiError(err, 'Failed to issue float.');

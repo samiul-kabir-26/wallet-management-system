@@ -858,6 +858,7 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 ---
 
 ### 3.14 Change Agent Commission Rate
+> **Maker-checker:** when approvals are required (section 8), this endpoint returns **202** with `data.approval_request` instead of applying the change. It is applied when a second staff member approves it.
 - **Method & Route:** `PATCH /api/v1/users/{user}/commission-rate`
 - **Access:** Admin only (`ability:admin`, `password.changed`) **and** `agents.update_commission` (`UserPolicy::updateCommission`). ADMIN holds it by default. Staff cannot change their own rate (403).
 - **Request Body:** `commission_rate` is required, between 0 and 1, at most 4 decimal places (`0.0125` = 1.25%).
@@ -1322,6 +1323,7 @@ IPNs get lost and customers close the tab, so unfinished top-ups are swept by a 
 ---
 
 ### 5.9 Admin Float Issuance
+> **Maker-checker:** when approvals are required (section 8), this endpoint returns **202** with `data.approval_request` instead of applying the change. It is applied when a second staff member approves it.
 - **Method & Route:** `POST /api/v1/transactions/admin/float-issue`
 - **Access:** Admin only (`ability:admin`, `password.changed`) **and** the `agents.issue_float` permission. ADMIN does not hold it by default; SUPER_ADMIN can assign it to a custom role (e.g. FINANCE).
 - **Description:** Credits e-money float to an approved agent's AGENT wallet against a confirmed external bank deposit. Writes a `FLOAT_ISSUE` transaction (`initiated_by` = admin) and a `FLOAT_ISSUED` audit log entry.
@@ -1410,6 +1412,7 @@ There is no endpoint for this. Every completed `TRANSFER`, `CASH_IN` and `CASH_O
 ---
 
 ### 5.14 Reverse a Transaction
+> **Maker-checker:** when approvals are required (section 8), this endpoint returns **202** with `data.approval_request` instead of applying the change. It is applied when a second staff member approves it.
 - **Method & Route:** `POST /api/v1/transactions/admin/{transaction}/reverse`
 - **Access:** Admin token **and** `transactions.reverse`. ADMIN does not hold it by default (like `agents.issue_float`, it moves money on staff say-so); SUPER_ADMIN has it and can grant it to a dedicated role. Staff cannot reverse a transaction they took part in, in any role (403). Throttled 30/min.
 - **Request Body:** `{ "reason": "Sent to the wrong number, confirmed with both customers by phone" }` (10–500 characters; shown in both parties' history and in the audit log).
@@ -1437,6 +1440,35 @@ There is no endpoint for this. Every completed `TRANSFER`, `CASH_IN` and `CASH_O
 
 ---
 
+### 5.15 Agent Float Requests
+Agents ask for e-money float against a bank deposit instead of waiting for staff to push it (5.9).
+
+**Agent** (`ability:agent`, `password.changed`):
+
+| Method & Route | Body / Notes |
+|---|---|
+| `POST /api/v1/transactions/agent/float-requests` | multipart: `amount` (float-issue limits, 2 decimals), `bank_reference` (4–100 chars, letters/numbers/space and `- / _ .`, must not already be a transaction's `external_reference`), `deposited_at` (date, within the last 30 days, not in the future), `slip` (JPG/PNG/WebP/PDF, max 5 MB), `note?`. Approved agents with an unblocked agent wallet only (409 / 403). One pending request per bank reference (422). Throttled 10/min. Returns 201 `{ data: { float_request } }`. |
+| `GET /api/v1/transactions/agent/float-requests` | Own requests, newest first, paginated. |
+| `POST /api/v1/transactions/agent/float-requests/{id}/cancel` | Own `PENDING` request only (403 otherwise); 409 once staff forwarded it for a second approval. |
+| `GET /api/v1/transactions/agent/float-requests/{id}/slip` | Own slip (404 for others). |
+
+**Staff** (admin token **and** `agents.issue_float`, 403 otherwise):
+
+| Method & Route | Body / Notes |
+|---|---|
+| `GET /api/v1/transactions/admin/float-requests?status=` | `PENDING` lists oldest first; other statuses newest first. |
+| `GET /api/v1/transactions/admin/float-requests/{id}/slip` | Streams the slip with its stored content type, `nosniff`, `no-store`. |
+| `POST /api/v1/transactions/admin/float-requests/{id}/approve` | `note?`. Issues the float through 5.9 with the bank reference as `external_reference` (unique, so one deposit is never credited twice) and marks the request `APPROVED` with `transaction_id`. With maker-checker on (section 8) it returns **202** with a `FLOAT_ISSUE` approval request carrying `float_request_id`; the float request shows `awaiting_second_approval: true` and is completed when a second staff member approves. If that approval is rejected or cancelled, the request returns to the queue. |
+| `POST /api/v1/transactions/admin/float-requests/{id}/reject` | `reason` (5–500, required). 409 while awaiting a second approval (reject the approval request instead). |
+
+- Slips live on the private `local` disk under `float-slips/{agent_id}/` and are only served through the two slip endpoints; `slip_path` is never returned.
+- Staff who are also the requesting agent cannot review their own request (403). A request can be reviewed once (409 afterwards).
+- The agent gets an SMS when the request is approved or rejected (with the reason).
+- Audited as `FLOAT_REQUEST_SUBMITTED`, `FLOAT_REQUEST_APPROVED`, `FLOAT_REQUEST_REJECTED`, `FLOAT_REQUEST_CANCELLED` against the agent, plus the usual `FLOAT_ISSUED`.
+- Panels: agent "Request Float" page; admin "Float Requests" page.
+
+---
+
 ## 6. System Settings Endpoints
 
 ### 6.1 View Global System Settings
@@ -1461,6 +1493,7 @@ There is no endpoint for this. Every completed `TRANSFER`, `CASH_IN` and `CASH_O
 ---
 
 ### 6.2 Update Global System Settings
+> **Maker-checker:** when approvals are required (section 8), this endpoint returns **202** with `data.approval_request` instead of applying the change. It is applied when a second staff member approves it.
 - **Method & Route:** `PATCH /api/v1/system-settings`
 - **Access:** Admin only (`ability:admin`) **and** `settings.update`
 - **Request Body:** send at least one of the keys below (422 `settings` otherwise). The legacy aliases `transactionFee` and `agentCommission` are also accepted.
@@ -1652,4 +1685,27 @@ Granular permission catalog and dynamic admin-panel role management. Access requ
 - **Error Codes:**
   - `403 Forbidden`: Attempting to delete a system role (`is_system = true`) or a role the actor currently holds.
   - `409 Conflict`: Role is currently assigned to one or more users (`users_count > 0`).
+
+---
+
+## 8. Approvals (Maker-Checker)
+
+Float issuance (5.9), fee/commission/signup-bonus setting changes (6.2), transaction reversals (5.14) and agent commission-rate changes (3.14) need a second staff member. The maker's request is validated and stored; nothing changes until someone else approves it.
+
+- **Switch:** `MAKER_CHECKER_ENABLED` (`config/approvals.php`, default `true`). Production always requires approval. Turning it off is meant for the test suite and single-admin demos; the list endpoint reports the effective value as `meta.required`.
+- **Who can approve:** any staff member other than the maker who holds the same permission as the action (`agents.issue_float`, `settings.update`, `transactions.reverse`, `agents.update_commission`). Also refused: approving a change to your own agent account, and approving the reversal of a transaction you took part in.
+- **Applying:** approval runs the normal service (5.9, 6.2, 5.14, 3.14) inside the same database transaction that marks the request `APPROVED`, with the maker as the actor (`initiated_by`, audit actor). If the action fails at that point (for example the agent was suspended meanwhile), nothing changes, the error is returned, and the request stays `PENDING` for the checker to reject.
+- **Duplicates:** one pending reversal per transaction, one pending commission change per agent, one pending float issue per bank reference (409). A settings submission keeps only the keys whose value changes; if none change, no request is created (200).
+- **Audit:** `APPROVAL_REQUESTED`, `APPROVAL_APPROVED`, `APPROVAL_REJECTED`, `APPROVAL_CANCELLED`, recorded against the approval request.
+- **Admin panel:** "Approvals" page with tabs for requests awaiting your review, your own requests, and all requests.
+
+| Method & Route | Body | Notes |
+|---|---|---|
+| `GET /api/v1/approvals` | — | Requests you can review plus your own. Filters: `status` (`PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`), `action` (`FLOAT_ISSUE`, `SETTINGS_UPDATE`, `TRANSACTION_REVERSAL`, `COMMISSION_RATE_UPDATE`), `mine=1`, `reviewable=1` (pending, not yours, actions you hold), `per_page`, `page`. Each item: `id, action, status, summary, payload, subject, requested_by, reviewed_by, reviewed_at, review_note, result, can_review, can_cancel, created_at`. |
+| `GET /api/v1/approvals/{id}` | — | 404 for requests you can neither review nor made. |
+| `POST /api/v1/approvals/{id}/approve` | `note?` (max 500) | Applies the change; `result` holds e.g. `transaction_id`. 403 own request / missing permission, 409 no longer pending. |
+| `POST /api/v1/approvals/{id}/reject` | `note` (5–500, required) | Nothing is applied. |
+| `POST /api/v1/approvals/{id}/cancel` | — | Maker only. |
+
+All routes need an admin token and `password.changed`. Approve and reject are throttled 30/min.
 

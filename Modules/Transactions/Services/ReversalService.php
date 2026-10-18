@@ -59,13 +59,7 @@ class ReversalService
             return DB::transaction(function () use ($original, $staff, $reason): Transaction {
                 $locked = Transaction::whereKey($original->id)->lockForUpdate()->firstOrFail();
 
-                if (! in_array($locked->type, self::REVERSIBLE_TYPES, true) || $locked->status !== 'COMPLETED') {
-                    throw new TransactionNotReversibleException;
-                }
-
-                if (Transaction::where('reversed_transaction_id', $locked->id)->exists()) {
-                    throw new TransactionAlreadyReversedException;
-                }
+                $this->assertReversible($locked);
 
                 $legs = $this->legs($locked);
                 $wallets = Wallet::whereKey([$legs['debit_wallet_id'], $legs['credit_wallet_id']])
@@ -151,6 +145,23 @@ class ReversalService
         } catch (UniqueConstraintViolationException $e) {
             // A concurrent reversal of the same transaction committed first
             throw new TransactionAlreadyReversedException(previous: $e);
+        }
+    }
+
+    /**
+     * Fail early when a transaction cannot be reversed: wrong type or status, or already reversed.
+     *
+     * @throws TransactionNotReversibleException
+     * @throws TransactionAlreadyReversedException
+     */
+    public function assertReversible(Transaction $transaction): void
+    {
+        if (! in_array($transaction->type, self::REVERSIBLE_TYPES, true) || $transaction->status !== 'COMPLETED') {
+            throw new TransactionNotReversibleException;
+        }
+
+        if (Transaction::where('reversed_transaction_id', $transaction->id)->exists()) {
+            throw new TransactionAlreadyReversedException;
         }
     }
 

@@ -15,6 +15,7 @@ const navItems = [
     { name: 'Customer Cash-In', href: '/agent/cash-in' },
     { name: 'Transactions', href: '/agent/transactions' },
     { name: 'Bank Withdrawal', href: '/agent/withdrawal' },
+    { name: 'Request Float', href: '/agent/float-requests' },
     { name: 'My Account', href: '/agent/account' },
 ];
 
