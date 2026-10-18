@@ -64,7 +64,8 @@ class RegistrationService
             ]);
             $this->signupBonusService->credit($wallet);
 
-            // 3. Create transaction cap limits (schema defaults: daily 10,000.00, monthly 50,000.00)
+            // 3. New accounts start at the initial KYC tier; the cap row takes that tier's limits
+            $user->forceFill(['kyc_tier' => config('kyc.initial_tier', 'BASIC')])->save();
             $user->cap()->create();
 
             // 4. If AGENT, create agent_info record (schema default: status PENDING)

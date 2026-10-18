@@ -63,6 +63,7 @@ class User extends Authenticatable
             'pin' => 'hashed',
             'password_changed_at' => 'datetime',
             'receipt_emails_enabled' => 'boolean',
+            'kyc_verified_at' => 'datetime',
         ];
     }
 

@@ -51,11 +51,12 @@ test('valid user registration creates user, wallet, cap, role, and returns 201 w
     expect((float) $wallet->balance)->toEqual(50.00);
     expect($wallet->currency)->toEqual('BDT');
 
-    // 3. Verify Cap limits created with schema defaults
+    // 3. New accounts start at the BASIC KYC tier and get its limits
     $cap = Cap::where('user_id', $user->id)->first();
     expect($cap)->not->toBeNull();
-    expect((float) $cap->daily_cap)->toEqual(10000.00);
-    expect((float) $cap->monthly_cap)->toEqual(50000.00);
+    expect($user->fresh()->kyc_tier)->toBe('BASIC');
+    expect((float) $cap->daily_cap)->toEqual(5000.00);
+    expect((float) $cap->monthly_cap)->toEqual(20000.00);
 
     // 4. Verify no AgentInfo record created for USER
     expect(AgentInfo::where('user_id', $user->id)->exists())->toBeFalse();
