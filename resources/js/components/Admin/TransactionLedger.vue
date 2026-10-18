@@ -124,8 +124,12 @@ const submitReversal = async () => {
     reversalError.value = null;
     try {
         const id = reversing.value.id;
-        await api.post(`/transactions/admin/${id}/reverse`, { reason: reversalReason.value.trim() });
-        toast.success(`Transaction #${id} reversed.`);
+        const res = await api.post(`/transactions/admin/${id}/reverse`, { reason: reversalReason.value.trim() });
+        if (res.status === 202) {
+            toast.info(`Reversal of #${id} submitted for approval.`);
+        } else {
+            toast.success(`Transaction #${id} reversed.`);
+        }
         closeReversal();
         await fetchTransactions(pagination.value?.current_page ?? 1);
     } catch (err: unknown) {

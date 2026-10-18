@@ -154,7 +154,11 @@ const saveCommission = async () => {
         if (agent) {
             profile.value = { ...profile.value, agent_info: { ...profile.value.agent_info, ...agent } };
         }
-        toast.success('Commission rate updated. It applies to new transactions only.');
+        if (res.status === 202) {
+            toast.info('Commission change submitted for approval.');
+        } else {
+            toast.success('Commission rate updated. It applies to new transactions only.');
+        }
         showCommissionModal.value = false;
         if (activeTab.value === 'audit') fetchAudits();
     } catch (err: unknown) {

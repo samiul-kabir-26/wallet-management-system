@@ -57,6 +57,7 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         ->name('users.show');
     Route::inertia('/withdrawals', 'Admin/Withdrawals')->name('withdrawals');
     Route::inertia('/top-ups', 'Admin/TopUps')->name('top-ups');
+    Route::inertia('/approvals', 'Admin/Approvals')->name('approvals');
     Route::inertia('/roles', 'Admin/Roles')->name('roles');
     Route::inertia('/agents', 'Admin/Agents')->name('agents');
     Route::inertia('/wallets', 'Admin/Wallets')->name('wallets');
