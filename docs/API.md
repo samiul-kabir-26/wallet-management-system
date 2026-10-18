@@ -841,7 +841,7 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 | Method & Route | Body | Notes |
 |---|---|---|
 | `GET /api/v1/users/me` | none | Own profile. |
-| `PATCH /api/v1/users/me` | `name`, `address` | `email`, `phone_number` and `image` are prohibited (422). |
+| `PATCH /api/v1/users/me` | `name`, `address`, `receipt_emails_enabled` | `email`, `phone_number` and `image` are prohibited (422). `receipt_emails_enabled` (boolean, default `true`) turns the email copy of transaction receipts off or on; SMS receipts cannot be turned off (5.13). |
 | `POST /api/v1/users/me/avatar` | multipart `avatar` | JPG/PNG/WebP, max 2 MB, 64–4000 px per side; SVG is refused. Stored on the `public` disk under `avatars/` (needs `php artisan storage:link`); the previous file is deleted. Throttled 10/min. |
 | `DELETE /api/v1/users/me/avatar` | none | Deletes the file and clears `avatar_url`. |
 | `POST /api/v1/users/me/phone` | `phone_number` (`01[3-9]XXXXXXXX`, unique) | For accounts **without** a phone (409 otherwise). Texts a 6-digit code to that number (OTP purpose `ADD_PHONE`, number kept in `otp_tokens.target`). Nothing is saved yet. Limited to 3 per 10 minutes per account **and** per destination number. |
@@ -1381,6 +1381,27 @@ There is no endpoint for this. The bonus is credited by `SignupBonusService::cre
 - **Settings:** `signup_bonus_enabled` and `signup_bonus_amount` (6.1). Nothing is credited when the bonus is disabled or the amount is 0. Defaults and the `source_label` come from `config/transactions.php` → `signup_bonus` (`SIGNUP_BONUS_*` env variables).
 - **Not credited:** wallets opened later through role assignment (3.9) and wallets that existed before this feature (they were never backfilled).
 - **Caps:** the bonus is incoming money and does not count toward daily or monthly caps.
+
+---
+
+### 5.13 Transaction Receipts
+There is no endpoint for this. Every completed `TRANSFER`, `CASH_IN` and `CASH_OUT` sends a receipt to both parties (`TransactionReceiptNotification`).
+- **Who gets what:**
+
+  | Type | Party | Receipt |
+  |---|---|---|
+  | `TRANSFER` | sender | "You sent", fee and total when there is a fee, sender balance |
+  | `TRANSFER` | recipient | "You received", recipient balance |
+  | `CASH_IN` | customer | "Cash in … from agent", customer balance |
+  | `CASH_IN` | agent | "Cash in given", agent float balance |
+  | `CASH_OUT` | customer | "Cash out … at agent", fee and total, customer balance |
+  | `CASH_OUT` | agent | "Cash out received", commission and amount credited, agent balance |
+
+  Each receipt includes the transaction ID and time (business timezone). The counterparty is masked like the recipient lookup: `R***l K***r (017*****678)`.
+- **Channels:** SMS always (it cannot be turned off, so a customer always hears about money leaving their wallet). Email as well when the account has an email and `receipt_emails_enabled` is true (3.13).
+- **Delivery:** queued, and dispatched only after the database transaction commits, so a rolled-back transaction never produces a receipt. An idempotent replay returns the existing row and sends nothing. Run a queue worker (`php artisan queue:work`) for receipts to go out when `QUEUE_CONNECTION` is not `sync`.
+- **SMS gateway:** SMS still goes to the log (`SmsChannel`, see 3.13) until a provider is configured (IMPROVEMENTS.md 7).
+- Top-ups, signup bonuses, float issuance and withdrawals do not send these receipts.
 
 ---
 

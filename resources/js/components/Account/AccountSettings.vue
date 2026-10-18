@@ -67,6 +67,23 @@ const fetchProfile = async (): Promise<void> => {
     }
 };
 
+const savingReceipts = ref(false);
+
+const toggleReceiptEmails = async (): Promise<void> => {
+    if (!profile.value) return;
+    const enabled = !(profile.value.receipt_emails_enabled ?? true);
+    savingReceipts.value = true;
+    try {
+        const res = await api.patch('/users/me', { receipt_emails_enabled: enabled });
+        applyProfile(res.data.data.user as User);
+        toast.success(enabled ? 'Email receipts turned on.' : 'Email receipts turned off. SMS receipts continue.');
+    } catch (err: unknown) {
+        toast.error(parseApiError(err, 'Failed to update your receipt settings.').message);
+    } finally {
+        savingReceipts.value = false;
+    }
+};
+
 const saveProfile = handleSubmit(async (values) => {
     try {
         const res = await api.patch('/users/me', { name: values.name.trim(), address: values.address.trim() || null });
@@ -225,6 +242,35 @@ onMounted(() => {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+
+                <!-- Transaction receipts: SMS always, email copy optional -->
+                <div
+                    v-if="panel !== 'admin'"
+                    class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900"
+                >
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="space-y-1">
+                            <p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Transaction receipts</p>
+                            <p class="text-xs text-zinc-500">
+                                Every transfer, cash-in and cash-out is confirmed by SMS. This cannot be turned off, so you always hear about money
+                                leaving your wallet.
+                            </p>
+                            <p v-if="!profile.email" class="text-xs text-zinc-400">
+                                Add an email address through customer care to also get receipts by email.
+                            </p>
+                        </div>
+                        <label v-if="profile.email" class="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                            <input
+                                type="checkbox"
+                                class="size-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                                :checked="profile.receipt_emails_enabled ?? true"
+                                :disabled="savingReceipts"
+                                @change="toggleReceiptEmails"
+                            />
+                            Email me a copy
+                        </label>
                     </div>
                 </div>
 
