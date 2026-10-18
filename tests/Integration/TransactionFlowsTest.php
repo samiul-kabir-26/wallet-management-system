@@ -10,6 +10,7 @@ use App\Models\Wallet;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
 use Modules\Transactions\Jobs\ResetStaleCaps;
+use Modules\Wallets\Services\LedgerIntegrityService;
 
 beforeEach(function () {
     $this->seedRolesAndPermissions();
@@ -220,6 +221,14 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     expect((float) $user1Cap->daily_used)->toBe(0.00)
         // Monthly usage survives a day change, unless that day also starts a new month
         ->and((float) $user1Cap->monthly_used)->toBe($today->isSameMonth($tomorrow) ? 3000.00 : 0.00);
+
+    // -------------------------------------------------------------
+    // 13. Every balance and commission total still matches the ledger
+    // -------------------------------------------------------------
+    $ledgerReport = app(LedgerIntegrityService::class)->verify();
+    expect($ledgerReport['wallet_mismatches'])->toBe([])
+        ->and($ledgerReport['commission_mismatches'])->toBe([])
+        ->and($ledgerReport['healthy'])->toBeTrue();
 });
 
 test('transaction rolls back completely and leaves wallet balances unchanged on mid-flight failure', function () {
