@@ -874,7 +874,7 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 
 **SMS delivery:** `SmsChannel` sends through the driver chosen by `SMS_DRIVER` (`config/services.php` → `sms`):
 - `log` (default): writes each message, OTP codes included, to the log channel named by `SMS_LOG_CHANNEL` (default log), so in development the code appears in `storage/logs/laravel.log` as `SMS message`. Never use it in production.
-- `twilio`: sends real texts through Twilio's Messages API with `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` (or `TWILIO_MESSAGING_SERVICE_SID`). Local numbers (`01XXXXXXXXX`) are converted to E.164 with `SMS_DEFAULT_COUNTRY_CODE` (default `880`). A free trial account works for this demo but can only text numbers verified in the Twilio console and prefixes every message. Message bodies are never logged by this driver; the masked number, Twilio message ID and status are.
+- `twilio`: sends real texts through Twilio's Messages API with `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` (or `TWILIO_MESSAGING_SERVICE_SID`). Local numbers (`01XXXXXXXXX`) are converted to E.164 with `SMS_DEFAULT_COUNTRY_CODE` (default `880`). It needs an upgraded (paid) account: Twilio trial accounts can only send Twilio's predefined templates, not custom text, so every OTP and receipt is rejected with code 572006. Message bodies are never logged by this driver; the masked number, Twilio message ID and status are.
 - If the provider refuses a message or cannot be reached, endpoints that text a code right away (registration code 2.0, phone verification and add-phone above) return **502** `We could not send the text message. Please try again shortly.` instead of reporting success. Queued receipts retry up to 3 times (after 30 s and 2 min).
 - Check the setup with `php artisan sms:test 01712345678` (exit code 1 and the provider's reason in the log on failure).
 
@@ -1530,6 +1530,23 @@ Agents ask for e-money float against a bank deposit instead of waiting for staff
 - The agent gets an SMS when the request is approved or rejected (with the reason).
 - Audited as `FLOAT_REQUEST_SUBMITTED`, `FLOAT_REQUEST_APPROVED`, `FLOAT_REQUEST_REJECTED`, `FLOAT_REQUEST_CANCELLED` against the agent, plus the usual `FLOAT_ISSUED`.
 - Panels: agent "Request Float" page; admin "Float Requests" page.
+
+---
+
+### 5.16 Request Money
+Customers ask each other for money (`ability:user`, `password.changed`, customer role).
+
+| Method & Route | Body / Notes |
+|---|---|
+| `POST /api/v1/transactions/requests` | `payer_phone` (`01[3-9]XXXXXXXX`), `amount` (transfer limits), `note?` (max 255). The payer must be another customer (404 unknown number, 422 self or non-customer). At most `max_pending_per_payer` (3) open requests to the same payer and `max_pending_total` (20) overall (422). Throttled 10/min. 201 `{ data: { payment_request } }`; the payer gets an SMS. |
+| `GET /api/v1/transactions/requests` | `direction` (`incoming` = asked of me, `outgoing` = sent by me; both when omitted), `status` (`PENDING`, `PAID`, `DECLINED`, `CANCELLED`, `EXPIRED`), paginated. Each item: `id, direction, requester, payer` (masked name, phone), `amount, note, status, transaction_id, expires_at, responded_at, created_at`. |
+| `POST /api/v1/transactions/requests/{id}/pay` | `pin`, `idempotency_key`. Payer only (403). Runs the normal transfer (5.2) to the requester — PIN, caps, balance, locks, receipts — inside the transaction that marks the request `PAID`, so a failed transfer leaves it open. The transfer's `meta.payment_request_id` and the request's unique `transaction_id` link the two. The requester gets an SMS. |
+| `POST /api/v1/transactions/requests/{id}/decline` | Payer only. SMS to the requester. |
+| `POST /api/v1/transactions/requests/{id}/cancel` | Requester only. |
+
+- Anyone other than the two parties gets 404. A request that is no longer `PENDING` returns 409.
+- Requests expire after `PAYMENT_REQUEST_EXPIRE_DAYS` (7). Paying an expired request is refused immediately (409 "This payment request has expired."); an hourly scheduled task marks them `EXPIRED`.
+- Panel: customer "Request Money" page.
 
 ---
 

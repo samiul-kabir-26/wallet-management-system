@@ -37,8 +37,8 @@ return [
 
     /*
     | SMS delivery. "log" (default) writes messages, OTP codes included, to the log channel below and
-    | must not be used in production. "twilio" sends real messages; a free trial account can text
-    | numbers verified in the Twilio console. Local numbers (01XXXXXXXXX) get default_country_code.
+    | must not be used in production. "twilio" sends real messages and needs an upgraded account:
+    | trial accounts can only send Twilio's predefined templates. Local numbers (01XXXXXXXXX) get default_country_code.
     */
     'sms' => [
         'driver' => env('SMS_DRIVER', 'log'),
