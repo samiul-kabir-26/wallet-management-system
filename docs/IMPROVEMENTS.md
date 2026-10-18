@@ -1,8 +1,6 @@
 # Improvement Proposals
 
-Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`), 4 (branch `feat/ledger-integrity-check`), 5 (branch `feat/opening-balance-backfill`), 6 (branch `feat/transaction-receipts`), 7 (branch `feat/sms-gateway`), 8 (branch `feat/transaction-reversals`), 9 (branch `feat/maker-checker`), 10 (branch `feat/agent-float-requests`), 12 (branch `feat/signup-bonus-controls`), 16 (branch `chore/engineering`).
-Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`), 4 (branch `feat/ledger-integrity-check`), 5 (branch `feat/opening-balance-backfill`), 6 (branch `feat/transaction-receipts`), 7 (branch `feat/sms-gateway`), 8 (branch `feat/transaction-reversals`), 9 (branch `feat/maker-checker`), 10 (branch `feat/agent-float-requests`), 12 (branch `feat/signup-bonus-controls`), 15 (branch `feat/security-hardening`).
-Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`), 4 (branch `feat/ledger-integrity-check`), 5 (branch `feat/opening-balance-backfill`), 6 (branch `feat/transaction-receipts`), 7 (branch `feat/sms-gateway`), 8 (branch `feat/transaction-reversals`), 9 (branch `feat/maker-checker`), 10 (branch `feat/agent-float-requests`), 12 (branch `feat/signup-bonus-controls`), 14 (branch `feat/admin-metrics-export`).
+Status: all 16 proposals are implemented and merged into `master`. Branches: 1–2 `feat/sslcommerz-top-up`, 3 `feat/top-up-reconciliation`, 4 `feat/ledger-integrity-check`, 5 `feat/opening-balance-backfill`, 6 `feat/transaction-receipts`, 7 `feat/sms-gateway`, 8 `feat/transaction-reversals`, 9 `feat/maker-checker`, 10 `feat/agent-float-requests`, 11 `feat/kyc-tiers`, 12 `feat/signup-bonus-controls`, 13 `feat/request-money`, 14 `feat/admin-metrics-export`, 15 `feat/security-hardening`, 16 `chore/engineering`.
 Last reviewed against: `7afe84b` (signup bonus, commission and profile editing, directory search).
 
 Each proposal says what changes, why, which module it belongs to, and what can go wrong. Items marked **Money** move or create balance and need the full treatment: DB transaction, row locks, idempotency, audit entry, and tests for the financial invariants.
@@ -23,13 +21,11 @@ Each proposal says what changes, why, which module it belongs to, and what can g
 | 8 | Reversals and refunds — **done** (single approver; maker-checker is proposal 9) | Transactions | Medium | L |
 | 9 | Maker-checker for sensitive admin actions — **done** (float, settings, reversals, commission rates) | Roles, SystemSettings | Medium | L |
 | 10 | Agent float requests — **done** | Transactions, Agent panel | Medium | M |
-| 11 | KYC tiers and per-user caps | Users, Caps | Medium | L |
+| 11 | KYC tiers and per-user caps — **done** | Users, Caps | Medium | L |
 | 12 | Signup bonus abuse controls — **done** (daily budget, clawback; no deactivation trigger exists yet) | Transactions | Medium | M |
-| 13 | Request money | Transactions, User panel | Low | M |
-| 14 | Admin dashboard metrics and ledger export | Admin panel | Low | M |
-| 15 | Security hardening (device binding, login alerts, TOTP) — **done** (plus session list) | Authentication | Low–Medium | M–L |
+| 13 | Request money — **done** | Transactions, User panel | Low | M |
 | 14 | Admin dashboard metrics and ledger export — **done** | Admin panel | Low | M |
-| 15 | Security hardening (device binding, login alerts, TOTP) | Authentication | Low–Medium | M–L |
+| 15 | Security hardening (device binding, login alerts, TOTP) — **done** (plus session list) | Authentication | Low–Medium | M–L |
 | 16 | Engineering (OpenAPI, CI, static analysis) — **done** (PHPStan level 7 now covers Modules; level 8 is 82 errors away) | Project | Ongoing | S–M |
 
 ---
