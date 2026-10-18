@@ -24,6 +24,8 @@ class PinLoginRequest extends FormRequest
         return [
             'phone_number' => ['required', 'string', 'regex:/^01[3-9]\d{8}$/'],
             'pin' => ['required', 'string', 'digits_between:5,10'],
+            // Stable random ID the app keeps for this device (device binding)
+            'device_id' => ['nullable', 'string', 'min:16', 'max:100', 'regex:/^[A-Za-z0-9\-_]+$/'],
         ];
     }
 

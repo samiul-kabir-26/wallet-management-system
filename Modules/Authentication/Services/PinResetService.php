@@ -3,6 +3,7 @@
 namespace Modules\Authentication\Services;
 
 use App\Models\AuditLog;
+use App\Models\TrustedDevice;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -137,6 +138,9 @@ class PinResetService
             $lockedUser->forceFill([
                 'pin' => Hash::make($pin),
             ])->save();
+
+            // A reset PIN means the old one may be known: every device must prove itself again
+            TrustedDevice::where('user_id', $user->id)->delete();
 
             // Any session opened with the old PIN must not survive the reset
             $lockedUser->tokens()->delete();

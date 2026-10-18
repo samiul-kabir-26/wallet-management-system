@@ -111,6 +111,7 @@ test('valid admin credentials with email dispatches OTP and returns 200', functi
             'message' => 'OTP sent to your email. Please check your inbox.',
             'data' => [
                 'email' => $admin->email,
+                'second_factor' => 'email',
             ],
         ]);
 
@@ -139,6 +140,7 @@ test('valid admin credentials with phone number resolves admin and returns 200',
             'message' => 'OTP sent to your email. Please check your inbox.',
             'data' => [
                 'email' => $admin->email,
+                'second_factor' => 'email',
             ],
         ]);
 });

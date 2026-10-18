@@ -15,8 +15,11 @@ const showOtpModal = ref(false);
 const signedOutForInactivity =
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('reason') === 'idle';
 
-const handleOtpSent = (identifier: string) => {
+const secondFactor = ref<'email' | 'totp'>('email');
+
+const handleOtpSent = (identifier: string, factor: 'email' | 'totp') => {
     otpIdentifier.value = identifier;
+    secondFactor.value = factor;
     showOtpModal.value = true;
 };
 </script>
@@ -58,7 +61,7 @@ const handleOtpSent = (identifier: string) => {
         <AdminLoginForm v-else @otp-sent="handleOtpSent" />
 
         <Modal :show="showOtpModal" title="Two-Factor Verification (2FA)" @close="showOtpModal = false">
-            <OtpVerificationForm :identifier="otpIdentifier" @cancel="showOtpModal = false" />
+            <OtpVerificationForm :identifier="otpIdentifier" :second-factor="secondFactor" @cancel="showOtpModal = false" />
         </Modal>
     </AuthLayout>
 </template>

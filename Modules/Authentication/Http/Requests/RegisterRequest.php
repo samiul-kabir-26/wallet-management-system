@@ -34,6 +34,8 @@ class RegisterRequest extends FormRequest
             ],
             'pin' => ['required', 'string', 'digits_between:5,10', 'confirmed'],
             'role' => ['required', 'string', Rule::in(['USER', 'AGENT'])],
+            // The device registering is trusted for later PIN logins (the phone was proved with a code)
+            'device_id' => ['nullable', 'string', 'min:16', 'max:100', 'regex:/^[A-Za-z0-9\-_]+$/'],
             // Code texted to phone_number by POST /auth/register/request-otp
             'otp_code' => ['required', 'digits:6'],
         ];

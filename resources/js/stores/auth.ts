@@ -11,6 +11,34 @@ import type { PermissionName } from '@/types/permissions';
 export type Panel = 'admin' | 'agent' | 'user';
 
 const PANELS: Panel[] = ['admin', 'agent', 'user'];
+
+export interface DeviceChallenge {
+    id: string;
+    phoneNumber: string;
+    panel: 'user' | 'agent';
+}
+
+export type PinLoginResult = { user: User; challenge?: undefined } | { user?: undefined; challenge: DeviceChallenge };
+
+const DEVICE_ID_KEY = 'walletms_device_id';
+
+/**
+ * A stable random ID for this browser, sent with PIN logins so a device proved once by SMS is
+ * remembered (device binding). Falls back to a per-session ID when storage is unavailable.
+ */
+let sessionDeviceId: string | null = null;
+const deviceId = (): string => {
+    try {
+        const stored = localStorage.getItem(DEVICE_ID_KEY);
+        if (stored) return stored;
+        const created = `web-${crypto.randomUUID()}`;
+        localStorage.setItem(DEVICE_ID_KEY, created);
+        return created;
+    } catch {
+        sessionDeviceId ??= `web-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`.padEnd(20, '0');
+        return sessionDeviceId;
+    }
+};
 // Pre-panel storage keys from older builds; removed so a stale shared session cannot linger
 const LEGACY_KEYS = ['token', 'user', 'permissions', 'idle_timeout_minutes', 'last_activity_at'];
 
@@ -204,17 +232,25 @@ export const useAuthStore = defineStore('auth', () => {
     // Automatically clear store when Axios catches a 401
     setOnUnauthorizedCallback(clearAuth);
 
-    const loginUser = async (phoneNumber: string, pin: string): Promise<User> => {
+    /**
+     * PIN login. With device binding, a new device gets a challenge instead of a token: the caller asks
+     * for the SMS code and finishes with verifyDevice().
+     */
+    const pinLogin = async (forPanel: 'user' | 'agent', phoneNumber: string, pin: string): Promise<PinLoginResult> => {
         loading.value = true;
         error.value = null;
         try {
-            const res = await api.post('/auth/user/login', {
+            const res = await api.post(`/auth/${forPanel}/login`, {
                 phone_number: phoneNumber,
                 pin,
+                device_id: deviceId(),
             });
             const data = res.data.data;
-            setAuth(data.token, data.user, data.idle_timeout_minutes, 'user');
-            return data.user;
+            if (res.status === 202 && data?.requires_device_verification) {
+                return { challenge: { id: data.challenge_id, phoneNumber: data.phone_number, panel: forPanel } };
+            }
+            setAuth(data.token, data.user, data.idle_timeout_minutes, forPanel);
+            return { user: data.user };
         } catch (err: unknown) {
             const apiError = err as { response?: { data?: { message?: string } } };
             const msg = apiError.response?.data?.message || 'Login failed. Please check credentials.';
@@ -225,20 +261,23 @@ export const useAuthStore = defineStore('auth', () => {
         }
     };
 
-    const loginAgent = async (phoneNumber: string, pin: string): Promise<User> => {
+    const loginUser = (phoneNumber: string, pin: string) => pinLogin('user', phoneNumber, pin);
+    const loginAgent = (phoneNumber: string, pin: string) => pinLogin('agent', phoneNumber, pin);
+
+    /**
+     * Finish a PIN login from a new device with the SMS code; the device is trusted afterwards.
+     */
+    const verifyDevice = async (challenge: DeviceChallenge, otpCode: string): Promise<User> => {
         loading.value = true;
         error.value = null;
         try {
-            const res = await api.post('/auth/agent/login', {
-                phone_number: phoneNumber,
-                pin,
-            });
+            const res = await api.post('/auth/verify-device', { challenge_id: challenge.id, otp_code: otpCode });
             const data = res.data.data;
-            setAuth(data.token, data.user, data.idle_timeout_minutes, 'agent');
+            setAuth(data.token, data.user, data.idle_timeout_minutes, challenge.panel);
             return data.user;
         } catch (err: unknown) {
             const apiError = err as { response?: { data?: { message?: string } } };
-            const msg = apiError.response?.data?.message || 'Login failed. Please check credentials.';
+            const msg = apiError.response?.data?.message || 'Invalid or expired code.';
             error.value = msg;
             throw new Error(msg);
         } finally {
@@ -250,7 +289,10 @@ export const useAuthStore = defineStore('auth', () => {
      * Password step. Returns the account's email: the OTP step identifies the account by email,
      * whether the person typed their email or their phone number here.
      */
-    const adminLogin = async (identifier: string, password: string): Promise<{ message: string; email: string }> => {
+    const adminLogin = async (
+        identifier: string,
+        password: string,
+    ): Promise<{ message: string; email: string; secondFactor: 'email' | 'totp' }> => {
         loading.value = true;
         error.value = null;
         try {
@@ -261,6 +303,7 @@ export const useAuthStore = defineStore('auth', () => {
             return {
                 message: res.data.message || 'OTP sent to your registered email',
                 email: res.data.data?.email ?? identifier,
+                secondFactor: res.data.data?.second_factor === 'totp' ? 'totp' : 'email',
             };
         } catch (err: unknown) {
             const apiError = err as { response?: { data?: { message?: string } } };
@@ -304,7 +347,7 @@ export const useAuthStore = defineStore('auth', () => {
         loading.value = true;
         error.value = null;
         try {
-            const res = await api.post('/auth/register', payload);
+            const res = await api.post('/auth/register', { ...payload, device_id: deviceId() });
             const data = res.data.data;
             if (data.token && data.user) {
                 setAuth(data.token, data.user, data.idle_timeout_minutes, payload.role === 'AGENT' ? 'agent' : 'user');
@@ -387,6 +430,7 @@ export const useAuthStore = defineStore('auth', () => {
         loginUser,
         loginAgent,
         adminLogin,
+        verifyDevice,
         adminVerifyOtp,
         register,
         fetchMe,
