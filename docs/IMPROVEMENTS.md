@@ -1,6 +1,6 @@
 # Improvement Proposals
 
-Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`), 4 (branch `feat/ledger-integrity-check`), 5 (branch `feat/opening-balance-backfill`), 6 (branch `feat/transaction-receipts`), 7 (branch `feat/sms-gateway`), 8 (branch `feat/transaction-reversals`), 9 (branch `feat/maker-checker`), 10 (branch `feat/agent-float-requests`), 12 (branch `feat/signup-bonus-controls`), 13 (branch `feat/request-money`).
+Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`), 4 (branch `feat/ledger-integrity-check`), 5 (branch `feat/opening-balance-backfill`), 6 (branch `feat/transaction-receipts`), 7 (branch `feat/sms-gateway`), 8 (branch `feat/transaction-reversals`), 9 (branch `feat/maker-checker`), 10 (branch `feat/agent-float-requests`), 12 (branch `feat/signup-bonus-controls`), 14 (branch `feat/admin-metrics-export`).
 Last reviewed against: `7afe84b` (signup bonus, commission and profile editing, directory search).
 
 Each proposal says what changes, why, which module it belongs to, and what can go wrong. Items marked **Money** move or create balance and need the full treatment: DB transaction, row locks, idempotency, audit entry, and tests for the financial invariants.
@@ -23,8 +23,8 @@ Each proposal says what changes, why, which module it belongs to, and what can g
 | 10 | Agent float requests — **done** | Transactions, Agent panel | Medium | M |
 | 11 | KYC tiers and per-user caps | Users, Caps | Medium | L |
 | 12 | Signup bonus abuse controls — **done** (daily budget, clawback; no deactivation trigger exists yet) | Transactions | Medium | M |
-| 13 | Request money — **done** | Transactions, User panel | Low | M |
-| 14 | Admin dashboard metrics and ledger export | Admin panel | Low | M |
+| 13 | Request money | Transactions, User panel | Low | M |
+| 14 | Admin dashboard metrics and ledger export — **done** | Admin panel | Low | M |
 | 15 | Security hardening (device binding, login alerts, TOTP) | Authentication | Low–Medium | M–L |
 | 16 | Engineering (OpenAPI, CI, static analysis) | Project | Ongoing | S–M |
 

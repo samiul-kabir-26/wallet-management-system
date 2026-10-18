@@ -1510,20 +1510,21 @@ Agents ask for e-money float against a bank deposit instead of waiting for staff
 
 ---
 
-### 5.16 Request Money
-Customers ask each other for money (`ability:user`, `password.changed`, customer role).
+### 5.17 Reports: Dashboard Metrics and Ledger Export
+**Metrics:** `GET /api/v1/reports/overview?days=14` (admin token **and** `transactions.view_any`; `days` 1–90).
+- Groups `COMPLETED` transactions by business day (`transactions.business_timezone`, fixed offset, correct for Asia/Dhaka which has no daylight saving).
+- `totals`: `volume` and `transactions` (new money only; `COMMISSION_PAYOUT` memo rows and `REVERSAL` rows excluded), `by_type` counts and amounts, `fees_earned` (cash-out and transfer fees less fees refunded by reversals), `commission_paid` (less clawed-back commission), `signup_bonus_paid` (backfilled opening balances excluded, less clawbacks), `signups` (new USER/AGENT accounts).
+- `daily`: one entry per day with `volume`, `count`, `signups` (zeros included).
+- `queues` (now): pending agent withdrawals (count and held amount), pending float requests, unfinished gateway top-ups, pending approvals.
+- `e_money`: total balance held in user and agent wallets.
+- Admin dashboard "Activity" panel (range selector, cards, daily bar chart, queue links).
 
-| Method & Route | Body / Notes |
-|---|---|
-| `POST /api/v1/transactions/requests` | `payer_phone` (`01[3-9]XXXXXXXX`), `amount` (transfer limits), `note?` (max 255). The payer must be another customer (404 unknown number, 422 self or non-customer). At most `max_pending_per_payer` (3) open requests to the same payer and `max_pending_total` (20) overall (422). Throttled 10/min. 201 `{ data: { payment_request } }`; the payer gets an SMS. |
-| `GET /api/v1/transactions/requests` | `direction` (`incoming` = asked of me, `outgoing` = sent by me; both when omitted), `status` (`PENDING`, `PAID`, `DECLINED`, `CANCELLED`, `EXPIRED`), paginated. Each item: `id, direction, requester, payer` (masked name, phone), `amount, note, status, transaction_id, expires_at, responded_at, created_at`. |
-| `POST /api/v1/transactions/requests/{id}/pay` | `pin`, `idempotency_key`. Payer only (403). Runs the normal transfer (5.2) to the requester — PIN, caps, balance, locks, receipts — inside the transaction that marks the request `PAID`, so a failed transfer leaves it open. The transfer's `meta.payment_request_id` and the request's unique `transaction_id` link the two. The requester gets an SMS. |
-| `POST /api/v1/transactions/requests/{id}/decline` | Payer only. SMS to the requester. |
-| `POST /api/v1/transactions/requests/{id}/cancel` | Requester only. |
-
-- Anyone other than the two parties gets 404. A request that is no longer `PENDING` returns 409.
-- Requests expire after `PAYMENT_REQUEST_EXPIRE_DAYS` (7). Paying an expired request is refused immediately (409 "This payment request has expired."); an hourly scheduled task marks them `EXPIRED`.
-- Panel: customer "Request Money" page.
+**Export:** `GET /api/v1/reports/ledger.csv` (admin token **and** `transactions.export`). Same filters as 5.8 (`type`, `status`, `search`, `party_id`, `from_date`, `to_date`), via the same query, so the file always matches the ledger on screen.
+- `transactions.export` is not granted to ADMIN by default (bulk personal and financial data); SUPER_ADMIN has it and can grant it.
+- Streamed in chunks of 1,000 rows; UTF-8 with BOM; times in the business timezone. Columns: `id, created_at, type, status, amount, fee, commission, currency, sender_name, sender_phone, recipient_name, recipient_phone, agent_name, agent_phone, external_reference, reversed_transaction_id, description`.
+- Cells starting with `= + - @` or a control character (other than plain numbers) are prefixed with `'` to stop spreadsheet formula injection.
+- More than `REPORTS_EXPORT_MAX_ROWS` (50,000) rows is refused (422): narrow the filters. Throttled 6/min. Audited as `TRANSACTIONS_EXPORTED` with the filters, row count and IP. The `X-Export-Rows` header carries the row count.
+- "Export CSV" button on the admin transaction ledger.
 
 ---
 
