@@ -173,3 +173,21 @@ export interface AuditLogRecord {
     metadata: Record<string, unknown> | null;
     created_at: string;
 }
+
+export interface FloatRequest {
+    id: number;
+    agent: { id: number; name: string; phone_number: string | null } | null;
+    amount: number | string;
+    bank_reference: string;
+    deposited_at: string;
+    note: string | null;
+    slip: { name: string; mime_type: string };
+    status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+    awaiting_second_approval: boolean;
+    approval_request_id: number | null;
+    transaction_id: number | null;
+    reviewed_by: { id: number; name: string } | null;
+    reviewed_at: string | null;
+    review_note: string | null;
+    created_at: string;
+}

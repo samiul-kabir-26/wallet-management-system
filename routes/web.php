@@ -45,6 +45,7 @@ Route::prefix('agent')->name('agent.')->group(function (): void {
     Route::inertia('/cash-in', 'Agent/CashIn')->name('cash-in');
     Route::inertia('/transactions', 'Agent/Transactions')->name('transactions');
     Route::inertia('/withdrawal', 'Agent/Withdrawal')->name('withdrawal');
+    Route::inertia('/float-requests', 'Agent/FloatRequests')->name('float-requests');
     Route::inertia('/account', 'Agent/Account')->name('account');
 });
 
@@ -58,6 +59,7 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
     Route::inertia('/withdrawals', 'Admin/Withdrawals')->name('withdrawals');
     Route::inertia('/top-ups', 'Admin/TopUps')->name('top-ups');
     Route::inertia('/approvals', 'Admin/Approvals')->name('approvals');
+    Route::inertia('/float-requests', 'Admin/FloatRequests')->name('float-requests');
     Route::inertia('/roles', 'Admin/Roles')->name('roles');
     Route::inertia('/agents', 'Admin/Agents')->name('agents');
     Route::inertia('/wallets', 'Admin/Wallets')->name('wallets');
