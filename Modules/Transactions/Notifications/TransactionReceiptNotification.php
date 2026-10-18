@@ -28,6 +28,11 @@ class TransactionReceiptNotification extends Notification implements ShouldQueue
     public const string PARTY_AGENT = 'agent';
 
     /**
+     * Attempts per channel before the receipt is given up (the SMS provider may be briefly unavailable).
+     */
+    public int $tries = 3;
+
+    /**
      * Create a new notification instance.
      */
     public function __construct(
@@ -35,6 +40,16 @@ class TransactionReceiptNotification extends Notification implements ShouldQueue
         public string $party,
     ) {
         $this->afterCommit();
+    }
+
+    /**
+     * Seconds to wait before each retry.
+     *
+     * @return list<int>
+     */
+    public function backoff(): array
+    {
+        return [30, 120];
     }
 
     /**
