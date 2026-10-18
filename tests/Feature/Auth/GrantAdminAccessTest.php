@@ -424,3 +424,22 @@ test('attack chain blocked: admin grant on verified customer cannot overwrite cu
     ]);
     $attackerCustomerLogin->assertStatus(401);
 });
+
+test('grant-admin-access cannot elevate a user to SUPER_ADMIN', function () {
+    $superAdmin = User::factory()->create();
+    $superAdmin->roles()->attach(Role::where('name', 'SUPER_ADMIN')->first()->id, ['assigned_at' => now()]);
+
+    $target = User::factory()->withoutPassword()->create();
+
+    Sanctum::actingAs($superAdmin, ['admin']);
+
+    $this->patchJson("/api/v1/users/{$target->id}/grant-admin-access", [
+        'email' => 'elevated@example.com',
+        'role' => 'SUPER_ADMIN',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('role');
+
+    expect($target->fresh()->hasRole('SUPER_ADMIN'))->toBeFalse()
+        ->and($target->fresh()->email)->not->toBe('elevated@example.com');
+});

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AuditLog;
 use App\Models\Role;
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
@@ -121,4 +122,57 @@ test('updating non-existent user returns 404', function () {
     ]);
 
     $response->assertStatus(404);
+});
+
+test('staff edits to another user profile are audited with before and after values', function () {
+    $admin = createActorWithRoleForUpdate('ADMIN');
+    $targetUser = createActorWithRoleForUpdate('USER');
+    $originalName = $targetUser->name;
+    Sanctum::actingAs($admin, ['admin']);
+
+    $this->patchJson("/api/v1/users/{$targetUser->id}", ['name' => 'Corrected Name'])->assertOk();
+
+    $audit = AuditLog::where('action', 'PROFILE_UPDATED')->sole();
+    expect($audit->actor_id)->toBe($admin->id)
+        ->and($audit->auditable_id)->toBe($targetUser->id)
+        ->and($audit->metadata['changes'])->toEqual(['name' => ['before' => $originalName, 'after' => 'Corrected Name']]);
+});
+
+test('a user editing their own profile writes no staff audit entry', function () {
+    $user = createActorWithRoleForUpdate('USER');
+    Sanctum::actingAs($user, ['user']);
+
+    $this->patchJson("/api/v1/users/{$user->id}", ['name' => 'My New Name'])->assertOk();
+
+    expect(AuditLog::where('action', 'PROFILE_UPDATED')->exists())->toBeFalse();
+});
+
+test('an unchanged submission writes no audit entry', function () {
+    $admin = createActorWithRoleForUpdate('ADMIN');
+    $targetUser = createActorWithRoleForUpdate('USER');
+    Sanctum::actingAs($admin, ['admin']);
+
+    $this->patchJson("/api/v1/users/{$targetUser->id}", ['name' => $targetUser->name])->assertOk();
+
+    expect(AuditLog::where('action', 'PROFILE_UPDATED')->exists())->toBeFalse();
+});
+
+test('ADMIN cannot edit a SUPER_ADMIN profile', function () {
+    $admin = createActorWithRoleForUpdate('ADMIN');
+    $superAdmin = createActorWithRoleForUpdate('SUPER_ADMIN');
+    Sanctum::actingAs($admin, ['admin']);
+
+    $this->patchJson("/api/v1/users/{$superAdmin->id}", ['name' => 'Renamed'])->assertForbidden();
+
+    expect($superAdmin->fresh()->name)->not->toBe('Renamed');
+});
+
+test('SUPER_ADMIN can edit another SUPER_ADMIN profile', function () {
+    $superAdmin = createActorWithRoleForUpdate('SUPER_ADMIN');
+    $otherSuperAdmin = createActorWithRoleForUpdate('SUPER_ADMIN');
+    Sanctum::actingAs($superAdmin, ['admin']);
+
+    $this->patchJson("/api/v1/users/{$otherSuperAdmin->id}", ['name' => 'Renamed'])->assertOk();
+
+    expect($otherSuperAdmin->fresh()->name)->toBe('Renamed');
 });

@@ -66,7 +66,8 @@ export type TransactionType =
     | 'TRANSFER'
     | 'AGENT_WITHDRAWAL'
     | 'COMMISSION_PAYOUT'
-    | 'FLOAT_ISSUE';
+    | 'FLOAT_ISSUE'
+    | 'SIGNUP_BONUS';
 
 export type TransactionStatus = 'COMPLETED' | 'PENDING' | 'FAILED' | 'REJECTED';
 

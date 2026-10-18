@@ -11,11 +11,13 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Modules\Roles\Enums\RolePanel;
 use Modules\Users\Http\Requests\ApproveAgentRequest;
 use Modules\Users\Http\Requests\AssignRoleRequest;
 use Modules\Users\Http\Requests\LookupRecipientRequest;
 use Modules\Users\Http\Requests\RegisterUserRequest;
 use Modules\Users\Http\Requests\SuspendAgentRequest;
+use Modules\Users\Http\Requests\UpdateCommissionRateRequest;
 use Modules\Users\Http\Requests\UpdateUserRequest;
 use Modules\Users\Resources\AgentResource;
 use Modules\Users\Resources\AuditLogResource;
@@ -40,6 +42,8 @@ class UserController extends Controller
         $this->authorize('viewAny', User::class);
 
         $validated = $request->validate([
+            'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'panel' => ['sometimes', 'string', Rule::enum(RolePanel::class)],
             'role' => ['sometimes', 'string', Rule::exists('roles', 'name')],
             'is_active' => ['sometimes', 'string', Rule::in(['ACTIVE', 'INACTIVE'])],
             'is_verified' => ['sometimes', 'boolean'],
@@ -53,6 +57,15 @@ class UserController extends Controller
             ->with(['roles', 'agentInfo'])
             ->where('is_deleted', false)
             ->latest('id');
+
+        $search = trim((string) ($validated['search'] ?? ''));
+        if ($search !== '') {
+            $query->search($search);
+        }
+
+        if (! empty($validated['panel'])) {
+            $query->inPanel(RolePanel::from($validated['panel']));
+        }
 
         if (! empty($validated['role'])) {
             $query->whereHas('roles', fn ($q) => $q->where('name', $validated['role']));
@@ -115,7 +128,11 @@ class UserController extends Controller
      */
     public function update(UpdateUserRequest $request, User $user): JsonResponse
     {
-        $user->update($request->validated());
+        $user = $this->userService->updateProfile(
+            user: $user,
+            data: $request->validated(),
+            actor: $request->user(),
+        );
 
         $user->load(['roles', 'wallets', 'cap', 'agentInfo']);
 
@@ -123,6 +140,26 @@ class UserController extends Controller
             'success' => true,
             'data' => [
                 'user' => new UserResource($user),
+            ],
+        ]);
+    }
+
+    /**
+     * Change an agent's commission rate for future transactions.
+     */
+    public function updateCommissionRate(UpdateCommissionRateRequest $request, User $user): JsonResponse
+    {
+        $updatedUser = $this->userService->updateCommissionRate(
+            agentUser: $user,
+            commissionRate: (string) $request->validated('commission_rate'),
+            actor: $request->user(),
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Commission rate updated successfully',
+            'data' => [
+                'agent' => new AgentResource($updatedUser->agentInfo),
             ],
         ]);
     }

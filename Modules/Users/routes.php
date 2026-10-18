@@ -23,6 +23,7 @@ Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(
     Route::post('/{user}/assign-role', [UserController::class, 'assignRole']);
     Route::patch('/{user}/approve-agent', [UserController::class, 'approveAgent']);
     Route::patch('/{user}/suspend-agent', [UserController::class, 'suspendAgent']);
+    Route::patch('/{user}/commission-rate', [UserController::class, 'updateCommissionRate']);
     Route::patch('/{user}/verify-phone', [UserController::class, 'verifyPhone']);
     Route::get('/{user}/login-activity', [UserController::class, 'loginActivity']);
     Route::get('/{user}/audit-trail', [UserController::class, 'auditTrail']);

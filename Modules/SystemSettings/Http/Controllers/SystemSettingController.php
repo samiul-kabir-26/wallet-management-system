@@ -11,6 +11,7 @@ use Modules\SystemSettings\Http\Requests\UpdateSystemSettingsRequest;
 use Modules\SystemSettings\Resources\SettingsResource;
 use Modules\SystemSettings\Services\SessionTimeoutService;
 use Modules\SystemSettings\Services\SystemSettingService;
+use Modules\Transactions\Services\SignupBonusService;
 
 class SystemSettingController extends Controller
 {
@@ -19,6 +20,7 @@ class SystemSettingController extends Controller
     public function __construct(
         protected SystemSettingService $settingService,
         protected SessionTimeoutService $sessionTimeouts,
+        protected SignupBonusService $signupBonus,
     ) {}
 
     /**
@@ -33,7 +35,7 @@ class SystemSettingController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'settings' => new SettingsResource($settings),
+                'settings' => new SettingsResource($this->withEffectiveSignupBonus($settings)),
             ],
         ]);
     }
@@ -52,7 +54,7 @@ class SystemSettingController extends Controller
             'success' => true,
             'message' => 'Settings updated successfully',
             'data' => [
-                'settings' => new SettingsResource($updatedSettings),
+                'settings' => new SettingsResource($this->withEffectiveSignupBonus($updatedSettings)),
             ],
         ]);
     }
@@ -89,5 +91,21 @@ class SystemSettingController extends Controller
                 'session_timeouts' => $timeouts,
             ],
         ]);
+    }
+
+    /**
+     * Report the signup bonus values actually in force, including the configured defaults when staff
+     * have not stored an override yet.
+     *
+     * @param  array<string, float>  $settings
+     * @return array<string, float|bool>
+     */
+    private function withEffectiveSignupBonus(array $settings): array
+    {
+        return [
+            ...$settings,
+            SignupBonusService::SETTING_ENABLED => $this->signupBonus->isEnabled(),
+            SignupBonusService::SETTING_AMOUNT => (float) $this->signupBonus->amount(),
+        ];
     }
 }

@@ -23,7 +23,7 @@ function createActorWithAttachedRole(string $roleName): User
 
 test('plain USER with user-ability token can view their own profile', function () {
     $user = createActorWithAttachedRole('USER');
-    Wallet::factory()->for($user)->create();
+    Wallet::factory()->for($user)->balance('50.00')->create();
     $user->cap()->create();
 
     Sanctum::actingAs($user, ['user']);

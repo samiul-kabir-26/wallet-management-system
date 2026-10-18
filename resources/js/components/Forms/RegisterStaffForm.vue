@@ -21,7 +21,8 @@ const rolesLoading = ref<boolean>(true);
 onMounted(async () => {
     try {
         const res = await api.get('/roles', { params: { panel: 'admin', per_page: 100 } });
-        availableRoles.value = res.data.data?.items ?? [];
+        // SUPER_ADMIN is never granted through these forms; the API rejects it as well
+        availableRoles.value = ((res.data.data?.items ?? []) as RoleModel[]).filter((r) => r.name !== 'SUPER_ADMIN');
         if (availableRoles.value.length > 0 && !availableRoles.value.some((r) => r.name === role.value)) {
             role.value = availableRoles.value[0].name;
         }

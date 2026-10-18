@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Modules\Authentication\Exceptions\InvalidOtpException;
 use Modules\Authentication\Notifications\PhoneVerificationCodeNotification;
+use Modules\Transactions\Services\SignupBonusService;
 
 class RegistrationService
 {
@@ -17,6 +18,7 @@ class RegistrationService
 
     public function __construct(
         private OtpService $otpService,
+        private SignupBonusService $signupBonusService,
     ) {}
 
     /**
@@ -55,11 +57,12 @@ class RegistrationService
             ]);
             $user->forceFill(['is_verified' => true])->save();
 
-            // 2. Create the initial wallet (schema defaults: balance 50.00, currency BDT)
+            // 2. Open the wallet (opens at 0.00 BDT) and credit the signup bonus, if enabled
             $kind = $data['role'] === 'AGENT' ? Wallet::KIND_AGENT : Wallet::KIND_USER;
-            $user->wallets()->create([
+            $wallet = $user->wallets()->create([
                 'kind' => $kind,
             ]);
+            $this->signupBonusService->credit($wallet);
 
             // 3. Create transaction cap limits (schema defaults: daily 10,000.00, monthly 50,000.00)
             $user->cap()->create();

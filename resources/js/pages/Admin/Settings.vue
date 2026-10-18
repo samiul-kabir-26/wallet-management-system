@@ -5,7 +5,7 @@ import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { useAuthStore } from '@/stores/auth';
 import { parseApiError } from '@/composables/useApiError';
-import { rate } from '@/composables/validators';
+import { rate, type Rule } from '@/composables/validators';
 import { api } from '@/services/api';
 import { useToastStore } from '@/stores/toast';
 import AdminLayout from '@/layouts/AdminLayout.vue';
@@ -20,12 +20,23 @@ const toast = useToastStore();
 const loading = ref(true);
 const saving = ref(false);
 
-const { handleSubmit, setValues, setErrors, values } = useForm<{ feeRate: string; commissionRate: string }>({
+const bonusEnabled = ref(true);
+
+/** Signup bonus: 0 or more, at most 2 decimal places. Zero is allowed and means "no bonus". */
+const bonusAmountRule: Rule = (value) => {
+    if (value === undefined || value === null || String(value).trim() === '') {
+        return 'Signup bonus amount is required.';
+    }
+    return /^\d+(\.\d{1,2})?$/.test(String(value)) ? true : 'Signup bonus amount must be 0 or more, with at most 2 decimal places.';
+};
+
+const { handleSubmit, setValues, setErrors, values } = useForm<{ feeRate: string; commissionRate: string; bonusAmount: string }>({
     validationSchema: {
         feeRate: rate('Transaction fee rate'),
         commissionRate: rate('Agent commission rate'),
+        bonusAmount: bonusAmountRule,
     },
-    initialValues: { feeRate: '', commissionRate: '' },
+    initialValues: { feeRate: '', commissionRate: '', bonusAmount: '' },
 });
 
 const asPercent = (value: string): string => (value === '' || Number.isNaN(Number(value)) ? '-' : `${(Number(value) * 100).toFixed(2)}%`);
@@ -39,7 +50,9 @@ const fetchSettings = async () => {
             setValues({
                 feeRate: String(settings.system_fee_rate),
                 commissionRate: String(settings.agent_commission_rate),
+                bonusAmount: Number(settings.signup_bonus_amount ?? 0).toFixed(2),
             });
+            bonusEnabled.value = Boolean(settings.signup_bonus_enabled);
         }
     } catch (err: unknown) {
         toast.error(parseApiError(err, 'Failed to fetch system settings.').message);
@@ -54,6 +67,8 @@ const handleSaveSettings = handleSubmit(async (formValues) => {
         await api.patch('/system-settings', {
             system_fee_rate: Number(formValues.feeRate),
             agent_commission_rate: Number(formValues.commissionRate),
+            signup_bonus_enabled: bonusEnabled.value,
+            signup_bonus_amount: Number(formValues.bonusAmount),
         });
         toast.success('System settings updated successfully!');
         await fetchSettings();
@@ -62,6 +77,7 @@ const handleSaveSettings = handleSubmit(async (formValues) => {
         const mapped: Record<string, string> = {};
         if (fieldErrors.system_fee_rate) mapped.feeRate = fieldErrors.system_fee_rate;
         if (fieldErrors.agent_commission_rate) mapped.commissionRate = fieldErrors.agent_commission_rate;
+        if (fieldErrors.signup_bonus_amount) mapped.bonusAmount = fieldErrors.signup_bonus_amount;
         setErrors(mapped);
         toast.error(message);
     } finally {
@@ -113,6 +129,34 @@ onMounted(() => {
                                 <TextField name="commissionRate" label="Commission rate" type="number" step="0.0001" min="0" inputmode="decimal" />
                             </div>
                             <span class="pt-7 text-sm font-semibold text-zinc-700 dark:text-zinc-300">= {{ asPercent(values.commissionRate) }}</span>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2 border-t border-zinc-100 pt-6 dark:border-zinc-800">
+                        <div class="flex items-center justify-between gap-4">
+                            <div>
+                                <p class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Signup Bonus (BDT)</p>
+                                <p class="text-xs text-zinc-500">
+                                    Credited to every new user and agent wallet at registration, recorded as a SIGNUP_BONUS transaction. Changes apply to new accounts only.
+                                </p>
+                            </div>
+                            <label class="inline-flex shrink-0 cursor-pointer items-center gap-2">
+                                <input
+                                    v-model="bonusEnabled"
+                                    type="checkbox"
+                                    role="switch"
+                                    :aria-checked="bonusEnabled"
+                                    :disabled="!authStore.can('settings.update')"
+                                    class="peer sr-only"
+                                />
+                                <span
+                                    class="relative h-6 w-11 rounded-full bg-zinc-300 transition after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition peer-checked:bg-indigo-600 peer-checked:after:translate-x-5 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-500 peer-disabled:opacity-50 dark:bg-zinc-700"
+                                ></span>
+                                <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ bonusEnabled ? 'Enabled' : 'Disabled' }}</span>
+                            </label>
+                        </div>
+                        <div class="w-48">
+                            <TextField name="bonusAmount" label="Bonus amount" type="number" step="0.01" min="0" inputmode="decimal" />
                         </div>
                     </div>
 

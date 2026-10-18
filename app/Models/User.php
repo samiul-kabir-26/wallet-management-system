@@ -6,6 +6,7 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -61,6 +62,35 @@ class User extends Authenticatable
             'pin' => 'hashed',
             'password_changed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Match a free-text term against name, email or phone number, plus the exact user ID for "#123" or "123".
+     *
+     * The OR conditions are grouped so they never escape the caller's other filters (such as is_deleted).
+     */
+    public function scopeSearch(Builder $query, string $term): void
+    {
+        $like = '%'.addcslashes($term, '%_\\').'%';
+        $userId = ltrim($term, '#');
+
+        $query->where(function (Builder $q) use ($like, $userId): void {
+            $q->where('name', 'like', $like)
+                ->orWhere('email', 'like', $like)
+                ->orWhere('phone_number', 'like', $like);
+
+            if (ctype_digit($userId)) {
+                $q->orWhere('id', (int) $userId);
+            }
+        });
+    }
+
+    /**
+     * Limit to users holding at least one role that belongs to the given panel.
+     */
+    public function scopeInPanel(Builder $query, RolePanel $panel): void
+    {
+        $query->whereHas('roles', fn (Builder $q) => $q->where('panel', $panel->value));
     }
 
     public function roleAssignments(): HasMany

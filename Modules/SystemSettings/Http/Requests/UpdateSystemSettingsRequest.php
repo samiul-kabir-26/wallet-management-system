@@ -5,6 +5,7 @@ namespace Modules\SystemSettings\Http\Requests;
 use App\Models\SystemSetting;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
+use Modules\Transactions\Services\SignupBonusService;
 
 class UpdateSystemSettingsRequest extends FormRequest
 {
@@ -37,9 +38,13 @@ class UpdateSystemSettingsRequest extends FormRequest
      */
     public function rules(): array
     {
+        $maxSignupBonus = (float) config('transactions.signup_bonus.max_amount', 1000.00);
+
         return [
             'system_fee_rate' => ['sometimes', 'numeric', 'min:0', 'max:1'],
             'agent_commission_rate' => ['sometimes', 'numeric', 'min:0', 'max:1'],
+            SignupBonusService::SETTING_ENABLED => ['sometimes', 'boolean'],
+            SignupBonusService::SETTING_AMOUNT => ['sometimes', 'numeric', 'decimal:0,2', 'min:0', "max:{$maxSignupBonus}"],
         ];
     }
 
@@ -49,7 +54,7 @@ class UpdateSystemSettingsRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            if (! $this->has('system_fee_rate') && ! $this->has('agent_commission_rate')) {
+            if (! $this->hasAny(['system_fee_rate', 'agent_commission_rate', SignupBonusService::SETTING_ENABLED, SignupBonusService::SETTING_AMOUNT])) {
                 $validator->errors()->add('settings', 'At least one system setting must be provided.');
             }
         });

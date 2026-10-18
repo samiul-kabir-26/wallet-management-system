@@ -64,7 +64,8 @@ onMounted(() => {
                                     #{{ tx.id }}
                                 </td>
                                 <td class="px-6 py-4">
-                                    <Badge variant="neutral">{{ tx.type }}</Badge>
+                                    <Badge :variant="tx.type === 'SIGNUP_BONUS' ? 'success' : 'neutral'">{{ tx.type }}</Badge>
+                                    <p v-if="tx.type === 'SIGNUP_BONUS'" class="mt-1 text-xs text-zinc-500">from {{ tx.meta?.source_label ?? 'bKash' }}</p>
                                 </td>
                                 <td class="px-6 py-4 font-semibold text-zinc-900 dark:text-zinc-100">
                                     ৳{{ Number(tx.amount).toFixed(2) }}

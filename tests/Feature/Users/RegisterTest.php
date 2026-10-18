@@ -230,3 +230,19 @@ test('PIN-issued token with user ability is rejected even if caller genuinely ho
     // Rejected by ability:admin middleware
     $response->assertStatus(403);
 });
+
+test('even a SUPER_ADMIN cannot register another SUPER_ADMIN', function () {
+    $superAdmin = createActorWithRole('SUPER_ADMIN');
+    Sanctum::actingAs($superAdmin, ['admin']);
+
+    $this->postJson('/api/v1/users/register', [
+        'name' => 'Second Super Admin',
+        'email' => 'second.sa@example.com',
+        'password' => 'SecurePass123!',
+        'role' => 'SUPER_ADMIN',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('role');
+
+    expect(User::where('email', 'second.sa@example.com')->exists())->toBeFalse();
+});

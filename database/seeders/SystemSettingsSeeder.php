@@ -14,5 +14,7 @@ class SystemSettingsSeeder extends Seeder
     {
         SystemSetting::create(['key' => 'system_fee_rate', 'value' => 0.05]);
         SystemSetting::create(['key' => 'agent_commission_rate', 'value' => 0.01]);
+        SystemSetting::firstOrCreate(['key' => 'signup_bonus_enabled'], ['value' => 1]);
+        SystemSetting::firstOrCreate(['key' => 'signup_bonus_amount'], ['value' => 50.00]);
     }
 }
