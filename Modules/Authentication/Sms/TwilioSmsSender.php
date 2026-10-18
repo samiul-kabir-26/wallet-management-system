@@ -10,8 +10,8 @@ use Modules\Authentication\Exceptions\SmsDeliveryException;
 /**
  * Sends SMS through Twilio's Messages API.
  *
- * A free Twilio trial account works for this demo: it can only send to phone numbers verified in
- * the Twilio console, and Twilio prefixes each message with "Sent from your Twilio trial account".
+ * Needs an upgraded Twilio account: trial accounts can only send Twilio's predefined templates, so
+ * custom text such as OTP codes and receipts is rejected (error 572006).
  * Message bodies are never logged, because they carry OTP codes.
  */
 class TwilioSmsSender implements SmsSender
@@ -33,7 +33,7 @@ class TwilioSmsSender implements SmsSender
         if ($this->accountSid === '' || $this->authToken === '' || (! $this->from && ! $this->messagingServiceSid)) {
             Log::error('SMS driver is "twilio" but TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM (or TWILIO_MESSAGING_SERVICE_SID) are not all set');
 
-            throw new SmsDeliveryException;
+            throw new SmsDeliveryException(providerReason: 'Twilio credentials are not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM).');
         }
 
         $to = $this->toE164($phoneNumber);
@@ -53,7 +53,7 @@ class TwilioSmsSender implements SmsSender
         } catch (ConnectionException $e) {
             Log::warning('SMS provider unreachable', ['provider' => 'twilio', 'to' => $this->mask($to)]);
 
-            throw new SmsDeliveryException(previous: $e);
+            throw new SmsDeliveryException(previous: $e, providerReason: 'Twilio could not be reached: '.$e->getMessage());
         }
 
         if ($response->failed()) {
@@ -65,7 +65,12 @@ class TwilioSmsSender implements SmsSender
                 'error' => $response->json('message'),
             ]);
 
-            throw new SmsDeliveryException;
+            throw new SmsDeliveryException(providerReason: sprintf(
+                'Twilio returned HTTP %d%s: %s',
+                $response->status(),
+                $response->json('code') ? ' (code '.$response->json('code').')' : '',
+                $response->json('message') ?? 'no reason given',
+            ));
         }
 
         $messageId = $response->json('sid');

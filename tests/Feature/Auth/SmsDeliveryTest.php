@@ -160,8 +160,10 @@ test('the test command sends through twilio and reports failures', function () {
         ->expectsOutputToContain('Sent through twilio (message ID SM42).')
         ->assertExitCode(0);
 
-    fakeTwilio(400, ['code' => 21608, 'message' => 'Unverified number']);
-    $this->artisan('sms:test', ['phone' => '01712345678'])->assertExitCode(1);
+    fakeTwilio(400, ['code' => 572006, 'message' => 'Invalid template name. Trial accounts can only use predefined SMS templates.']);
+    $this->artisan('sms:test', ['phone' => '01712345678'])
+        ->expectsOutputToContain('Reason: Twilio returned HTTP 400 (code 572006): Invalid template name.')
+        ->assertExitCode(1);
 });
 
 test('transaction receipts are retried when the provider is briefly unavailable', function () {

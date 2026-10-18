@@ -17,7 +17,7 @@ Each proposal says what changes, why, which module it belongs to, and what can g
 | 4 | Ledger integrity check — **done** | Wallets, Transactions | High | S |
 | 5 | Opening-balance backfill for legacy wallets — **done** | Wallets | Medium | S |
 | 6 | Transaction receipts (SMS / email) — **done** | Transactions, Notifications | Medium | M |
-| 7 | Real SMS gateway — **done** (Twilio; free trial texts verified numbers) | Authentication | Medium | M |
+| 7 | Real SMS gateway — **done** (Twilio driver; needs a paid account, log driver for the demo) | Authentication | Medium | M |
 | 8 | Reversals and refunds — **done** (single approver; maker-checker is proposal 9) | Transactions | Medium | L |
 | 9 | Maker-checker for sensitive admin actions — **done** (float, settings, reversals, commission rates) | Roles, SystemSettings | Medium | L |
 | 10 | Agent float requests — **done** | Transactions, Agent panel | Medium | M |

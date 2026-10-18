@@ -35,7 +35,8 @@ class SendTestSmsCommand extends Command
         try {
             $messageId = $sender->send($phone, (string) $this->option('message'));
         } catch (SmsDeliveryException $e) {
-            $this->error("The {$driver} driver could not send the message: {$e->getMessage()} Check storage/logs/laravel.log for the provider's reason.");
+            $this->error("The {$driver} driver could not send the message.");
+            $this->line('Reason: '.($e->providerReason ?? $e->getMessage()));
 
             return self::FAILURE;
         }
