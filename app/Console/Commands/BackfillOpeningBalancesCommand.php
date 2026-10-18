@@ -50,6 +50,17 @@ class BackfillOpeningBalancesCommand extends Command
             return self::SUCCESS;
         }
 
+        // The SIGNUP_BONUS transaction type is added by a migration; writing before it runs fails mid-way
+        $pending = $this->pendingMigrations();
+        if ($pending !== []) {
+            $this->error('Run the pending migrations first (php artisan migrate):');
+            foreach ($pending as $migration) {
+                $this->line("  - {$migration}");
+            }
+
+            return self::FAILURE;
+        }
+
         if ($this->laravel->isProduction() && ! $this->option('force')
             && ! $this->confirm('Write '.count($candidates).' opening-balance row(s) to the production ledger?')) {
             $this->warn('Cancelled.');
@@ -67,5 +78,23 @@ class BackfillOpeningBalancesCommand extends Command
         $this->info("Wrote {$written} opening-balance row(s). Skipped {$skipped} that no longer qualified.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Migrations in database/migrations that have not run yet.
+     *
+     * @return list<string>
+     */
+    private function pendingMigrations(): array
+    {
+        $migrator = $this->laravel->make('migrator');
+
+        if (! $migrator->repositoryExists()) {
+            return array_keys($migrator->getMigrationFiles([database_path('migrations')]));
+        }
+
+        $files = array_keys($migrator->getMigrationFiles([database_path('migrations')]));
+
+        return array_values(array_diff($files, $migrator->getRepository()->getRan()));
     }
 }
