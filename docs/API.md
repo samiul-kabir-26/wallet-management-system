@@ -955,10 +955,19 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 `php artisan wallets:verify-ledger` recomputes every wallet balance from the `transactions` table and compares it with `wallets.balance`. It also compares each agent's `agent_info.total_commission` with the commission on their completed cash-outs. It never changes data.
 - **Rules:** see the table in `Modules/Wallets/Services/LedgerIntegrityService.php`. In short: only rows whose status applied the movement count (`COMPLETED`, plus `PENDING` agent withdrawals, whose amount is already held); pending and failed gateway top-ups count as zero; `COMMISSION_PAYOUT` is a memo row because `CASH_OUT` already credits the commission.
 - **Snapshot:** all reads run in one database transaction, so a transaction committing mid-check cannot produce a false mismatch.
-- **Legacy wallets:** wallets opened before the signup bonus became a ledger row got 50.00 from a column default. A difference of exactly `transactions.ledger_check.legacy_opening_balance` on a wallet with no `SIGNUP_BONUS` row is classified `LEGACY_OPENING_BALANCE` and logged as a warning, not a failure (IMPROVEMENTS.md proposal 5 backfills them).
+- **Legacy wallets:** wallets opened before the signup bonus became a ledger row got 50.00 from a column default. A difference of exactly `transactions.ledger_check.legacy_opening_balance` on a wallet with no `SIGNUP_BONUS` row is classified `LEGACY_OPENING_BALANCE` and logged as a warning, not a failure. 4.6 records the missing rows.
 - **Options:** `--wallet=ID` (repeatable) limits the wallet check and skips the commission check; `--json` prints the full report.
 - **Result:** exit code 0 when consistent. Any `UNEXPLAINED` wallet difference or commission difference exits 1 and writes a `critical` log entry with the details.
 - **Schedule:** daily at 02:00 business time (`routes/console.php`).
+
+### 4.6 Opening-Balance Backfill (operations, no endpoint)
+`php artisan wallets:backfill-opening-balances` writes the ledger row that legacy wallets never got for their 50.00 opening balance.
+- **Dry run by default:** without `--apply` it only lists the wallets it would touch. In production `--apply` asks for confirmation unless `--force` is given.
+- **Which wallets:** those the ledger check classifies `LEGACY_OPENING_BALANCE`. Each one is re-checked with the wallet row locked before writing, so a wallet that moved money meanwhile is judged on its current state.
+- **What is written:** a `COMPLETED` `SIGNUP_BONUS` row for the legacy amount with `meta.backfilled = true`, `meta.reason = LEGACY_OPENING_BALANCE` and `meta.effective_at` = the wallet's opening date. It is dated now (not back-dated), and `recipient_wallet_balance_after` is the current balance. **The wallet balance is not changed**: the money was always there, only its record was missing.
+- **One per wallet:** it uses the signup bonus idempotency key (`signup-bonus:{wallet_id}`) and skips wallets that already have a `SIGNUP_BONUS` row, so it can be re-run safely and a wallet can never hold two bonus rows.
+- **Audit:** each row writes `OPENING_BALANCE_BACKFILLED` against the wallet (actor null: run from the CLI) with the ledger balance before.
+- Afterwards `wallets:verify-ledger` reports no legacy gaps.
 
 ---
 
