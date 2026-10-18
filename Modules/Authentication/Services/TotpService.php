@@ -126,7 +126,7 @@ class TotpService
         $bytes = '';
         foreach (str_split($bits, 8) as $byte) {
             if (strlen($byte) === 8) {
-                $bytes .= chr((int) bindec($byte));
+                $bytes .= chr((int) bindec($byte) & 0xFF);
             }
         }
 

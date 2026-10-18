@@ -36,7 +36,7 @@ class KycSubmissionResource extends JsonResource
             'document_type' => $this->resource->document_type,
             'document_number' => $isReviewer ? $this->resource->document_number : $this->resource->maskedDocumentNumber(),
             'full_name' => $this->resource->full_name,
-            'date_of_birth' => $this->resource->date_of_birth?->toDateString(),
+            'date_of_birth' => $this->resource->date_of_birth->toDateString(),
             'status' => $this->resource->status,
             'reviewed_by' => $reviewer ? ['id' => $reviewer->id, 'name' => $reviewer->name] : null,
             'reviewed_at' => $this->resource->reviewed_at,

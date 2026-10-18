@@ -58,6 +58,7 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         ->whereNumber('user')
         ->name('users.show');
     Route::inertia('/withdrawals', 'Admin/Withdrawals')->name('withdrawals');
+    Route::inertia('/float-requests', 'Admin/FloatRequests')->name('float-requests');
     Route::inertia('/top-ups', 'Admin/TopUps')->name('top-ups');
     Route::inertia('/approvals', 'Admin/Approvals')->name('approvals');
     Route::inertia('/kyc', 'Admin/KycReviews')->name('kyc');

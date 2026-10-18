@@ -877,6 +877,49 @@
                             }
                         }
                     },
+                    "202": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "New device. Enter the code we sent by SMS to finish signing in."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "requires_device_verification": {
+                                                    "type": "boolean"
+                                                },
+                                                "challenge_id": {
+                                                    "type": "string"
+                                                },
+                                                "phone_number": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "requires_device_verification",
+                                                "challenge_id",
+                                                "phone_number"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
                     }
@@ -907,6 +950,49 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/AuthResource"
+                                }
+                            }
+                        }
+                    },
+                    "202": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "New device. Enter the code we sent by SMS to finish signing in."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "requires_device_verification": {
+                                                    "type": "boolean"
+                                                },
+                                                "challenge_id": {
+                                                    "type": "string"
+                                                },
+                                                "phone_number": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "requires_device_verification",
+                                                "challenge_id",
+                                                "phone_number"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
                                 }
                             }
                         }
@@ -947,17 +1033,28 @@
                                         },
                                         "message": {
                                             "type": "string",
-                                            "const": "OTP sent to your email. Please check your inbox."
+                                            "enum": [
+                                                "Enter the code from your authenticator app.",
+                                                "OTP sent to your email. Please check your inbox."
+                                            ]
                                         },
                                         "data": {
                                             "type": "object",
                                             "properties": {
                                                 "email": {
                                                     "type": "string"
+                                                },
+                                                "second_factor": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "totp",
+                                                        "email"
+                                                    ]
                                                 }
                                             },
                                             "required": [
-                                                "email"
+                                                "email",
+                                                "second_factor"
                                             ]
                                         }
                                     },
@@ -1000,6 +1097,64 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/AuthResource"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
+        "/v1/auth/verify-device": {
+            "post": {
+                "operationId": "auth.verifyDevice",
+                "summary": "Complete a PIN login from a new device with the SMS code (device binding)",
+                "tags": [
+                    "Auth"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "challenge_id": {
+                                        "type": "string",
+                                        "minLength": 48,
+                                        "maxLength": 48
+                                    },
+                                    "otp_code": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "challenge_id",
+                                    "otp_code"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`AuthResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/AuthResource"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "required": [
+                                                "data"
+                                            ]
+                                        }
+                                    ]
                                 }
                             }
                         }
@@ -2215,6 +2370,1058 @@
                 }
             }
         },
+        "/v1/users/me/kyc": {
+            "get": {
+                "operationId": "kyc.mine",
+                "summary": "The signed-in customer's tier, limits, tier ladder and latest submission",
+                "tags": [
+                    "Kyc"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "tier": {
+                                                    "type": "string"
+                                                },
+                                                "label": {
+                                                    "type": "string"
+                                                },
+                                                "verified_at": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "format": "date-time"
+                                                },
+                                                "custom_limits": {
+                                                    "type": "boolean"
+                                                },
+                                                "caps": {
+                                                    "$ref": "#/components/schemas/CapResource"
+                                                },
+                                                "tiers": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "tier": {
+                                                                "type": "string"
+                                                            },
+                                                            "label": {
+                                                                "type": "string"
+                                                            },
+                                                            "description": {
+                                                                "type": "string"
+                                                            },
+                                                            "daily_cap": {
+                                                                "type": "number"
+                                                            },
+                                                            "monthly_cap": {
+                                                                "type": "number"
+                                                            },
+                                                            "requires_verification": {
+                                                                "type": "boolean"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "tier",
+                                                            "label",
+                                                            "description",
+                                                            "daily_cap",
+                                                            "monthly_cap",
+                                                            "requires_verification"
+                                                        ]
+                                                    }
+                                                },
+                                                "latest_submission": {
+                                                    "anyOf": [
+                                                        {
+                                                            "$ref": "#/components/schemas/KycSubmissionResource"
+                                                        },
+                                                        {
+                                                            "type": "null"
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "tier",
+                                                "label",
+                                                "verified_at",
+                                                "custom_limits",
+                                                "caps",
+                                                "tiers",
+                                                "latest_submission"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "kyc.submit",
+                "summary": "Send identity documents for verification",
+                "tags": [
+                    "Kyc"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SubmitKycRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Documents submitted. You will get an SMS once they are reviewed."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "submission": {
+                                                    "$ref": "#/components/schemas/KycSubmissionResource"
+                                                }
+                                            },
+                                            "required": [
+                                                "submission"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
+        "/v1/users/kyc-submissions": {
+            "get": {
+                "operationId": "kyc.index",
+                "summary": "Submissions for staff review",
+                "tags": [
+                    "Kyc"
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "PENDING",
+                                "APPROVED",
+                                "REJECTED"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {}
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/users/kyc-submissions/{submission}/documents/{side}": {
+            "get": {
+                "operationId": "kyc.document",
+                "summary": "One side of a submitted document, for staff only",
+                "tags": [
+                    "Kyc"
+                ],
+                "parameters": [
+                    {
+                        "name": "submission",
+                        "in": "path",
+                        "required": true,
+                        "description": "The submission ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "side",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Transfer-Encoding": {
+                                "required": true,
+                                "schema": {
+                                    "type": "string",
+                                    "enum": [
+                                        "chunked"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/users/kyc-submissions/{submission}/approve": {
+            "post": {
+                "operationId": "kyc.approve",
+                "summary": "Approve a submission",
+                "tags": [
+                    "Kyc"
+                ],
+                "parameters": [
+                    {
+                        "name": "submission",
+                        "in": "path",
+                        "required": true,
+                        "description": "The submission ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "note": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Identity verified."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "submission": {
+                                                    "$ref": "#/components/schemas/KycSubmissionResource"
+                                                }
+                                            },
+                                            "required": [
+                                                "submission"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/users/kyc-submissions/{submission}/reject": {
+            "post": {
+                "operationId": "kyc.reject",
+                "summary": "Reject a submission",
+                "tags": [
+                    "Kyc"
+                ],
+                "parameters": [
+                    {
+                        "name": "submission",
+                        "in": "path",
+                        "required": true,
+                        "description": "The submission ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "reason": {
+                                        "type": "string",
+                                        "minLength": 5,
+                                        "maxLength": 500
+                                    }
+                                },
+                                "required": [
+                                    "reason"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Documents rejected."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "submission": {
+                                                    "$ref": "#/components/schemas/KycSubmissionResource"
+                                                }
+                                            },
+                                            "required": [
+                                                "submission"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/users/{user}/kyc-tier": {
+            "patch": {
+                "operationId": "kyc.changeTier",
+                "summary": "Move a customer to another tier",
+                "tags": [
+                    "Kyc"
+                ],
+                "parameters": [
+                    {
+                        "name": "user",
+                        "in": "path",
+                        "required": true,
+                        "description": "The user ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "tier": {
+                                        "type": "string",
+                                        "enum": [
+                                            "BASIC",
+                                            "STANDARD",
+                                            "PREMIUM"
+                                        ]
+                                    },
+                                    "reason": {
+                                        "type": "string",
+                                        "minLength": 5,
+                                        "maxLength": 500
+                                    }
+                                },
+                                "required": [
+                                    "tier",
+                                    "reason"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Tier changed."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {
+                                                    "allOf": [
+                                                        {
+                                                            "$ref": "#/components/schemas/UserResource"
+                                                        },
+                                                        {
+                                                            "type": "object",
+                                                            "required": [
+                                                                "roles",
+                                                                "caps"
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "user"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/users/{user}/caps": {
+            "patch": {
+                "operationId": "kyc.setLimits",
+                "summary": "Give a customer custom limits",
+                "tags": [
+                    "Kyc"
+                ],
+                "parameters": [
+                    {
+                        "name": "user",
+                        "in": "path",
+                        "required": true,
+                        "description": "The user ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "daily_cap": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 100000
+                                    },
+                                    "monthly_cap": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 500000
+                                    },
+                                    "reason": {
+                                        "type": "string",
+                                        "minLength": 5,
+                                        "maxLength": 500
+                                    }
+                                },
+                                "required": [
+                                    "daily_cap",
+                                    "monthly_cap",
+                                    "reason"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Limits updated."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {
+                                                    "allOf": [
+                                                        {
+                                                            "$ref": "#/components/schemas/UserResource"
+                                                        },
+                                                        {
+                                                            "type": "object",
+                                                            "required": [
+                                                                "roles",
+                                                                "caps"
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "user"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/transactions/requests": {
+            "get": {
+                "operationId": "paymentRequest.index",
+                "summary": "The caller's requests: ones they were asked to pay (incoming) or ones they sent (outgoing)",
+                "tags": [
+                    "PaymentRequest"
+                ],
+                "parameters": [
+                    {
+                        "name": "direction",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "incoming",
+                                "outgoing"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "PENDING",
+                                "PAID",
+                                "DECLINED",
+                                "CANCELLED",
+                                "EXPIRED"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {}
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "paymentRequest.store",
+                "summary": "Ask another customer for money",
+                "tags": [
+                    "PaymentRequest"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreatePaymentRequestRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Request sent. The customer gets an SMS and can pay it from their app."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "payment_request": {
+                                                    "$ref": "#/components/schemas/PaymentRequestResource"
+                                                }
+                                            },
+                                            "required": [
+                                                "payment_request"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
+        "/v1/transactions/requests/{paymentRequest}/pay": {
+            "post": {
+                "operationId": "paymentRequest.pay",
+                "summary": "Pay a request addressed to the caller",
+                "tags": [
+                    "PaymentRequest"
+                ],
+                "parameters": [
+                    {
+                        "name": "paymentRequest",
+                        "in": "path",
+                        "required": true,
+                        "description": "The payment request ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "pin": {
+                                        "type": "string"
+                                    },
+                                    "idempotency_key": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    }
+                                },
+                                "required": [
+                                    "pin",
+                                    "idempotency_key"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Request paid."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "payment_request": {
+                                                    "$ref": "#/components/schemas/PaymentRequestResource"
+                                                }
+                                            },
+                                            "required": [
+                                                "payment_request"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/transactions/requests/{paymentRequest}/decline": {
+            "post": {
+                "operationId": "paymentRequest.decline",
+                "summary": "Decline a request addressed to the caller",
+                "tags": [
+                    "PaymentRequest"
+                ],
+                "parameters": [
+                    {
+                        "name": "paymentRequest",
+                        "in": "path",
+                        "required": true,
+                        "description": "The payment request ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Request declined."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "payment_request": {
+                                                    "$ref": "#/components/schemas/PaymentRequestResource"
+                                                }
+                                            },
+                                            "required": [
+                                                "payment_request"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/transactions/requests/{paymentRequest}/cancel": {
+            "post": {
+                "operationId": "paymentRequest.cancel",
+                "summary": "Cancel one of the caller's own requests",
+                "tags": [
+                    "PaymentRequest"
+                ],
+                "parameters": [
+                    {
+                        "name": "paymentRequest",
+                        "in": "path",
+                        "required": true,
+                        "description": "The payment request ID",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Request cancelled."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "payment_request": {
+                                                    "$ref": "#/components/schemas/PaymentRequestResource"
+                                                }
+                                            },
+                                            "required": [
+                                                "payment_request"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/v1/permissions": {
             "get": {
                 "operationId": "permission.index",
@@ -2259,6 +3466,319 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/reports/overview": {
+            "get": {
+                "operationId": "report.overview",
+                "summary": "Dashboard figures for the last N business days",
+                "tags": [
+                    "Report"
+                ],
+                "parameters": [
+                    {
+                        "name": "days",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 90
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "range": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "days": {
+                                                            "type": "integer"
+                                                        },
+                                                        "from": {
+                                                            "type": "string"
+                                                        },
+                                                        "to": {
+                                                            "type": "string"
+                                                        },
+                                                        "timezone": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "days",
+                                                        "from",
+                                                        "to",
+                                                        "timezone"
+                                                    ]
+                                                },
+                                                "totals": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "by_type": {
+                                                            "type": "array",
+                                                            "items": {}
+                                                        },
+                                                        "volume": {
+                                                            "type": "number"
+                                                        },
+                                                        "transactions": {
+                                                            "type": "number"
+                                                        },
+                                                        "fees_earned": {
+                                                            "type": "number"
+                                                        },
+                                                        "commission_paid": {
+                                                            "type": "number"
+                                                        },
+                                                        "signup_bonus_paid": {
+                                                            "type": "number"
+                                                        },
+                                                        "signups": {
+                                                            "type": "number"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "by_type",
+                                                        "volume",
+                                                        "transactions",
+                                                        "fees_earned",
+                                                        "commission_paid",
+                                                        "signup_bonus_paid",
+                                                        "signups"
+                                                    ]
+                                                },
+                                                "daily": {
+                                                    "type": "array",
+                                                    "items": {}
+                                                },
+                                                "queues": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "pending_withdrawals": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "count": {
+                                                                    "type": "integer",
+                                                                    "minimum": 0
+                                                                },
+                                                                "amount": {
+                                                                    "type": "number"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "count",
+                                                                "amount"
+                                                            ]
+                                                        },
+                                                        "pending_float_requests": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "count": {
+                                                                    "type": "integer",
+                                                                    "minimum": 0
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "count"
+                                                            ]
+                                                        },
+                                                        "unfinished_top_ups": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "count": {
+                                                                    "type": "integer",
+                                                                    "minimum": 0
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "count"
+                                                            ]
+                                                        },
+                                                        "pending_approvals": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "count": {
+                                                                    "type": "integer",
+                                                                    "minimum": 0
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "count"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "pending_withdrawals",
+                                                        "pending_float_requests",
+                                                        "unfinished_top_ups",
+                                                        "pending_approvals"
+                                                    ]
+                                                },
+                                                "e_money": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "total": {
+                                                            "type": "number"
+                                                        },
+                                                        "user_wallets": {
+                                                            "type": "number"
+                                                        },
+                                                        "agent_wallets": {
+                                                            "type": "number"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "total",
+                                                        "user_wallets",
+                                                        "agent_wallets"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "range",
+                                                "totals",
+                                                "daily",
+                                                "queues",
+                                                "e_money"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/reports/ledger.csv": {
+            "get": {
+                "operationId": "report.exportLedger",
+                "summary": "Download the filtered admin ledger as CSV",
+                "tags": [
+                    "Report"
+                ],
+                "parameters": [
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "TOP_UP",
+                                "CASH_IN",
+                                "CASH_OUT",
+                                "TRANSFER",
+                                "AGENT_WITHDRAWAL",
+                                "COMMISSION_PAYOUT",
+                                "FLOAT_ISSUE",
+                                "SIGNUP_BONUS",
+                                "REVERSAL"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "COMPLETED",
+                                "PENDING",
+                                "FAILED",
+                                "REJECTED"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    },
+                    {
+                        "name": "party_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "from_date",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "to_date",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "text/csv; charset=UTF-8": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Transfer-Encoding": {
+                                "required": true,
+                                "schema": {
+                                    "type": "string",
+                                    "enum": [
+                                        "chunked"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     },
                     "403": {
                         "$ref": "#/components/responses/AuthorizationException"
@@ -2683,6 +4203,532 @@
                     },
                     "403": {
                         "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
+        "/v1/auth/totp": {
+            "get": {
+                "operationId": "security.totpStatus",
+                "summary": "Whether the staff member uses an authenticator app",
+                "tags": [
+                    "Security"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "enabled"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/auth/totp/setup": {
+            "post": {
+                "operationId": "security.totpSetup",
+                "summary": "Start authenticator-app setup: a new secret the app must prove before it is switched on",
+                "tags": [
+                    "Security"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Add this key to your authenticator app, then enter the 6-digit code it shows."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "secret": {
+                                                    "type": "string",
+                                                    "const": ""
+                                                },
+                                                "otpauth_uri": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "secret",
+                                                "otpauth_uri"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/auth/totp/confirm": {
+            "post": {
+                "operationId": "security.totpConfirm",
+                "summary": "Switch the authenticator app on once it produces a valid code",
+                "tags": [
+                    "Security"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "code"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Authenticator app turned on. Sign-in codes now come from the app instead of email."
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/auth/totp/disable": {
+            "post": {
+                "operationId": "security.totpDisable",
+                "summary": "Switch the authenticator app off. Needs the password and a current code",
+                "tags": [
+                    "Security"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "password": {
+                                        "type": "string"
+                                    },
+                                    "code": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "password",
+                                    "code"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Authenticator app turned off. Sign-in codes will be emailed again."
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/auth/sessions": {
+            "get": {
+                "operationId": "security.sessions",
+                "summary": "Sessions (access tokens) that are still valid, newest activity first",
+                "tags": [
+                    "Security"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "sessions": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "integer"
+                                                            },
+                                                            "panel": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "ip_address": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "user_agent": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "created_at": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ],
+                                                                "format": "date-time"
+                                                            },
+                                                            "last_used_at": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ],
+                                                                "format": "date-time"
+                                                            },
+                                                            "expires_at": {
+                                                                "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                ],
+                                                                "format": "date-time"
+                                                            },
+                                                            "current": {
+                                                                "type": "boolean"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "panel",
+                                                            "ip_address",
+                                                            "user_agent",
+                                                            "created_at",
+                                                            "last_used_at",
+                                                            "expires_at",
+                                                            "current"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "sessions"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/auth/sessions/{session}": {
+            "delete": {
+                "operationId": "security.revokeSession",
+                "summary": "Sign out one of the account's sessions (any device, including this one)",
+                "tags": [
+                    "Security"
+                ],
+                "parameters": [
+                    {
+                        "name": "session",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Session signed out."
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFoundHttpException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/auth/devices": {
+            "get": {
+                "operationId": "security.devices",
+                "summary": "Devices the account proved with an SMS code (device binding)",
+                "tags": [
+                    "Security"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "devices": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/TrustedDevice"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "devices"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/auth/devices/{device}": {
+            "delete": {
+                "operationId": "security.forgetDevice",
+                "summary": "Forget a trusted device; its next PIN login needs an SMS code again",
+                "tags": [
+                    "Security"
+                ],
+                "parameters": [
+                    {
+                        "name": "device",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Device removed."
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFoundHttpException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
                     }
                 }
             }
@@ -6034,7 +8080,7 @@
                         "type": "string"
                     },
                     "is_custom": {
-                        "type": "integer"
+                        "type": "boolean"
                     },
                     "daily_used": {
                         "type": "string"
@@ -6196,6 +8242,32 @@
                     "otp_code"
                 ],
                 "title": "ConfirmPhoneVerificationRequest"
+            },
+            "CreatePaymentRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "payer_phone": {
+                        "type": "string",
+                        "pattern": "^01[3-9]\\d{8}$"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "minimum": 10,
+                        "maximum": 25000
+                    },
+                    "note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    }
+                },
+                "required": [
+                    "payer_phone",
+                    "amount"
+                ],
+                "title": "CreatePaymentRequestRequest"
             },
             "FloatRequestResource": {
                 "type": "object",
@@ -6429,6 +8501,225 @@
                 ],
                 "title": "IssueFloatRequest"
             },
+            "KycSubmissionResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "user": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "phone_number": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "kyc_tier": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "phone_number",
+                            "kyc_tier"
+                        ]
+                    },
+                    "document_type": {
+                        "type": "string"
+                    },
+                    "document_number": {
+                        "type": "string"
+                    },
+                    "full_name": {
+                        "type": "string"
+                    },
+                    "date_of_birth": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "reviewed_by": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name"
+                        ]
+                    },
+                    "reviewed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "review_note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "user",
+                    "document_type",
+                    "document_number",
+                    "full_name",
+                    "date_of_birth",
+                    "status",
+                    "reviewed_by",
+                    "reviewed_at",
+                    "review_note",
+                    "created_at"
+                ],
+                "title": "KycSubmissionResource"
+            },
+            "PaymentRequestResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": [
+                            "incoming",
+                            "outgoing"
+                        ]
+                    },
+                    "requester": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "phone_number": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "phone_number"
+                        ]
+                    },
+                    "payer": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "phone_number": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "phone_number"
+                        ]
+                    },
+                    "amount": {
+                        "type": "number"
+                    },
+                    "note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "transaction_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "responded_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "direction",
+                    "requester",
+                    "payer",
+                    "amount",
+                    "note",
+                    "status",
+                    "transaction_id",
+                    "expires_at",
+                    "responded_at",
+                    "created_at"
+                ],
+                "title": "PaymentRequestResource"
+            },
             "Permission": {
                 "type": "string",
                 "enum": [
@@ -6440,6 +8731,7 @@
                     "users.grant_admin_access",
                     "users.verify_phone",
                     "users.view_activity",
+                    "users.manage_kyc",
                     "agents.approve",
                     "agents.suspend",
                     "agents.issue_float",
@@ -6450,6 +8742,7 @@
                     "wallets.unblock",
                     "transactions.view_any",
                     "transactions.reverse",
+                    "transactions.export",
                     "settings.update",
                     "settings.manage_session_timeouts",
                     "pin_reset.initiate",
@@ -6508,6 +8801,16 @@
                     },
                     "pin": {
                         "type": "string"
+                    },
+                    "device_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Stable random ID the app keeps for this device (device binding)",
+                        "pattern": "^[A-Za-z0-9\\-_]+$",
+                        "minLength": 16,
+                        "maxLength": 100
                     }
                 },
                 "required": [
@@ -6550,6 +8853,16 @@
                             "USER",
                             "AGENT"
                         ]
+                    },
+                    "device_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The device registering is trusted for later PIN logins (the phone was proved with a code)",
+                        "pattern": "^[A-Za-z0-9\\-_]+$",
+                        "minLength": 16,
+                        "maxLength": 100
                     },
                     "otp_code": {
                         "type": "string",
@@ -6873,6 +9186,55 @@
                     "slip"
                 ],
                 "title": "SubmitFloatRequestRequest"
+            },
+            "SubmitKycRequest": {
+                "type": "object",
+                "properties": {
+                    "document_type": {
+                        "type": "string",
+                        "enum": [
+                            "NID",
+                            "PASSPORT",
+                            "DRIVING_LICENSE"
+                        ]
+                    },
+                    "document_number": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9 ]+$",
+                        "minLength": 5,
+                        "maxLength": 30
+                    },
+                    "full_name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 255
+                    },
+                    "date_of_birth": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "front": {
+                        "type": "string",
+                        "format": "binary",
+                        "contentMediaType": "application/octet-stream",
+                        "description": "Maximum file size: 5120 kilobytes."
+                    },
+                    "back": {
+                        "type": "string",
+                        "format": "binary",
+                        "contentMediaType": "application/octet-stream",
+                        "description": "Maximum file size: 5120 kilobytes."
+                    }
+                },
+                "required": [
+                    "document_type",
+                    "document_number",
+                    "full_name",
+                    "date_of_birth",
+                    "front",
+                    "back"
+                ],
+                "title": "SubmitKycRequest"
             },
             "SuspendAgentRequest": {
                 "type": "object",
@@ -7211,6 +9573,64 @@
                 ],
                 "title": "TransferRequest"
             },
+            "TrustedDevice": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "user_id": {
+                        "type": "integer"
+                    },
+                    "device_hash": {
+                        "type": "string"
+                    },
+                    "label": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "ip_address": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "last_used_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "user_id",
+                    "device_hash",
+                    "label",
+                    "ip_address",
+                    "last_used_at",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "TrustedDevice"
+            },
             "UpdateAccountRequest": {
                 "type": "object",
                 "properties": {
@@ -7414,6 +9834,29 @@
                     "is_verified": {
                         "type": "boolean"
                     },
+                    "kyc": {
+                        "type": "object",
+                        "properties": {
+                            "tier": {
+                                "type": "string"
+                            },
+                            "label": {
+                                "type": "string"
+                            },
+                            "verified_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date-time"
+                            }
+                        },
+                        "required": [
+                            "tier",
+                            "label",
+                            "verified_at"
+                        ]
+                    },
                     "wallets": {
                         "type": "array",
                         "items": {
@@ -7458,6 +9901,7 @@
                     "avatar_url",
                     "is_active",
                     "is_verified",
+                    "kyc",
                     "created_at",
                     "updated_at"
                 ],
@@ -7710,6 +10154,25 @@
             },
             "AuthorizationException": {
                 "description": "Authorization error",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string",
+                                    "description": "Error overview."
+                                }
+                            },
+                            "required": [
+                                "message"
+                            ]
+                        }
+                    }
+                }
+            },
+            "NotFoundHttpException": {
+                "description": "Not found",
                 "content": {
                     "application/json": {
                         "schema": {

@@ -58,7 +58,12 @@ class KycController extends Controller
     {
         $submission = $this->kyc->submit(
             user: $request->user(),
-            data: $request->safe()->except(['front', 'back']),
+            data: [
+                'document_type' => (string) $request->validated('document_type'),
+                'document_number' => (string) $request->validated('document_number'),
+                'full_name' => (string) $request->validated('full_name'),
+                'date_of_birth' => (string) $request->validated('date_of_birth'),
+            ],
             front: $request->file('front'),
             back: $request->file('back'),
         );
@@ -174,17 +179,19 @@ class KycController extends Controller
      */
     private function tierLadder(): array
     {
-        return collect(config('kyc.tiers', []))
-            ->map(fn (array $tier, string $key): array => [
-                'tier' => $key,
-                'label' => $tier['label'],
-                'description' => $tier['description'],
+        $ladder = [];
+        foreach ((array) config('kyc.tiers', []) as $key => $tier) {
+            $ladder[] = [
+                'tier' => (string) $key,
+                'label' => (string) $tier['label'],
+                'description' => (string) $tier['description'],
                 'daily_cap' => (float) $tier['daily_cap'],
                 'monthly_cap' => (float) $tier['monthly_cap'],
                 'requires_verification' => (bool) $tier['requires_verification'],
-            ])
-            ->values()
-            ->all();
+            ];
+        }
+
+        return $ladder;
     }
 
     /**

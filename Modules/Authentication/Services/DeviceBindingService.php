@@ -70,7 +70,7 @@ class DeviceBindingService
     /**
      * Check the code for a challenge, trust the device, and return the user and panel to sign in to.
      *
-     * @return array{user: User, panel: string}
+     * @return array{user: User, panel: 'agent'|'user'}
      *
      * @throws InvalidOtpException
      */
@@ -81,7 +81,7 @@ class DeviceBindingService
             throw new InvalidOtpException('This sign-in request has expired. Please sign in again.');
         }
 
-        $user = User::findOrFail($challenge['user_id']);
+        $user = User::query()->findOrFail((int) $challenge['user_id']);
         $this->otpService->verify($user->id, self::OTP_PURPOSE, $code);
         Cache::forget($this->cacheKey($challengeId));
 
@@ -92,7 +92,7 @@ class DeviceBindingService
             );
         }
 
-        return ['user' => $user, 'panel' => $challenge['panel']];
+        return ['user' => $user, 'panel' => $challenge['panel'] === 'agent' ? 'agent' : 'user'];
     }
 
     /**
