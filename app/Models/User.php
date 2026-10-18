@@ -38,6 +38,7 @@ use Modules\Roles\Enums\RolePanel;
     'pin',
     'image',
     'address',
+    'receipt_emails_enabled',
 ])]
 #[Hidden(['password', 'pin'])]
 class User extends Authenticatable
@@ -61,6 +62,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'pin' => 'hashed',
             'password_changed_at' => 'datetime',
+            'receipt_emails_enabled' => 'boolean',
         ];
     }
 
@@ -186,6 +188,51 @@ class User extends Authenticatable
     public function routeNotificationForSms(): ?string
     {
         return $this->phone_number;
+    }
+
+    /**
+     * Whether transaction receipts should also be emailed (SMS receipts are always sent).
+     */
+    public function wantsReceiptEmails(): bool
+    {
+        return filled($this->email) && $this->receipt_emails_enabled !== false;
+    }
+
+    /**
+     * The name with the inside of each word hidden, e.g. "Rahul Kumar" -> "R***l K***r".
+     */
+    public function maskedName(): string
+    {
+        $words = preg_split('/\s+/', trim((string) $this->name), -1, PREG_SPLIT_NO_EMPTY);
+        if (empty($words)) {
+            return '***';
+        }
+
+        return implode(' ', array_map(function (string $word): string {
+            $length = mb_strlen($word);
+
+            return match (true) {
+                $length <= 1 => '*',
+                $length === 2 => mb_substr($word, 0, 1).'*',
+                default => mb_substr($word, 0, 1).str_repeat('*', $length - 2).mb_substr($word, -1, 1),
+            };
+        }, $words));
+    }
+
+    /**
+     * The phone number with its middle digits hidden, e.g. "01712345678" -> "017*****678".
+     */
+    public function maskedPhoneNumber(): ?string
+    {
+        $phone = (string) $this->phone_number;
+        if ($phone === '') {
+            return null;
+        }
+        if (strlen($phone) <= 6) {
+            return str_repeat('*', strlen($phone));
+        }
+
+        return substr($phone, 0, 3).str_repeat('*', strlen($phone) - 6).substr($phone, -3);
     }
 
     /**
