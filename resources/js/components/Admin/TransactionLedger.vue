@@ -73,7 +73,7 @@ const label = (value: string): string => value.replaceAll('_', ' ');
 const authStore = useAuthStore();
 const toast = useToastStore();
 const canReverse = computed(() => authStore.can('transactions.reverse'));
-const REVERSIBLE = ['TRANSFER', 'CASH_IN', 'CASH_OUT'];
+const REVERSIBLE = ['TRANSFER', 'CASH_IN', 'CASH_OUT', 'SIGNUP_BONUS'];
 
 const isParty = (tx: Transaction): boolean => {
     const me = authStore.user?.id;
@@ -81,7 +81,12 @@ const isParty = (tx: Transaction): boolean => {
 };
 
 const isReversible = (tx: Transaction): boolean =>
-    REVERSIBLE.includes(tx.type) && tx.status === 'COMPLETED' && !tx.reversed_by_transaction_id && !isParty(tx);
+    REVERSIBLE.includes(tx.type) &&
+    tx.status === 'COMPLETED' &&
+    !tx.reversed_by_transaction_id &&
+    !isParty(tx) &&
+    // A backfilled opening balance was always the customer's money
+    !(tx.type === 'SIGNUP_BONUS' && tx.meta?.backfilled === true);
 
 const reversing = ref<Transaction | null>(null);
 const reversalReason = ref('');
@@ -109,6 +114,9 @@ const reversalSummary = computed(() => {
             return { from: tx.parties?.recipient, takeBack: amount, to: tx.parties?.sender, giveBack: amount + fee };
         case 'CASH_IN':
             return { from: tx.parties?.recipient, takeBack: amount, to: tx.parties?.agent, giveBack: amount };
+        case 'SIGNUP_BONUS':
+            // Clawback: the money goes back to the platform
+            return { from: tx.parties?.recipient, takeBack: amount, to: null, giveBack: 0 };
         default:
             return { from: tx.parties?.agent, takeBack: amount + commission, to: tx.parties?.sender, giveBack: amount + fee };
     }
@@ -270,7 +278,10 @@ defineExpose({ refresh: () => fetchTransactions(pagination.value?.current_page ?
                     </div>
                     <div class="flex justify-between gap-4">
                         <dt class="text-zinc-500">Return to</dt>
-                        <dd class="text-right font-medium">{{ partyLabel(reversalSummary.to) }} · ৳{{ reversalSummary.giveBack.toFixed(2) }}</dd>
+                        <dd class="text-right font-medium">
+                            <template v-if="reversalSummary.to === null">Platform (bonus clawed back)</template>
+                            <template v-else>{{ partyLabel(reversalSummary.to) }} · ৳{{ reversalSummary.giveBack.toFixed(2) }}</template>
+                        </dd>
                     </div>
                 </dl>
                 <p class="text-xs text-zinc-500">

@@ -15,7 +15,7 @@ use Modules\Wallets\Exceptions\InsufficientBalanceException;
 use Modules\Wallets\Exceptions\WalletNotFoundException;
 
 /**
- * Undoes a completed transfer, cash-in or cash-out with a new REVERSAL row. The original is never edited.
+ * Undoes a completed transfer, cash-in, cash-out or signup bonus with a new REVERSAL row. The original is never edited.
  *
  * The reversal mirrors the original exactly:
  *
@@ -25,6 +25,10 @@ use Modules\Wallets\Exceptions\WalletNotFoundException;
  * | CASH_IN  | customer: amount                             | agent: amount                         |
  * | CASH_OUT | agent: amount + commission (also deducted    | customer: amount + fee                |
  * |          | from agent_info.total_commission)            |                                       |
+ * | SIGNUP_BONUS | customer: amount (clawback)              | nobody: the money returns to the platform |
+ *
+ * A signup bonus can only be clawed back within transactions.signup_bonus.clawback_days of being paid,
+ * and never a backfilled opening balance (that money was the customer's from the start).
  *
  * On the REVERSAL row the debited wallet is the sender slot and the credited wallet the recipient slot;
  * system_fee_amount is the fee refunded and agent_commission_amount the commission clawed back, so the
@@ -39,7 +43,7 @@ class ReversalService
     /**
      * @var list<string>
      */
-    public const array REVERSIBLE_TYPES = ['TRANSFER', 'CASH_IN', 'CASH_OUT'];
+    public const array REVERSIBLE_TYPES = ['TRANSFER', 'CASH_IN', 'CASH_OUT', 'SIGNUP_BONUS'];
 
     public function __construct(
         protected TransactionReceiptService $receipts,
@@ -62,15 +66,16 @@ class ReversalService
                 $this->assertReversible($locked);
 
                 $legs = $this->legs($locked);
-                $wallets = Wallet::whereKey([$legs['debit_wallet_id'], $legs['credit_wallet_id']])
+                $wallets = Wallet::whereKey(array_filter([$legs['debit_wallet_id'], $legs['credit_wallet_id']]))
                     ->orderBy('id')
                     ->lockForUpdate()
                     ->get()
                     ->keyBy('id');
 
+                // A clawed-back bonus has no credited wallet: the money goes back to the platform
                 $debitWallet = $wallets->get($legs['debit_wallet_id']);
-                $creditWallet = $wallets->get($legs['credit_wallet_id']);
-                if (! $debitWallet || ! $creditWallet) {
+                $creditWallet = $legs['credit_wallet_id'] !== null ? $wallets->get($legs['credit_wallet_id']) : null;
+                if (! $debitWallet || ($legs['credit_wallet_id'] !== null && ! $creditWallet)) {
                     throw new WalletNotFoundException;
                 }
 
@@ -84,8 +89,10 @@ class ReversalService
                 $debitWallet->balance = bcsub($debitBalance, $legs['debit_amount'], 2);
                 $debitWallet->save();
 
-                $creditWallet->balance = bcadd(number_format((float) $creditWallet->balance, 2, '.', ''), $legs['credit_amount'], 2);
-                $creditWallet->save();
+                if ($creditWallet) {
+                    $creditWallet->balance = bcadd(number_format((float) $creditWallet->balance, 2, '.', ''), $legs['credit_amount'], 2);
+                    $creditWallet->save();
+                }
 
                 if ($locked->type === 'CASH_OUT' && bccomp($legs['commission'], '0.00', 2) === 1) {
                     $this->clawBackCommission((int) $locked->agent_id, $legs['commission']);
@@ -109,10 +116,10 @@ class ReversalService
                     'status' => 'COMPLETED',
                     'idempotency_key' => "reversal:{$locked->id}",
                     'sender_wallet_balance_after' => $debitWallet->balance,
-                    'recipient_wallet_balance_after' => $creditWallet->balance,
+                    'recipient_wallet_balance_after' => $creditWallet?->balance,
                     'agent_wallet_balance_after' => null,
                     'sender_wallet_id' => $debitWallet->id,
-                    'recipient_wallet_id' => $creditWallet->id,
+                    'recipient_wallet_id' => $creditWallet?->id,
                     'agent_wallet_id' => null,
                     'meta' => [
                         'reverses' => ['id' => $locked->id, 'type' => $locked->type],
@@ -132,7 +139,7 @@ class ReversalService
                         'amount' => $reversal->amount,
                         'debited_wallet_id' => $debitWallet->id,
                         'debited' => $legs['debit_amount'],
-                        'credited_wallet_id' => $creditWallet->id,
+                        'credited_wallet_id' => $creditWallet?->id,
                         'credited' => $legs['credit_amount'],
                         'reason' => $reason,
                     ],
@@ -163,12 +170,23 @@ class ReversalService
         if (Transaction::where('reversed_transaction_id', $transaction->id)->exists()) {
             throw new TransactionAlreadyReversedException;
         }
+
+        if ($transaction->type === 'SIGNUP_BONUS') {
+            if (($transaction->meta['backfilled'] ?? false) === true) {
+                throw new TransactionNotReversibleException('A backfilled opening balance cannot be clawed back.');
+            }
+
+            $days = (int) config('transactions.signup_bonus.clawback_days', 30);
+            if ($transaction->created_at !== null && $transaction->created_at->lt(now()->subDays($days))) {
+                throw new TransactionNotReversibleException("Signup bonuses can only be clawed back within {$days} days.");
+            }
+        }
     }
 
     /**
      * Who gives money back, who gets it, and how much, for a locked original transaction.
      *
-     * @return array{debit_wallet_id: int, debit_user_id: int, debit_party: string, debit_amount: string, credit_wallet_id: int, credit_user_id: int, credit_amount: string, fee: string, commission: string}
+     * @return array{debit_wallet_id: int, debit_user_id: int, debit_party: string, debit_amount: string, credit_wallet_id: int|null, credit_user_id: int|null, credit_amount: string, fee: string, commission: string}
      */
     private function legs(Transaction $original): array
     {
@@ -196,6 +214,17 @@ class ReversalService
                 'credit_wallet_id' => (int) $original->agent_wallet_id,
                 'credit_user_id' => (int) $original->agent_id,
                 'credit_amount' => $amount,
+                'fee' => '0.00',
+                'commission' => '0.00',
+            ],
+            'SIGNUP_BONUS' => [
+                'debit_wallet_id' => (int) $original->recipient_wallet_id,
+                'debit_user_id' => (int) $original->recipient_id,
+                'debit_party' => 'customer',
+                'debit_amount' => $amount,
+                'credit_wallet_id' => null,
+                'credit_user_id' => null,
+                'credit_amount' => '0.00',
                 'fee' => '0.00',
                 'commission' => '0.00',
             ],

@@ -16,7 +16,7 @@ class TransactionNotReversibleException extends ApiException
      * Create a new exception instance.
      */
     public function __construct(
-        string $message = 'Only completed transfers, cash-ins and cash-outs can be reversed.',
+        string $message = 'Only completed transfers, cash-ins, cash-outs and signup bonuses can be reversed.',
         ?Throwable $previous = null,
     ) {
         parent::__construct(

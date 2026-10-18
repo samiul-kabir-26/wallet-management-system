@@ -1387,6 +1387,8 @@ There is no endpoint for this. The bonus is credited by `SignupBonusService::cre
 - **Settings:** `signup_bonus_enabled` and `signup_bonus_amount` (6.1). Nothing is credited when the bonus is disabled or the amount is 0. Defaults and the `source_label` come from `config/transactions.php` → `signup_bonus` (`SIGNUP_BONUS_*` env variables).
 - **Not credited:** wallets opened later through role assignment (3.9) and wallets that existed before this feature (they were never backfilled).
 - **Caps:** the bonus is incoming money and does not count toward daily or monthly caps.
+- **Daily budget:** `signup_bonus_daily_budget` (6.1/6.2; `0` = no limit, default `SIGNUP_BONUS_DAILY_BUDGET`). The budget setting row is locked while the bonus is checked, so concurrent registrations cannot overspend it. Once bonuses paid in the current business day (backfilled opening balances excluded) plus the next bonus would exceed it, the account still registers but gets no bonus, and a `SIGNUP_BONUS_WITHHELD` audit entry (`reason: DAILY_BUDGET_EXHAUSTED`, budget, paid today) is written against it. No partial bonus is paid. The settings response adds `signup_bonus_paid_today` and `signup_bonus_clawback_days`.
+- **Clawback:** staff reverse a bonus through 5.14 (`transactions.reverse`, maker-checker applies). The customer's wallet is debited and nothing is credited: the money returns to the platform (`recipient_*` is null on the `REVERSAL` row). Only within `SIGNUP_BONUS_CLAWBACK_DAYS` (default 30) of the bonus, never for a backfilled opening balance (409), and not if the customer already spent it (422). The customer's receipt reads "returned Tk 50.00 to bKash".
 
 ---
 
@@ -1424,6 +1426,7 @@ There is no endpoint for this. Every completed `TRANSFER`, `CASH_IN` and `CASH_O
   | `TRANSFER` | recipient: amount | sender: amount + fee |
   | `CASH_IN` | customer: amount | agent: amount |
   | `CASH_OUT` | agent: amount + commission (also deducted from `agent_info.total_commission`) | customer: amount + fee |
+  | `SIGNUP_BONUS` | customer: amount (within the clawback window; see 5.12) | nobody: the money returns to the platform |
 
   On the `REVERSAL` row the debited wallet is the sender slot and the credited wallet the recipient slot; `system_fee_amount` is the fee refunded and `agent_commission_amount` the commission clawed back.
 - **Rules:**
@@ -1436,7 +1439,7 @@ There is no endpoint for this. Every completed `TRANSFER`, `CASH_IN` and `CASH_O
   - Audited as `TRANSACTION_REVERSED` (against the original, with both wallets and amounts). Both parties get a receipt (5.13).
   - The ledger check (4.5) counts reversals: sender −(amount + commission), recipient +(amount + fee); commission totals subtract clawed-back commission.
 - **Admin panel:** "Reverse" button on eligible rows of the transaction ledger, with a summary of who gives back and who gets back how much.
-- **Error Codes:** 403 (missing permission, non-admin token, or own transaction), 409 (not a completed transfer/cash-in/cash-out, or already reversed), 422 (missing reason, or not enough balance to take back).
+- **Error Codes:** 403 (missing permission, non-admin token, or own transaction), 409 (not a completed transfer/cash-in/cash-out/signup bonus, already reversed, bonus outside the clawback window, or backfilled), 422 (missing reason, or not enough balance to take back).
 
 ---
 
