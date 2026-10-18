@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use Modules\Payments\Http\Controllers\SslCommerzCallbackController;
 
 // Public marketing & auth entry routes
 Route::inertia('/', 'Welcome')->name('home');
@@ -25,7 +27,17 @@ Route::prefix('user')->name('user.')->group(function (): void {
     Route::inertia('/transfer', 'User/Transfer')->name('transfer');
     Route::inertia('/history', 'User/History')->name('history');
     Route::inertia('/account', 'User/Account')->name('account');
+    Route::get('/top-up/{transaction}', fn (Request $request, int $transaction) => Inertia::render('User/TopUpResult', [
+        'transactionId' => $transaction,
+        'outcome' => in_array($request->query('outcome'), ['success', 'fail', 'cancel'], true) ? $request->query('outcome') : null,
+    ]))->whereNumber('transaction')->name('top-up.result');
 });
+
+// SSLCommerz sends the customer's browser back here with a cross-site POST (CSRF-exempt in bootstrap/app.php)
+Route::post('/payments/sslcommerz/{outcome}', [SslCommerzCallbackController::class, 'redirect'])
+    ->whereIn('outcome', ['success', 'fail', 'cancel'])
+    ->middleware('throttle:30,1')
+    ->name('payments.sslcommerz.redirect');
 
 // Agent panel routes
 Route::prefix('agent')->name('agent.')->group(function (): void {
@@ -44,6 +56,7 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         ->whereNumber('user')
         ->name('users.show');
     Route::inertia('/withdrawals', 'Admin/Withdrawals')->name('withdrawals');
+    Route::inertia('/top-ups', 'Admin/TopUps')->name('top-ups');
     Route::inertia('/roles', 'Admin/Roles')->name('roles');
     Route::inertia('/agents', 'Admin/Agents')->name('agents');
     Route::inertia('/wallets', 'Admin/Wallets')->name('wallets');

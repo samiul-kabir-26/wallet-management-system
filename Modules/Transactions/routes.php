@@ -16,11 +16,10 @@ Route::middleware(['auth:sanctum', 'ability:admin,agent,user', 'password.changed
     Route::get('/history', [TransactionController::class, 'history']);
 });
 
-// USER endpoints: caps, top-up, cash-out, transfer
+// USER endpoints: caps, cash-out, transfer (top-up lives in the Payments module)
 Route::middleware(['auth:sanctum', 'ability:user', 'password.changed'])->group(function (): void {
     Route::get('/caps', [TransactionController::class, 'myCaps']);
     Route::get('/quote', [TransactionController::class, 'quote']);
-    Route::post('/top-up', [TransactionController::class, 'topUp']);
     Route::post('/cash-out', [TransactionController::class, 'cashOut']);
     Route::post('/transfer', [TransactionController::class, 'transfer']);
 });

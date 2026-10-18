@@ -25,11 +25,11 @@ Customers (`USER`) and Agents (`AGENT`) authenticate using their **phone number*
 1. Client submits `POST /api/v1/auth/register` with `name`, `phone_number` (valid BD prefix `013`-`019`), `pin`, `pin_confirmation`, and `role`.
 2. PIN is hashed using `bcrypt` via Laravel's `Hash::make()` with auto-generated salts.
 3. If `role` is `USER`:
-   - An initial wallet with 50.00 BDT signup bonus is provisioned.
+   - A wallet is provisioned at 0.00 BDT. If the signup bonus is enabled in System Settings, its amount (default 50.00 BDT) is credited as a `SIGNUP_BONUS` transaction in the same database transaction.
    - Standard transaction caps are created (10,000 BDT daily, 50,000 BDT monthly).
    - An access token with ability `['user']` is returned.
 4. If `role` is `AGENT`:
-   - An initial wallet (0.00 BDT) and a pending `AgentInfo` record are provisioned with status `PENDING`.
+   - An agent wallet and a pending `AgentInfo` record are provisioned with status `PENDING`. The agent wallet receives the signup bonus the same way.
    - An access token with ability `['agent']` is returned, but transactional routes remain blocked until approved by an administrator.
 
 ### 2.2 PIN Login & Anti-Timing Defense

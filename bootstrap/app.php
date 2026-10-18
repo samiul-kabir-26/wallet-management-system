@@ -28,6 +28,11 @@ return Application::configure(basePath: dirname(__DIR__))
             AddLinkHeadersForPreloadedAssets::class,
         ]);
 
+        // SSLCommerz posts the returning customer from its own domain, so there is no CSRF token to check
+        $middleware->validateCsrfTokens(except: [
+            'payments/sslcommerz/*',
+        ]);
+
         $middleware->alias([
             'abilities' => CheckAbilities::class,
             'ability' => CheckForAnyAbility::class,

@@ -98,7 +98,7 @@ test('transaction service throws InvalidAmountException when amount is zero or n
     expect(fn () => $service->transfer($sender, $recipient->phone_number, $zeroOrNegative, 'tx-srv-inv-key', '12345'))
         ->toThrow(InvalidAmountException::class);
 
-    expect(fn () => $service->topUp($sender, $zeroOrNegative, 'topup-srv-inv-key', '12345'))
+    expect(fn () => $service->topUp($sender, $zeroOrNegative, 'topup-srv-inv-key'))
         ->toThrow(InvalidAmountException::class);
 })->with([
     'zero int' => 0,

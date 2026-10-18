@@ -71,7 +71,7 @@ All API responses follow a consistent JSON envelope structure.
 ### 2.1 Public Registration (Step 2)
 - **Method & Route:** `POST /api/v1/auth/register`
 - **Access:** Public (Rate limited: 5 req/min per IP)
-- **Description:** Registers a new `USER` or `AGENT`. For users, provisions a wallet (50.00 BDT bonus) and caps. For agents, provisions a pending profile. Requires the code from 2.0 for this exact `phone_number`; the account starts with `is_verified = true`. A wrong or expired code returns 401 and nothing is created; attempts count toward the code's lockout.
+- **Description:** Registers a new `USER` or `AGENT`. For users, provisions a wallet and caps. For agents, provisions a pending profile and an agent wallet. Wallets open at 0.00; when the signup bonus is enabled (6.1), its amount (default 50.00 BDT) is then credited as a `SIGNUP_BONUS` transaction in the same database transaction (see 5.12). Requires the code from 2.0 for this exact `phone_number`; the account starts with `is_verified = true`. A wrong or expired code returns 401 and nothing is created; attempts count toward the code's lockout.
 - **Request Body:**
   ```json
   {
@@ -523,7 +523,9 @@ All API responses follow a consistent JSON envelope structure.
 ### 3.1 List All Users (Admin Audit)
 - **Method & Route:** `GET /api/v1/users/all-users`
 - **Access:** Admin only (`auth:sanctum`, `ability:admin`, `password.changed`)
-- **Query Params:** `role`, `is_active`, `is_verified`, `per_page` (1-100), `page`
+- **Query Params:** `search`, `panel`, `role`, `is_active`, `is_verified`, `per_page` (1-100), `page`
+  - `search` (max 100 characters) matches name, email or phone number, or the user ID written as `#123`. LIKE wildcards (`%`, `_`) are matched literally. Deleted users never match.
+  - `panel` (`admin`, `agent`, `user`) returns users holding at least one role on that panel, so custom staff roles count as `admin`.
 - **Response (200 OK):**
   ```json
   {
@@ -557,7 +559,8 @@ All API responses follow a consistent JSON envelope structure.
 
 ### 3.2 Admin Register User or Staff
 - **Method & Route:** `POST /api/v1/users/register`
-- **Access:** Admin only (`ability:admin`, `password.changed`). Registering `ADMIN` requires `SUPER_ADMIN` role.
+- **Access:** Admin only (`ability:admin`, `password.changed`). Registering `ADMIN` requires `SUPER_ADMIN` role. `SUPER_ADMIN` can never be registered through this endpoint, even by a `SUPER_ADMIN` (422, `role.not_in`).
+- **Signup bonus:** `USER` and `AGENT` registrations receive the signup bonus exactly like self-registration (5.12).
 - **Request Body:**
   ```json
   {
@@ -652,8 +655,9 @@ All API responses follow a consistent JSON envelope structure.
 
 ### 3.5 Update User Profile
 - **Method & Route:** `PATCH /api/v1/users/{user}`
-- **Access:** Authenticated caller updating self, or Admin (`UserPolicy`)
-- **Notes:** `email`, `phone_number`, `password`, `role` and `image` are prohibited. Avatars are uploaded through 3.13.
+- **Access:** Authenticated caller updating self, or staff holding `users.update` (`UserPolicy::update`). Only a `SUPER_ADMIN` may edit a `SUPER_ADMIN` account.
+- **Notes:** `email`, `phone_number`, `password`, `role` and `image` are prohibited. Email and phone are login/recovery identifiers, so staff cannot change them here. Avatars are uploaded through 3.13.
+- **Audit:** when staff edit someone else's profile and at least one field actually changes, a `PROFILE_UPDATED` audit entry is written against the user with `metadata.fields` and `metadata.changes.{field}.{before,after}`. Self-edits and submissions that change nothing are not audited.
 - **Request Body:**
   ```json
   {
@@ -685,9 +689,11 @@ All API responses follow a consistent JSON envelope structure.
 - **Request Body:**
   ```json
   {
-    "email": "promoted.staff@wallet.local"
+    "email": "promoted.staff@wallet.local",
+    "role": "ADMIN"
   }
   ```
+  `role` must be an admin-panel role. `SUPER_ADMIN` is rejected with 422 (`role.not_in`).
 - **Response (200 OK):**
   ```json
   {
@@ -698,7 +704,7 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 403 (Caller not SUPER_ADMIN), 422 (Phone unverified or email collision).
+- **Error Codes:** 403 (Caller not SUPER_ADMIN), 422 (Phone unverified, email collision, or `role` is `SUPER_ADMIN`).
 
 ---
 
@@ -736,7 +742,7 @@ All API responses follow a consistent JSON envelope structure.
 ### 3.8 Suspend Approved Agent
 - **Method & Route:** `PATCH /api/v1/users/{user}/suspend-agent`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
-- **Request Body:**
+- **Request Body:** `reason` is required, 3–500 characters.
   ```json
   {
     "reason": "Suspicious counter transaction patterns"
@@ -757,7 +763,7 @@ All API responses follow a consistent JSON envelope structure.
     }
   }
   ```
-- **Error Codes:** 404 (User is not an agent), 409 (Agent is not in APPROVED status).
+- **Error Codes:** 404 (User is not an agent), 409 (Agent is not in APPROVED status), 422 (Missing or invalid `reason`).
 
 ---
 
@@ -847,6 +853,25 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 
 ---
 
+### 3.14 Change Agent Commission Rate
+- **Method & Route:** `PATCH /api/v1/users/{user}/commission-rate`
+- **Access:** Admin only (`ability:admin`, `password.changed`) **and** `agents.update_commission` (`UserPolicy::updateCommission`). ADMIN holds it by default. Staff cannot change their own rate (403).
+- **Request Body:** `commission_rate` is required, between 0 and 1, at most 4 decimal places (`0.0125` = 1.25%).
+  ```json
+  {
+    "commission_rate": 0.015
+  }
+  ```
+- **Response (200 OK):** `{ "success": true, "message": "Commission rate updated successfully", "data": { "agent": { ... } } }`, the same agent shape as 3.7.
+- **Behavior & Rules:**
+  - Locks the `agent_info` row inside a database transaction.
+  - Applies to approved and suspended agents. A pending agent's rate is set when they are approved (3.7), so pending agents are refused with 409.
+  - Only future cash-outs use the new rate. Past transactions keep the `agent_commission_rate` they were charged at.
+  - Writes an `AGENT_COMMISSION_UPDATED` audit entry with `previous_rate` and `new_rate`. Submitting the current rate is a no-op and writes no audit entry.
+- **Error Codes:** 403 (Missing permission, non-admin token, or own account), 404 (User is not an agent), 409 (Agent is pending approval), 422 (Validation error).
+
+---
+
 ## 4. Wallet Management Endpoints
 
 ### 4.1 View Current Wallet
@@ -926,42 +951,79 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 
 ---
 
+### 4.5 Ledger Integrity Check (operations, no endpoint)
+`php artisan wallets:verify-ledger` recomputes every wallet balance from the `transactions` table and compares it with `wallets.balance`. It also compares each agent's `agent_info.total_commission` with the commission on their completed cash-outs. It never changes data.
+- **Rules:** see the table in `Modules/Wallets/Services/LedgerIntegrityService.php`. In short: only rows whose status applied the movement count (`COMPLETED`, plus `PENDING` agent withdrawals, whose amount is already held); pending and failed gateway top-ups count as zero; `COMMISSION_PAYOUT` is a memo row because `CASH_OUT` already credits the commission.
+- **Snapshot:** all reads run in one database transaction, so a transaction committing mid-check cannot produce a false mismatch.
+- **Legacy wallets:** wallets opened before the signup bonus became a ledger row got 50.00 from a column default. A difference of exactly `transactions.ledger_check.legacy_opening_balance` on a wallet with no `SIGNUP_BONUS` row is classified `LEGACY_OPENING_BALANCE` and logged as a warning, not a failure (IMPROVEMENTS.md proposal 5 backfills them).
+- **Options:** `--wallet=ID` (repeatable) limits the wallet check and skips the commission check; `--json` prints the full report.
+- **Result:** exit code 0 when consistent. Any `UNEXPLAINED` wallet difference or commission difference exits 1 and writes a `critical` log entry with the details.
+- **Schedule:** daily at 02:00 business time (`routes/console.php`).
+
+---
+
 ## 5. Financial Transaction Endpoints
 
-### 5.1 Balance Top-Up
+### 5.1 Balance Top-Up (SSLCommerz)
 - **Method & Route:** `POST /api/v1/transactions/top-up`
-- **Access:** User only (`ability:user`, `password.changed`)
+- **Access:** User only (`ability:user`, `password.changed`). **No PIN:** a top-up only brings money in, and the payer authenticates at the gateway. Top-ups never touch the PIN lockout counter.
 - **Request Body:**
   ```json
   {
-    "amount": 5000.00,
-    "pin": "12345",
+    "amount": 500.00,
     "idempotency_key": "topup-uuid-1234",
-    "description": "Bank transfer deposit"
+    "description": "Card top-up"
   }
   ```
-- **Response (201 Created):**
+  `amount` is limited by `config/transactions.php` → `limits.top_up` (default 10–50,000, 2 decimals).
+- **Response (201 Created):** the top-up is recorded as `PENDING` and nothing is credited yet. Send the customer to `payment.redirect_url` (the SSLCommerz checkout).
   ```json
   {
     "success": true,
-    "message": "Top-up completed successfully.",
+    "message": "Continue to the payment page to complete your top-up.",
     "data": {
       "transaction": {
         "id": 101,
-        "user_id": 10,
         "type": "TOP_UP",
-        "amount": 5000.00,
-        "status": "COMPLETED",
-        "idempotency_key": "topup-uuid-1234",
-        "recipient_wallet_balance_after": 5050.00
+        "amount": 500.00,
+        "status": "PENDING",
+        "external_reference": "TOPUP-01JABCDXYZ...",
+        "recipient_wallet_balance_after": null
+      },
+      "payment": {
+        "gateway": "sslcommerz",
+        "redirect_url": "https://sandbox.sslcommerz.com/EasyCheckOut/testcde..."
       }
     }
   }
   ```
-- **Behavior & Rules:**
-  - **Simulation:** `TOP_UP` stands in for a bank or card payment gateway and creates new e-money. In a production system the credit would only be applied after a verified gateway callback.
-  - Requires the user's transaction PIN (shared lockout counter with PIN login).
-- **Error Codes:** 403 (Wallet blocked), 422 (Validation error or wrong PIN), 429 (PIN locked out).
+  Replaying the same `idempotency_key` returns the same transaction and checkout URL. `redirect_url` is `null` once the top-up is no longer awaiting payment.
+- **How the wallet gets credited:**
+  1. SSLCommerz notifies `POST /api/v1/payments/sslcommerz/ipn` (server to server) and sends the customer's browser back with a POST to `/payments/sslcommerz/{success|fail|cancel}` (web, CSRF-exempt), which redirects to `/user/top-up/{id}`.
+  2. Neither request is trusted. Each one only names the `tran_id` (stored in `external_reference`). The server then asks SSLCommerz itself: the validation API for a `val_id`, or the transaction query API by `tran_id`.
+  3. The wallet is credited only when SSLCommerz reports `VALID`/`VALIDATED` for this `tran_id` **and** the paid amount and currency match the stored row. The row is locked while it is settled, so the IPN and the redirect can arrive in any order, any number of times, and credit once. Validated payment details (`val_id`, `bank_tran_id`, masked card, risk level) are kept in `meta.payment`.
+  4. `FAILED` is set only when SSLCommerz confirms nothing was paid (`FAILED`, `CANCELLED`, `EXPIRED`, `UNATTEMPTED`, or `INVALID` for a tran_id it never saw). An open checkout (`PROCESSING`) stays `PENDING`. A payment confirmed after an earlier failure is still credited.
+  5. **Held for staff** (status stays `PENDING`, `meta.on_hold.reason`, audited once as `TOP_UP_ON_HOLD`): `AMOUNT_MISMATCH`, `HIGH_RISK` (SSLCommerz `risk_level = 1`), `WALLET_BLOCKED` (blocked while the customer was paying). Paid money is never marked `FAILED`.
+- **Configuration:** `config/payments.php`. `SSLCOMMERZ_STORE_ID` / `SSLCOMMERZ_STORE_PASSWORD` default to the public sandbox store (`testbox` / `qwerty`), `SSLCOMMERZ_SANDBOX=true`. `TOP_UP_GATEWAY=simulated` credits instantly with no payment (used by the test suite); it is ignored in production.
+- **Sandbox test payment:** card `4111 1111 1111 1111`, any future expiry (e.g. 12/26), CVV `111`; mobile banking OTP `111111` or `123456`.
+- **Error Codes:** 403 (Wallet blocked, or not a user token), 409 (Idempotency key reused with different parameters), 422 (Validation error), 502 (SSLCommerz refused or could not be reached; the top-up is marked `FAILED`).
+
+#### 5.1a Re-check a Top-Up
+- **Method & Route:** `POST /api/v1/transactions/top-up/{transaction}/refresh`
+- **Access:** User only, own top-ups only (404 otherwise). Throttled 10/min.
+- **Description:** asks SSLCommerz for the latest state of the top-up (same rules as above) and returns `{ data: { transaction } }`. The result page calls it once on load and from its "Check again" button, which matters in local development where SSLCommerz cannot reach the IPN URL.
+
+#### 5.1b Top-Up Reconciliation
+IPNs get lost and customers close the tab, so unfinished top-ups are swept by a scheduled job (`ReconcilePendingTopUps`, every 10 minutes; run it by hand with `php artisan payments:reconcile-top-ups`, which exits 1 if the gateway could not be reached).
+- **Which rows:** `PENDING` gateway top-ups older than `payments.reconciliation.check_after_minutes` (default 10). Rows held for `WALLET_BLOCKED` are included, so they are credited automatically once the wallet is unblocked. Rows held for `AMOUNT_MISMATCH` or `HIGH_RISK` are left for staff.
+- **What happens:** each row is looked up by `tran_id` and settled exactly like a callback (paid → credited once, confirmed unpaid → `FAILED` with `meta.failure.reason = NOT_PAID`).
+- **Expiry:** a row the gateway still has no payment for after `payments.reconciliation.expire_after_hours` (default 24) becomes `FAILED` with reason `EXPIRED`. Nothing is expired when the gateway cannot be reached. A payment confirmed after expiry is still credited.
+
+#### 5.1c Staff: Unfinished Top-Ups
+- **List:** `GET /api/v1/payments/admin/top-ups?state=all|awaiting_payment|on_hold` (admin token **and** `transactions.view_any`). Paginated `PENDING` gateway top-ups, oldest first, in the admin ledger item shape (with `parties` and `meta.on_hold`).
+- **Check now:** `POST /api/v1/payments/admin/top-ups/{transaction}/reconcile` (same access, throttled 30/min). Runs the reconciliation rules for one top-up immediately and returns `{ data: { transaction } }`. Audited as `TOP_UP_RECONCILED` with the status and hold reason before and after. 404 for anything that is not a gateway top-up.
+- **Admin panel:** "Pending Top-ups" (`/admin/top-ups`).
+- **Not included yet:** releasing or refunding a held payment needs a staff decision and belongs with reversals and maker-checker (IMPROVEMENTS.md 8 and 9).
 
 ---
 
@@ -1161,7 +1223,7 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 ### 5.6 User Transaction History
 - **Method & Route:** `GET /api/v1/transactions/history`
 - **Access:** Authenticated (`ability:admin,agent,user`, `password.changed`)
-- **Query Params:** `type`, `status`, `from_date`, `to_date`, `per_page`, `page`
+- **Query Params:** `type` (`TOP_UP`, `CASH_IN`, `CASH_OUT`, `TRANSFER`, `AGENT_WITHDRAWAL`, `COMMISSION_PAYOUT`, `FLOAT_ISSUE`, `SIGNUP_BONUS`), `status`, `from_date`, `to_date`, `per_page`, `page`
 - **Description:** Paginated transactions list scoped directly to the authenticated caller's active wallet panel (determined by token ability: `user` -> USER wallet, `agent` -> AGENT wallet; admins view unscoped history).
 - **Response (200 OK):**
   ```json
@@ -1239,7 +1301,7 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 ### 5.8 Admin Audit (All System Transactions)
 - **Method & Route:** `GET /api/v1/transactions/admin/all`
 - **Access:** Admin only (`ability:admin`, `password.changed`)
-- **Query Params:** `type`, `status` (`COMPLETED`, `PENDING`, `FAILED`, `REJECTED`), `search`, `party_id`, `user_id`, `sender_id`, `recipient_id`, `agent_id`, `from_date`, `to_date`, `per_page`, `page`
+- **Query Params:** `type` (any value listed in 5.6), `status` (`COMPLETED`, `PENDING`, `FAILED`, `REJECTED`), `search`, `party_id`, `user_id`, `sender_id`, `recipient_id`, `agent_id`, `from_date`, `to_date`, `per_page`, `page`
   - `search` matches the name, phone or email of any party, the `external_reference`, or the transaction ID (`123` or `#123`). LIKE wildcards are matched literally.
   - `party_id` returns transactions where that user is the user, sender, recipient or agent.
 - **Response (200 OK):** Full paginated system transactions list. For staff each item includes `parties: { sender, recipient, agent }` with `{ id, name, phone_number }`.
@@ -1302,6 +1364,17 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 
 ---
 
+### 5.12 Signup Bonus (`SIGNUP_BONUS`)
+There is no endpoint for this. The bonus is credited by `SignupBonusService::credit()` during registration (2.1 and 3.2).
+- **Ledger:** wallets open at 0.00 and the bonus is written as a `COMPLETED` `SIGNUP_BONUS` transaction with no sender: `recipient_id` and `initiated_by` are the new user, `recipient_wallet_balance_after` is set, fee and commission are zero. `meta` is `{ "source": "SYSTEM", "source_label": "bKash", "wallet_kind": "USER" | "AGENT" }` and the description is `Signup bonus from bKash`. A wallet's balance therefore always equals the sum of its ledger rows.
+- **Atomicity:** it runs inside the registration database transaction with the wallet row locked, so the account and its bonus commit or roll back together.
+- **One per wallet:** the idempotency key `signup-bonus:{wallet_id}` (unique per initiator) means a second call returns the original transaction instead of paying again.
+- **Settings:** `signup_bonus_enabled` and `signup_bonus_amount` (6.1). Nothing is credited when the bonus is disabled or the amount is 0. Defaults and the `source_label` come from `config/transactions.php` → `signup_bonus` (`SIGNUP_BONUS_*` env variables).
+- **Not credited:** wallets opened later through role assignment (3.9) and wallets that existed before this feature (they were never backfilled).
+- **Caps:** the bonus is incoming money and does not count toward daily or monthly caps.
+
+---
+
 ## 6. System Settings Endpoints
 
 ### 6.1 View Global System Settings
@@ -1314,24 +1387,34 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
     "data": {
       "settings": {
         "system_fee_rate": 0.05,
-        "agent_commission_rate": 0.02
+        "agent_commission_rate": 0.02,
+        "signup_bonus_enabled": true,
+        "signup_bonus_amount": 50
       }
     }
   }
   ```
+- **Note:** `signup_bonus_enabled` and `signup_bonus_amount` always report the values in force. When staff have not stored an override, they come from `config/transactions.php` → `signup_bonus`.
 
 ---
 
 ### 6.2 Update Global System Settings
 - **Method & Route:** `PATCH /api/v1/system-settings`
-- **Access:** Admin only (`ability:admin`)
-- **Request Body:**
+- **Access:** Admin only (`ability:admin`) **and** `settings.update`
+- **Request Body:** send at least one of the keys below (422 `settings` otherwise). The legacy aliases `transactionFee` and `agentCommission` are also accepted.
   ```json
   {
     "system_fee_rate": 0.04,
-    "agent_commission_rate": 0.015
+    "agent_commission_rate": 0.015,
+    "signup_bonus_enabled": true,
+    "signup_bonus_amount": 75.00
   }
   ```
+  | Key | Rule |
+  |---|---|
+  | `system_fee_rate`, `agent_commission_rate` | number, 0 to 1 |
+  | `signup_bonus_enabled` | boolean |
+  | `signup_bonus_amount` | number, 0 to `signup_bonus.max_amount` (default 1000), at most 2 decimal places |
 - **Response (200 OK):**
   ```json
   {
@@ -1345,7 +1428,8 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
     }
   }
   ```
-- **Error Codes:** 403 (Non-admin token), 422 (Rate must be between 0 and 1).
+- **Error Codes:** 403 (Non-admin token or missing `settings.update`), 422 (Rate outside 0–1, invalid bonus amount, or no setting provided).
+- **Effect:** bonus changes apply to registrations from that moment on. Wallets that already received a bonus are not adjusted.
 - **Audit:** each update writes a `SETTINGS_UPDATED` audit entry with the before and after value of every changed key.
 
 ---
@@ -1365,7 +1449,7 @@ Granular permission catalog and dynamic admin-panel role management. Access requ
 ### 7.1 List Permissions Catalog
 - **Method & Route:** `GET /api/v1/permissions`
 - **Access:** Authenticated admin staff (`roles.view`)
-- **Description:** Returns the complete 16-permission catalog flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
+- **Description:** Returns the complete permission catalog (22 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
 - **Response (200 OK):**
   ```json
   {

@@ -10,6 +10,7 @@ Route::prefix('v1/wallets')->group(base_path('Modules/Wallets/routes.php'));
 Route::prefix('v1/transactions')->group(base_path('Modules/Transactions/routes.php'));
 Route::prefix('v1/system-settings')->group(base_path('Modules/SystemSettings/routes.php'));
 Route::prefix('v1/roles')->group(base_path('Modules/Roles/routes.php'));
+Route::prefix('v1')->group(base_path('Modules/Payments/routes.php'));
 
 // Users & Permissions endpoints with admin protection
 Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(function (): void {

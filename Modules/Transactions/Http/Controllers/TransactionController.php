@@ -14,7 +14,6 @@ use Modules\Transactions\Http\Requests\ApproveWithdrawalRequest;
 use Modules\Transactions\Http\Requests\CashOutRequest;
 use Modules\Transactions\Http\Requests\IssueFloatRequest;
 use Modules\Transactions\Http\Requests\RejectWithdrawalRequest;
-use Modules\Transactions\Http\Requests\TopUpRequest;
 use Modules\Transactions\Http\Requests\TransferRequest;
 use Modules\Transactions\Resources\CapResource;
 use Modules\Transactions\Resources\TransactionResource;
@@ -78,28 +77,6 @@ class TransactionController extends Controller
                 ],
             ],
         ]);
-    }
-
-    /**
-     * Top-up the authenticated user's wallet.
-     */
-    public function topUp(TopUpRequest $request): JsonResponse
-    {
-        $transaction = $this->transactionService->topUp(
-            user: $request->user(),
-            amount: $request->validated('amount'),
-            idempotencyKey: $request->validated('idempotency_key'),
-            pin: (string) $request->validated('pin'),
-            description: $request->validated('description'),
-        );
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Top-up completed successfully.',
-            'data' => [
-                'transaction' => new TransactionResource($transaction),
-            ],
-        ], 201);
     }
 
     /**
