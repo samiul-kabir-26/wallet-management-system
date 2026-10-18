@@ -1472,6 +1472,23 @@ Agents ask for e-money float against a bank deposit instead of waiting for staff
 
 ---
 
+### 5.16 Request Money
+Customers ask each other for money (`ability:user`, `password.changed`, customer role).
+
+| Method & Route | Body / Notes |
+|---|---|
+| `POST /api/v1/transactions/requests` | `payer_phone` (`01[3-9]XXXXXXXX`), `amount` (transfer limits), `note?` (max 255). The payer must be another customer (404 unknown number, 422 self or non-customer). At most `max_pending_per_payer` (3) open requests to the same payer and `max_pending_total` (20) overall (422). Throttled 10/min. 201 `{ data: { payment_request } }`; the payer gets an SMS. |
+| `GET /api/v1/transactions/requests` | `direction` (`incoming` = asked of me, `outgoing` = sent by me; both when omitted), `status` (`PENDING`, `PAID`, `DECLINED`, `CANCELLED`, `EXPIRED`), paginated. Each item: `id, direction, requester, payer` (masked name, phone), `amount, note, status, transaction_id, expires_at, responded_at, created_at`. |
+| `POST /api/v1/transactions/requests/{id}/pay` | `pin`, `idempotency_key`. Payer only (403). Runs the normal transfer (5.2) to the requester — PIN, caps, balance, locks, receipts — inside the transaction that marks the request `PAID`, so a failed transfer leaves it open. The transfer's `meta.payment_request_id` and the request's unique `transaction_id` link the two. The requester gets an SMS. |
+| `POST /api/v1/transactions/requests/{id}/decline` | Payer only. SMS to the requester. |
+| `POST /api/v1/transactions/requests/{id}/cancel` | Requester only. |
+
+- Anyone other than the two parties gets 404. A request that is no longer `PENDING` returns 409.
+- Requests expire after `PAYMENT_REQUEST_EXPIRE_DAYS` (7). Paying an expired request is refused immediately (409 "This payment request has expired."); an hourly scheduled task marks them `EXPIRED`.
+- Panel: customer "Request Money" page.
+
+---
+
 ## 6. System Settings Endpoints
 
 ### 6.1 View Global System Settings
