@@ -8,6 +8,8 @@ use App\Models\User;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Modules\Approvals\Resources\ApprovalRequestResource;
+use Modules\Approvals\Services\ApprovalService;
 use Modules\Transactions\Http\Requests\AgentCashInRequest;
 use Modules\Transactions\Http\Requests\AgentWithdrawalRequest;
 use Modules\Transactions\Http\Requests\ApproveWithdrawalRequest;
@@ -280,7 +282,7 @@ class TransactionController extends Controller
     /**
      * Issue e-money float to an approved agent by an authorized admin.
      */
-    public function adminIssueFloat(IssueFloatRequest $request): JsonResponse
+    public function adminIssueFloat(IssueFloatRequest $request, ApprovalService $approvals): JsonResponse
     {
         $agentId = $request->validated('agent_id');
         if (! $agentId && $request->filled('agent_phone')) {
@@ -291,6 +293,14 @@ class TransactionController extends Controller
             $agent = User::where('id', $agentId)
                 ->where('is_deleted', false)
                 ->firstOrFail();
+        }
+
+        if ($approvals->isRequired()) {
+            return ApprovalRequestResource::pendingResponse($approvals->requestFloatIssue($request->user(), $agent, [
+                'amount' => $request->validated('amount'),
+                'external_reference' => $request->validated('external_reference'),
+                'description' => $request->validated('description'),
+            ]));
         }
 
         $transaction = $this->transactionService->issueFloat(
@@ -355,8 +365,14 @@ class TransactionController extends Controller
     /**
      * Reverse a completed transfer, cash-in or cash-out with a new REVERSAL transaction.
      */
-    public function reverse(ReverseTransactionRequest $request, Transaction $transaction, ReversalService $reversals): JsonResponse
+    public function reverse(ReverseTransactionRequest $request, Transaction $transaction, ReversalService $reversals, ApprovalService $approvals): JsonResponse
     {
+        if ($approvals->isRequired()) {
+            return ApprovalRequestResource::pendingResponse(
+                $approvals->requestReversal($request->user(), $transaction, $request->validated('reason'))
+            );
+        }
+
         $reversal = $reversals->reverse(
             original: $transaction,
             staff: $request->user(),

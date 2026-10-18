@@ -64,13 +64,17 @@ const fetchSettings = async () => {
 const handleSaveSettings = handleSubmit(async (formValues) => {
     saving.value = true;
     try {
-        await api.patch('/system-settings', {
+        const res = await api.patch('/system-settings', {
             system_fee_rate: Number(formValues.feeRate),
             agent_commission_rate: Number(formValues.commissionRate),
             signup_bonus_enabled: bonusEnabled.value,
             signup_bonus_amount: Number(formValues.bonusAmount),
         });
-        toast.success('System settings updated successfully!');
+        if (res.status === 202) {
+            toast.info('Changes submitted for approval. They take effect once another staff member approves them.');
+        } else {
+            toast.success(res.data.message ?? 'System settings updated successfully!');
+        }
         await fetchSettings();
     } catch (err: unknown) {
         const { message, fieldErrors } = parseApiError(err, 'Failed to update system settings.');
