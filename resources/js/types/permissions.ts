@@ -17,6 +17,7 @@ export const PERMISSIONS = [
     'wallets.unblock',
     'transactions.view_any',
     'transactions.reverse',
+    'transactions.export',
     'settings.update',
     'settings.manage_session_timeouts',
     'pin_reset.initiate',

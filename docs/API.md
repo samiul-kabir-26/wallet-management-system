@@ -1472,6 +1472,24 @@ Agents ask for e-money float against a bank deposit instead of waiting for staff
 
 ---
 
+### 5.17 Reports: Dashboard Metrics and Ledger Export
+**Metrics:** `GET /api/v1/reports/overview?days=14` (admin token **and** `transactions.view_any`; `days` 1–90).
+- Groups `COMPLETED` transactions by business day (`transactions.business_timezone`, fixed offset, correct for Asia/Dhaka which has no daylight saving).
+- `totals`: `volume` and `transactions` (new money only; `COMMISSION_PAYOUT` memo rows and `REVERSAL` rows excluded), `by_type` counts and amounts, `fees_earned` (cash-out and transfer fees less fees refunded by reversals), `commission_paid` (less clawed-back commission), `signup_bonus_paid` (backfilled opening balances excluded, less clawbacks), `signups` (new USER/AGENT accounts).
+- `daily`: one entry per day with `volume`, `count`, `signups` (zeros included).
+- `queues` (now): pending agent withdrawals (count and held amount), pending float requests, unfinished gateway top-ups, pending approvals.
+- `e_money`: total balance held in user and agent wallets.
+- Admin dashboard "Activity" panel (range selector, cards, daily bar chart, queue links).
+
+**Export:** `GET /api/v1/reports/ledger.csv` (admin token **and** `transactions.export`). Same filters as 5.8 (`type`, `status`, `search`, `party_id`, `from_date`, `to_date`), via the same query, so the file always matches the ledger on screen.
+- `transactions.export` is not granted to ADMIN by default (bulk personal and financial data); SUPER_ADMIN has it and can grant it.
+- Streamed in chunks of 1,000 rows; UTF-8 with BOM; times in the business timezone. Columns: `id, created_at, type, status, amount, fee, commission, currency, sender_name, sender_phone, recipient_name, recipient_phone, agent_name, agent_phone, external_reference, reversed_transaction_id, description`.
+- Cells starting with `= + - @` or a control character (other than plain numbers) are prefixed with `'` to stop spreadsheet formula injection.
+- More than `REPORTS_EXPORT_MAX_ROWS` (50,000) rows is refused (422): narrow the filters. Throttled 6/min. Audited as `TRANSACTIONS_EXPORTED` with the filters, row count and IP. The `X-Export-Rows` header carries the row count.
+- "Export CSV" button on the admin transaction ledger.
+
+---
+
 ## 6. System Settings Endpoints
 
 ### 6.1 View Global System Settings
@@ -1547,7 +1565,7 @@ Granular permission catalog and dynamic admin-panel role management. Access requ
 ### 7.1 List Permissions Catalog
 - **Method & Route:** `GET /api/v1/permissions`
 - **Access:** Authenticated admin staff (`roles.view`)
-- **Description:** Returns the complete permission catalog (23 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
+- **Description:** Returns the complete permission catalog (24 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
 - **Response (200 OK):**
   ```json
   {

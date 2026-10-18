@@ -985,7 +985,22 @@ class TransactionService
      */
     public function listAllTransactions(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
-        $query = Transaction::query()->with(['sender', 'recipient', 'agent', 'user', 'reversal:id,reversed_transaction_id']);
+        return $this->adminLedgerQuery($filters)
+            ->with(['sender', 'recipient', 'agent', 'user', 'reversal:id,reversed_transaction_id'])
+            ->latest('id')
+            ->paginate($perPage);
+    }
+
+    /**
+     * The admin ledger with its filters applied, shared by the paginated list and the CSV export so
+     * both always show the same rows.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return Builder<Transaction>
+     */
+    public function adminLedgerQuery(array $filters = []): Builder
+    {
+        $query = Transaction::query();
 
         $this->applyFilters($query, $filters);
 
@@ -1018,7 +1033,7 @@ class TransactionService
             $this->applySearch($query, trim((string) $filters['search']));
         }
 
-        return $query->latest('id')->paginate($perPage);
+        return $query;
     }
 
     /**
