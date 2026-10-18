@@ -16,6 +16,7 @@ import ChangePinForm from '@/components/Forms/ChangePinForm.vue';
 import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
 import AddPhoneCard from '@/components/Account/AddPhoneCard.vue';
 import PhoneVerificationCard from '@/components/Account/PhoneVerificationCard.vue';
+import KycCard from '@/components/Account/KycCard.vue';
 import UserAvatar from '@/components/Account/UserAvatar.vue';
 import type { User } from '@/types/models';
 
@@ -244,6 +245,9 @@ onMounted(() => {
                         </form>
                     </div>
                 </div>
+
+                <!-- KYC: customers verify their identity to raise their limits -->
+                <KycCard v-if="panel === 'user'" />
 
                 <!-- Transaction receipts: SMS always, email copy optional -->
                 <div

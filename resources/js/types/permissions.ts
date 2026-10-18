@@ -7,6 +7,7 @@ export const PERMISSIONS = [
     'users.grant_admin_access',
     'users.verify_phone',
     'users.view_activity',
+    'users.manage_kyc',
     'agents.approve',
     'agents.suspend',
     'agents.issue_float',

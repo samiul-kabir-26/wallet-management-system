@@ -10,6 +10,7 @@ export interface User {
     address?: string | null;
     avatar_url?: string | null;
     receipt_emails_enabled?: boolean;
+    kyc?: { tier: KycTier; label: string; verified_at: string | null };
     must_change_password?: boolean;
     created_at?: string;
     updated_at?: string;
@@ -150,7 +151,13 @@ export interface PaginatedResponse<T> {
 export interface UserProfile extends User {
     address?: string | null;
     wallets?: Wallet[];
-    caps?: { daily_cap: number | string; monthly_cap: number | string; daily_used: number | string; monthly_used: number | string } | null;
+    caps?: {
+        daily_cap: number | string;
+        monthly_cap: number | string;
+        daily_used: number | string;
+        monthly_used: number | string;
+        is_custom?: boolean;
+    } | null;
 }
 
 export interface LoginActivityRecord {
@@ -171,5 +178,30 @@ export interface AuditLogRecord {
     auditable_type: string | null;
     auditable_id: number | null;
     metadata: Record<string, unknown> | null;
+    created_at: string;
+}
+
+export type KycTier = 'BASIC' | 'STANDARD' | 'PREMIUM';
+
+export interface KycTierInfo {
+    tier: KycTier;
+    label: string;
+    description: string;
+    daily_cap: number;
+    monthly_cap: number;
+    requires_verification: boolean;
+}
+
+export interface KycSubmission {
+    id: number;
+    user: { id: number; name: string; phone_number: string | null; kyc_tier: KycTier } | null;
+    document_type: 'NID' | 'PASSPORT' | 'DRIVING_LICENSE';
+    document_number: string;
+    full_name: string;
+    date_of_birth: string;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    reviewed_by: { id: number; name: string } | null;
+    reviewed_at: string | null;
+    review_note: string | null;
     created_at: string;
 }

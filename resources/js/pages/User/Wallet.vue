@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { newIdempotencyKey } from '@/composables/useIdempotencyKey';
 import { computed, onMounted, ref } from 'vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import { storeToRefs } from 'pinia';
 import { useForm } from 'vee-validate';
 import { useAuthGuard } from '@/composables/useAuthGuard';
@@ -146,7 +146,12 @@ onMounted(async () => {
                 <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 space-y-6">
                     <div>
                         <h2 class="text-base font-semibold text-zinc-900 dark:text-zinc-100">Regulatory Limits & Caps</h2>
-                        <p class="text-xs text-zinc-500">Security thresholds automatically monitored on every transfer</p>
+                        <p class="text-xs text-zinc-500">
+                            Your limits depend on your verification tier.
+                            <Link href="/user/account" class="font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
+                                Verify your identity to raise them
+                            </Link>
+                        </p>
                     </div>
 
                     <!-- Daily Cap -->
