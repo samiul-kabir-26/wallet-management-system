@@ -347,6 +347,7 @@ class AuthController extends Controller
             'role' => (string) $request->validated('role'),
             'otp_code' => (string) $request->validated('otp_code'),
         ]);
+        $this->deviceBinding->trust($user, $request->validated('device_id'), $request);
 
         $ability = strtolower($request->role);
         $token = $this->tokenIssuer->issue($user, "{$ability}-registration", [$ability])->plainTextToken;

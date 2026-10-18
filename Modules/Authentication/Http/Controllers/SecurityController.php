@@ -30,7 +30,8 @@ class SecurityController extends Controller
      */
     public function sessions(Request $request): JsonResponse
     {
-        $currentId = $request->user()->currentAccessToken()?->getKey();
+        $currentToken = $request->user()->currentAccessToken();
+        $currentId = $currentToken instanceof PersonalAccessToken ? $currentToken->getKey() : null;
 
         $sessions = $request->user()->tokens()
             ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))

@@ -256,6 +256,8 @@ class User extends Authenticatable
 
     /**
      * Devices this customer or agent proved with an SMS code.
+     *
+     * @return HasMany<TrustedDevice, $this>
      */
     public function trustedDevices(): HasMany
     {

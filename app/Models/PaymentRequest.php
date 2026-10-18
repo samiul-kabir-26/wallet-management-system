@@ -51,16 +51,25 @@ class PaymentRequest extends Model
         ];
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function requester(): BelongsTo
     {
         return $this->belongsTo(User::class, 'requester_id');
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function payer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'payer_id');
     }
 
+    /**
+     * @return BelongsTo<Transaction, $this>
+     */
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);

@@ -16,6 +16,7 @@ import ChangePinForm from '@/components/Forms/ChangePinForm.vue';
 import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
 import AddPhoneCard from '@/components/Account/AddPhoneCard.vue';
 import PhoneVerificationCard from '@/components/Account/PhoneVerificationCard.vue';
+import KycCard from '@/components/Account/KycCard.vue';
 import SessionsCard from '@/components/Account/SessionsCard.vue';
 import TotpCard from '@/components/Account/TotpCard.vue';
 import UserAvatar from '@/components/Account/UserAvatar.vue';

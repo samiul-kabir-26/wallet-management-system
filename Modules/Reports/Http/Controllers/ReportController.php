@@ -71,6 +71,9 @@ class ReportController extends Controller
 
         return response()->streamDownload(function () use ($export, $query): void {
             $handle = fopen('php://output', 'w');
+            if ($handle === false) {
+                return;
+            }
             $export->write($query, $handle);
             fclose($handle);
         }, $filename, [

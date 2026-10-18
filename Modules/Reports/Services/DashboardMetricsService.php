@@ -35,17 +35,16 @@ class DashboardMetricsService
         $from = $firstDay->utc();
         // Fixed offset for grouping; correct for zones without daylight saving such as Asia/Dhaka
         $offset = $today->format('P');
-        $localDate = "DATE(CONVERT_TZ(created_at, '+00:00', '{$offset}'))";
 
-        $rows = Transaction::query()
-            ->selectRaw("{$localDate} as day, type, COUNT(*) as count, SUM(amount) as amount, SUM(system_fee_amount) as fees, SUM(agent_commission_amount) as commission")
+        $rows = DB::table('transactions')
+            ->selectRaw("DATE(CONVERT_TZ(created_at, '+00:00', ?)) as day, type, COUNT(*) as count, SUM(amount) as amount, SUM(system_fee_amount) as fees, SUM(agent_commission_amount) as commission", [$offset])
             ->where('status', 'COMPLETED')
             ->where('created_at', '>=', $from)
             ->groupBy('day', 'type')
             ->get();
 
         $signups = DB::table('users')
-            ->selectRaw("{$localDate} as day, COUNT(*) as count")
+            ->selectRaw("DATE(CONVERT_TZ(created_at, '+00:00', ?)) as day, COUNT(*) as count", [$offset])
             ->where('created_at', '>=', $from)
             ->where('is_deleted', false)
             ->whereExists(fn ($query) => $query->select(DB::raw(1))
