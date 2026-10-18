@@ -31,7 +31,7 @@ class RegisterUserRequest extends FormRequest
 
         return [
             'name' => ['required', 'string', 'min:2', 'max:255'],
-            'role' => ['required', 'string', Rule::exists('roles', 'name')],
+            'role' => ['required', 'string', Rule::exists('roles', 'name'), Rule::notIn(['SUPER_ADMIN'])],
             'email' => [
                 Rule::when($isAdminPanel, ['required', 'email', 'max:255', Rule::unique('users', 'email')], ['prohibited']),
             ],
@@ -70,6 +70,7 @@ class RegisterUserRequest extends FormRequest
             'pin.digits_between' => 'The PIN must be between 5 and 10 digits.',
             'pin.confirmed' => 'The PIN confirmation does not match.',
             'role.exists' => 'The selected role is invalid.',
+            'role.not_in' => 'SUPER_ADMIN accounts cannot be registered through this endpoint.',
         ];
     }
 }

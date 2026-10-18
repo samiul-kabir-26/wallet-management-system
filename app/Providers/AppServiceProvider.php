@@ -160,6 +160,30 @@ class AppServiceProvider extends ServiceProvider
                 });
         });
 
+        // SMS costs money and can be used to harass a number, so codes are limited per account
+        RateLimiter::for('phone-otp', function (Request $request) {
+            $limit = (int) config('auth_settings.rate_limits.phone_otp', 3);
+
+            $tooMany = fn (Request $request, array $headers) => response()->json([
+                'success' => false,
+                'message' => 'Too many codes requested. Please wait a few minutes and try again.',
+                'errors' => [],
+            ], 429, $headers);
+
+            // Per account, and per destination number when one is supplied, so no account can flood someone else's phone
+            // Signed-out callers (signup) are keyed by IP, which many people can share, so that limit is looser
+            $requester = $request->user()
+                ? Limit::perMinutes(10, $limit)->by('phone-otp:user:'.$request->user()->id)
+                : Limit::perMinutes(10, (int) config('auth_settings.rate_limits.phone_otp_per_ip', 10))->by('phone-otp:ip:'.$request->ip());
+
+            return array_filter([
+                $requester->response($tooMany),
+                is_string($request->input('phone_number'))
+                    ? Limit::perMinutes(10, $limit)->by('phone-otp-to:'.$request->input('phone_number'))->response($tooMany)
+                    : null,
+            ]);
+        });
+
         RateLimiter::for('register', function (Request $request) {
             $limit = (int) config('auth_settings.rate_limits.register', 5);
 

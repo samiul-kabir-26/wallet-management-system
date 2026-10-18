@@ -7,6 +7,9 @@ export interface User {
     permissions?: string[];
     is_verified?: boolean;
     is_active?: string;
+    address?: string | null;
+    avatar_url?: string | null;
+    must_change_password?: boolean;
     created_at?: string;
     updated_at?: string;
     wallet?: Wallet | null;
@@ -63,7 +66,8 @@ export type TransactionType =
     | 'TRANSFER'
     | 'AGENT_WITHDRAWAL'
     | 'COMMISSION_PAYOUT'
-    | 'FLOAT_ISSUE';
+    | 'FLOAT_ISSUE'
+    | 'SIGNUP_BONUS';
 
 export type TransactionStatus = 'COMPLETED' | 'PENDING' | 'FAILED' | 'REJECTED';
 

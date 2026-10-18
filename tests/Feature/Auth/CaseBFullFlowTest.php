@@ -40,7 +40,9 @@ test('complete case B lifecycle: grant access -> accept invite -> change passwor
 
     $invite = Notification::sent($target, AdminInviteNotification::class)->first();
     expect($invite)->not->toBeNull();
-    $signedUrl = $invite->url;
+    // The email links to the web page; the page posts the same signed query string to the API route
+    expect($invite->url)->toContain('/accept-invite/'.$target->id.'?')->not->toContain('/api/');
+    $signedUrl = str_replace('/accept-invite/', '/api/v1/auth/accept-invite/', $invite->url);
     $tempPassword = $invite->temporaryPassword;
 
     // Clear actingAs / guard cache before testing bearer tokens

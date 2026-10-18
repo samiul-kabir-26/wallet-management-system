@@ -160,7 +160,9 @@ test('an admin cannot assign the SUPER_ADMIN role', function (): void {
         'role' => 'SUPER_ADMIN',
     ]);
 
-    $response->assertStatus(403);
+    // SUPER_ADMIN is never registrable through this endpoint, so validation rejects it before the escalation check
+    $response->assertUnprocessable()->assertJsonValidationErrors('role');
+    expect(User::where('email', 'fake.sa@example.com')->exists())->toBeFalse();
 });
 
 test('staff actions are rejected with 403 when using a non-admin token', function (): void {
@@ -431,7 +433,7 @@ test('permissions catalog returns is_super_admin_only: true for users.grant_admi
         ->not->toHaveKey('catalog');
 
     $allPerms = collect($data['permissions']);
-    expect($allPerms)->toHaveCount(21);
+    expect($allPerms)->toHaveCount(22);
 
     foreach ($allPerms as $perm) {
         if ($perm['name'] === 'users.grant_admin_access') {

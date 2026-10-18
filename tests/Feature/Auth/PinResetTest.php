@@ -299,7 +299,8 @@ test('initiate-pin-reset emails a working one-time link to the attached address'
 
     $sentUrl = null;
     Notification::assertSentTo($target, PinResetLinkNotification::class, function (PinResetLinkNotification $notification, array $channels, object $notifiable) use (&$sentUrl) {
-        $sentUrl = $notification->url;
+        // The email links to the web page; the page posts the same signed query string to the API route
+        $sentUrl = str_replace('/reset-pin/', '/api/v1/auth/reset-pin/', $notification->url);
 
         return $notifiable->routeNotificationFor('mail') === 'recovery-mail@example.com';
     });

@@ -47,4 +47,21 @@ return [
             'max' => env('TRANSACTION_FLOAT_ISSUE_MAX', 500000.00),
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Signup Bonus (BDT)
+    |--------------------------------------------------------------------------
+    |
+    | Credited to every wallet opened at registration. Staff can toggle it and
+    | change the amount from System Settings; these values apply until they do.
+    | The source label is shown to customers as the sender of the bonus.
+    |
+    */
+    'signup_bonus' => [
+        'default_enabled' => (bool) env('SIGNUP_BONUS_ENABLED', true),
+        'default_amount' => env('SIGNUP_BONUS_AMOUNT', 50.00),
+        'max_amount' => env('SIGNUP_BONUS_MAX', 1000.00),
+        'source_label' => env('SIGNUP_BONUS_SOURCE_LABEL', 'bKash'),
+    ],
 ];

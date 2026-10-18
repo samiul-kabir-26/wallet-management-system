@@ -22,9 +22,9 @@ const { handleSubmit } = useForm<{ identifier: string; password: string }>({
 
 const onSubmit = handleSubmit(async (values) => {
     try {
-        const msg = await authStore.adminLogin(values.identifier, values.password);
-        toast.success(msg);
-        emit('otp-sent', values.identifier);
+        const { message, email } = await authStore.adminLogin(values.identifier, values.password);
+        toast.success(message);
+        emit('otp-sent', email);
     } catch (err: unknown) {
         toast.error((err as Error).message);
     }

@@ -6,6 +6,8 @@ defineProps<{
     title: string;
     confirmLabel?: string;
     loading?: boolean;
+    /** Keeps the confirm button disabled until the slot content is valid (for example, a required reason). */
+    confirmDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -31,7 +33,7 @@ const emit = defineEmits<{
                 </button>
                 <button
                     type="button"
-                    :disabled="loading"
+                    :disabled="loading || confirmDisabled"
                     class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
                     @click="emit('confirm')"
                 >

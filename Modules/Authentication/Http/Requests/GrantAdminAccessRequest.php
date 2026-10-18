@@ -41,6 +41,7 @@ class GrantAdminAccessRequest extends FormRequest
                 'required',
                 'string',
                 Rule::exists('roles', 'name')->where('panel', 'admin'),
+                Rule::notIn(['SUPER_ADMIN']),
             ],
         ];
     }
@@ -58,6 +59,7 @@ class GrantAdminAccessRequest extends FormRequest
             'email.unique' => 'This email address is already in use.',
             'role.required' => 'A role must be selected.',
             'role.exists' => 'The selected role must exist and belong to the admin panel.',
+            'role.not_in' => 'The SUPER_ADMIN role cannot be granted through an admin access invite.',
         ];
     }
 }

@@ -35,7 +35,16 @@ class UserPolicy
      */
     public function update(User $user, User $model): bool
     {
-        return $user->id === $model->id || $user->can('users.update');
+        if ($user->id === $model->id) {
+            return true;
+        }
+
+        // Only a super administrator may edit a super administrator's profile
+        if ($model->isSuperAdmin() && ! $user->isSuperAdmin()) {
+            return false;
+        }
+
+        return $user->can('users.update');
     }
 
     /**
@@ -84,6 +93,14 @@ class UserPolicy
     public function suspendAgent(User $user, User $agent): bool
     {
         return $user->can('agents.suspend');
+    }
+
+    /**
+     * Determine whether the user can change an agent's commission rate. Nobody can change their own.
+     */
+    public function updateCommission(User $user, User $agent): bool
+    {
+        return $user->can('agents.update_commission') && $user->id !== $agent->id;
     }
 
     /**

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { newIdempotencyKey } from '@/composables/useIdempotencyKey';
 import { computed, onMounted, ref, watch } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { useForm } from 'vee-validate';
@@ -136,7 +137,7 @@ const onValid = handleSubmit(async () => {
     } finally {
         quoting.value = false;
     }
-    idempotencyKey.value = crypto.randomUUID();
+    idempotencyKey.value = newIdempotencyKey();
     confirmOpen.value = true;
 });
 

@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth';
 import Badge from '@/components/Badge.vue';
 import ToastContainer from '@/components/ToastContainer.vue';
 import SessionGuard from '@/components/SessionGuard.vue';
+import UserAvatar from '@/components/Account/UserAvatar.vue';
 
 const authStore = useAuthStore();
 const mobileMenuOpen = ref(false);
@@ -14,6 +15,7 @@ const navItems = [
     { name: 'Customer Cash-In', href: '/agent/cash-in' },
     { name: 'Transactions', href: '/agent/transactions' },
     { name: 'Bank Withdrawal', href: '/agent/withdrawal' },
+    { name: 'My Account', href: '/agent/account' },
 ];
 
 const sessionGuard = ref<InstanceType<typeof SessionGuard> | null>(null);
@@ -52,9 +54,14 @@ const handleLogout = () => {
 
                 <div class="hidden md:flex items-center gap-4">
                     <div class="flex items-center gap-2 text-sm">
-                        <span class="font-medium text-zinc-700 dark:text-zinc-300">
+                        <Link
+                            href="/agent/account"
+                            class="flex items-center gap-2 rounded-lg px-2 py-1 font-medium text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                            title="My Account"
+                        >
+                            <UserAvatar :name="authStore.user?.name" :src="authStore.user?.avatar_url" />
                             {{ authStore.user?.name ?? 'Agent' }}
-                        </span>
+                        </Link>
                         <Badge variant="warning">Agent</Badge>
                     </div>
 
@@ -95,9 +102,14 @@ const handleLogout = () => {
                     {{ item.name }}
                 </Link>
                 <div class="border-t border-zinc-200 pt-3 dark:border-zinc-800 flex items-center justify-between px-3">
-                    <div class="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    <Link
+                        href="/agent/account"
+                        class="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                        @click="mobileMenuOpen = false"
+                    >
+                        <UserAvatar :name="authStore.user?.name" :src="authStore.user?.avatar_url" />
                         {{ authStore.user?.name ?? 'Agent' }}
-                    </div>
+                    </Link>
                     <button
                         type="button"
                         class="text-xs font-semibold text-rose-600 dark:text-rose-400"

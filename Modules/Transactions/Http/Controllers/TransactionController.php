@@ -199,7 +199,7 @@ class TransactionController extends Controller
     public function history(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT'],
+            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE,SIGNUP_BONUS'],
             'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,REJECTED'],
             'from_date' => ['sometimes', 'date'],
             'to_date' => ['sometimes', 'date'],
@@ -270,7 +270,7 @@ class TransactionController extends Controller
         $this->authorize('viewAny', Transaction::class);
 
         $validated = $request->validate([
-            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE'],
+            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE,SIGNUP_BONUS'],
             'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,REJECTED'],
             'search' => ['sometimes', 'string', 'max:100'],
             'party_id' => ['sometimes', 'integer', 'exists:users,id'],

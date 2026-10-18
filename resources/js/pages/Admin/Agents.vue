@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { useAuthStore } from '@/stores/auth';
@@ -31,6 +31,26 @@ const selectedAgent = ref<User | null>(null);
 const approveLoading = ref(false);
 const suspendTarget = ref<User | null>(null);
 const suspendLoading = ref(false);
+const suspendReason = ref('');
+const suspendReasonError = ref<string | null>(null);
+const SUSPEND_REASON_MIN = 3;
+const SUSPEND_REASON_MAX = 500;
+const suspendReasonValid = computed(() => {
+    const length = suspendReason.value.trim().length;
+    return length >= SUSPEND_REASON_MIN && length <= SUSPEND_REASON_MAX;
+});
+
+const openSuspendModal = (agent: User) => {
+    suspendTarget.value = agent;
+    suspendReason.value = '';
+    suspendReasonError.value = null;
+};
+
+const closeSuspendModal = () => {
+    suspendTarget.value = null;
+    suspendReason.value = '';
+    suspendReasonError.value = null;
+};
 const floatTarget = ref<User | null>(null);
 
 const handleFloatIssued = async () => {
@@ -86,15 +106,24 @@ const handleApproveAgent = handleSubmit(async (formValues) => {
 const handleSuspendAgent = async () => {
     const agent = suspendTarget.value;
     if (!agent) return;
+    if (!suspendReasonValid.value) {
+        suspendReasonError.value = `Enter a reason between ${SUSPEND_REASON_MIN} and ${SUSPEND_REASON_MAX} characters.`;
+        return;
+    }
     suspendLoading.value = true;
+    suspendReasonError.value = null;
     try {
-        await api.patch(`/users/${agent.id}/suspend-agent`);
+        await api.patch(`/users/${agent.id}/suspend-agent`, { reason: suspendReason.value.trim() });
         toast.success(`Agent ${agent.name} has been suspended.`);
-        suspendTarget.value = null;
+        closeSuspendModal();
         await fetchAgents(pagination.value?.current_page ?? 1);
     } catch (err: unknown) {
-        const apiError = err as { response?: { data?: { message?: string } } };
-        toast.error(apiError.response?.data?.message || 'Failed to suspend agent.');
+        const apiError = err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
+        const reasonError = apiError.response?.data?.errors?.reason?.[0];
+        if (reasonError) {
+            suspendReasonError.value = reasonError;
+        }
+        toast.error(reasonError || apiError.response?.data?.message || 'Failed to suspend agent.');
     } finally {
         suspendLoading.value = false;
     }
@@ -171,7 +200,7 @@ onMounted(() => {
                                         v-if="a.agent_info?.status === 'APPROVED' && authStore.can('agents.suspend')"
                                         type="button"
                                         class="rounded-md bg-rose-50 border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-400"
-                                        @click="suspendTarget = a"
+                                        @click="openSuspendModal(a)"
                                     >
                                         Suspend
                                     </button>
@@ -235,10 +264,31 @@ onMounted(() => {
                 title="Suspend Agent"
                 confirm-label="Suspend"
                 :loading="suspendLoading"
-                @cancel="suspendTarget = null"
+                :confirm-disabled="!suspendReasonValid"
+                @cancel="closeSuspendModal"
                 @confirm="handleSuspendAgent"
             >
-                Are you sure you want to suspend agent <strong>{{ suspendTarget?.name }}</strong>? They will no longer be able to take part in transactions.
+                <p>
+                    Are you sure you want to suspend agent <strong>{{ suspendTarget?.name }}</strong>? They will no longer be able to take part in transactions.
+                </p>
+                <div class="mt-4">
+                    <label for="suspend-reason" class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Reason for suspension</label>
+                    <textarea
+                        id="suspend-reason"
+                        v-model="suspendReason"
+                        rows="3"
+                        :maxlength="SUSPEND_REASON_MAX"
+                        placeholder="e.g. Customer complaints about unauthorised cash-out fees"
+                        :aria-invalid="!!suspendReasonError"
+                        class="mt-1 block w-full rounded-lg border px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-1 dark:bg-zinc-800 dark:text-zinc-100"
+                        :class="suspendReasonError ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500 dark:border-rose-700' : 'border-zinc-300 focus:border-indigo-500 focus:ring-indigo-500 dark:border-zinc-700'"
+                    ></textarea>
+                    <div class="mt-1 flex justify-between text-xs">
+                        <span class="text-rose-600 dark:text-rose-400">{{ suspendReasonError ?? '' }}</span>
+                        <span class="text-zinc-400">{{ suspendReason.trim().length }}/{{ SUSPEND_REASON_MAX }}</span>
+                    </div>
+                    <p class="text-xs text-zinc-500">Recorded in the audit trail with your name.</p>
+                </div>
             </ConfirmModal>
         </div>
     </AdminLayout>

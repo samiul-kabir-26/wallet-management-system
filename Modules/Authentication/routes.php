@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Modules\Authentication\Http\Controllers\AuthController;
 
 // Public routes
+Route::post('/register/request-otp', [AuthController::class, 'requestRegisterOtp'])->middleware('throttle:phone-otp');
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:register');
 Route::post('/agent/login', [AuthController::class, 'loginAgent'])->middleware('throttle:login');
 Route::post('/user/login', [AuthController::class, 'loginUser'])->middleware('throttle:login');
@@ -23,6 +24,10 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middle
 Route::post('/change-password', [AuthController::class, 'changePassword'])
     ->name('auth.change-password')
     ->middleware(['auth:sanctum', 'ability:password-change,admin']);
+
+// PIN change for a signed-in agent or customer who knows their current PIN
+Route::post('/change-pin', [AuthController::class, 'changePin'])
+    ->middleware(['auth:sanctum', 'ability:agent,user', 'throttle:10,1']);
 
 // Protected routes (Requires valid Sanctum token with 'admin' ability and changed password)
 Route::middleware(['auth:sanctum', 'ability:admin', 'password.changed'])->group(function (): void {

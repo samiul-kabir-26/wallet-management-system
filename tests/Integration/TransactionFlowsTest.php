@@ -34,6 +34,7 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $user1RegResponse = $this->postJson('/api/v1/auth/register', [
         'name' => 'Alice User',
         'phone_number' => '01711000001',
+        'otp_code' => $this->registrationOtpFor('01711000001'),
         'pin' => '12345',
         'pin_confirmation' => '12345',
         'role' => 'USER',
@@ -51,6 +52,7 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $user2RegResponse = $this->postJson('/api/v1/auth/register', [
         'name' => 'Bob User',
         'phone_number' => '01711000002',
+        'otp_code' => $this->registrationOtpFor('01711000002'),
         'pin' => '12345',
         'pin_confirmation' => '12345',
         'role' => 'USER',
@@ -66,6 +68,7 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $agentRegResponse = $this->postJson('/api/v1/auth/register', [
         'name' => 'Agent Charlie',
         'phone_number' => '01711000003',
+        'otp_code' => $this->registrationOtpFor('01711000003'),
         'pin' => '12345',
         'pin_confirmation' => '12345',
         'role' => 'AGENT',
@@ -190,8 +193,8 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     $historyResponse = $this->getJson('/api/v1/transactions/history');
     $historyResponse->assertOk()
         ->assertJsonPath('success', true);
-    // TOP_UP, TRANSFER, CASH_OUT (COMMISSION_PAYOUT is scoped to agent wallet only)
-    expect(count($historyResponse->json('data.items')))->toBe(3);
+    // SIGNUP_BONUS, TOP_UP, TRANSFER, CASH_OUT (COMMISSION_PAYOUT is scoped to agent wallet only)
+    expect(count($historyResponse->json('data.items')))->toBe(4);
 
     // -------------------------------------------------------------
     // 11. Admin views all transactions across the system
@@ -199,8 +202,8 @@ test('complete financial lifecycle integration flow across user, agent, admin, a
     Sanctum::actingAs($admin, ['admin']);
     $adminAllResponse = $this->getJson('/api/v1/transactions/admin/all');
     $adminAllResponse->assertOk();
-    // Total transactions: TOP_UP (1) + TRANSFER (1) + CASH_OUT (1) + COMMISSION_PAYOUT (1) + AGENT_WITHDRAWAL (1) = 5
-    expect(count($adminAllResponse->json('data.items')))->toBe(5);
+    // Total transactions: SIGNUP_BONUS (3) + TOP_UP (1) + TRANSFER (1) + CASH_OUT (1) + COMMISSION_PAYOUT (1) + AGENT_WITHDRAWAL (1) = 8
+    expect(count($adminAllResponse->json('data.items')))->toBe(8);
 
     // -------------------------------------------------------------
     // 12. Next business day: stale counters roll over

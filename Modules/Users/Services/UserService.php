@@ -12,6 +12,7 @@ use Modules\Roles\Enums\RolePanel;
 use Modules\Roles\Exceptions\PermissionEscalationException;
 use Modules\Roles\Services\RoleService;
 use Modules\SystemSettings\Services\SystemSettingService;
+use Modules\Transactions\Services\SignupBonusService;
 use Modules\Users\Exceptions\AgentNotApprovedException;
 use Modules\Users\Exceptions\AgentNotPendingException;
 use Modules\Users\Exceptions\UserHasNoPhoneException;
@@ -24,6 +25,7 @@ class UserService
     public function __construct(
         protected SystemSettingService $settingService,
         protected RoleService $roleService,
+        protected SignupBonusService $signupBonusService,
     ) {}
 
     /**
@@ -58,12 +60,13 @@ class UserService
             // Password and PIN are automatically hashed via User::casts()
             $user = User::create($userData);
 
-            // 2. Create the initial wallet only for non-staff accounts (schema defaults: balance 50.00, currency BDT)
+            // 2. Open the wallet only for non-staff accounts (opens at 0.00 BDT) and credit the signup bonus, if enabled
             if (! $isAdminPanel) {
                 $kind = $data['role'] === 'AGENT' ? Wallet::KIND_AGENT : Wallet::KIND_USER;
-                $user->wallets()->create([
+                $wallet = $user->wallets()->create([
                     'kind' => $kind,
                 ]);
+                $this->signupBonusService->credit($wallet);
 
                 // 3. Create transaction cap limits (schema defaults: daily 10,000.00, monthly 50,000.00)
                 $user->cap()->create();
@@ -232,6 +235,100 @@ class UserService
     }
 
     /**
+     * Change an approved or suspended agent's commission rate.
+     *
+     * Only future transactions use the new rate: every transaction stores the rate it was charged at.
+     * Unchanged rates return without writing an audit entry.
+     *
+     * @throws AgentNotApprovedException
+     * @throws UserNotAnAgentException
+     * @throws AuthorizationException
+     */
+    public function updateCommissionRate(User $agentUser, string|float $commissionRate, User $actor): User
+    {
+        if ($actor->id === $agentUser->id) {
+            throw new AuthorizationException('Administrators cannot change their own commission rate.');
+        }
+
+        $newRate = number_format((float) $commissionRate, 4, '.', '');
+
+        return DB::transaction(function () use ($agentUser, $newRate, $actor): User {
+            $agentInfo = $agentUser->agentInfo()->lockForUpdate()->first();
+
+            if (! $agentInfo) {
+                throw new UserNotAnAgentException;
+            }
+
+            // A pending agent's rate is set when they are approved
+            if ($agentInfo->status === 'PENDING') {
+                throw new AgentNotApprovedException('Approve the agent before changing their commission rate.');
+            }
+
+            $previousRate = number_format((float) $agentInfo->commission_rate, 4, '.', '');
+
+            if (bccomp($previousRate, $newRate, 4) !== 0) {
+                $agentInfo->update(['commission_rate' => $newRate]);
+
+                AuditLog::create([
+                    'actor_id' => $actor->id,
+                    'action' => 'AGENT_COMMISSION_UPDATED',
+                    'auditable_type' => $agentUser->getMorphClass(),
+                    'auditable_id' => $agentUser->id,
+                    'metadata' => [
+                        'previous_rate' => $previousRate,
+                        'new_rate' => $newRate,
+                    ],
+                ]);
+            }
+
+            return $agentUser->refresh()->load('agentInfo');
+        });
+    }
+
+    /**
+     * Update a user's profile details. Edits made by staff on someone else's account are audited with
+     * the before and after value of every changed field.
+     *
+     * @param  array{name?: string, address?: string|null}  $data
+     */
+    public function updateProfile(User $user, array $data, User $actor): User
+    {
+        return DB::transaction(function () use ($user, $data, $actor): User {
+            $lockedUser = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
+            $lockedUser->fill($data);
+
+            $changes = [];
+            foreach ($lockedUser->getDirty() as $field => $newValue) {
+                $changes[$field] = [
+                    'before' => $lockedUser->getOriginal($field),
+                    'after' => $newValue,
+                ];
+            }
+
+            if ($changes === []) {
+                return $lockedUser;
+            }
+
+            $lockedUser->save();
+
+            if ($actor->id !== $lockedUser->id) {
+                AuditLog::create([
+                    'actor_id' => $actor->id,
+                    'action' => 'PROFILE_UPDATED',
+                    'auditable_type' => $lockedUser->getMorphClass(),
+                    'auditable_id' => $lockedUser->id,
+                    'metadata' => [
+                        'fields' => implode(', ', array_keys($changes)),
+                        'changes' => $changes,
+                    ],
+                ]);
+            }
+
+            return $lockedUser;
+        });
+    }
+
+    /**
      * Suspend an active agent with an audited reason.
      *
      * @throws AgentNotApprovedException
@@ -272,15 +369,16 @@ class UserService
     }
 
     /**
-     * Mark a user's phone number as verified after staff confirmed ownership out of band.
+     * Mark a user's phone number as verified.
      *
+     * $method records how ownership was proven: STAFF (confirmed out of band) or OTP (SMS code).
      * Idempotent: an already-verified account is returned unchanged and no new audit entry is written.
      *
      * @throws UserHasNoPhoneException
      */
-    public function verifyPhone(User $user, User $actor): User
+    public function verifyPhone(User $user, User $actor, string $method = 'STAFF'): User
     {
-        return DB::transaction(function () use ($user, $actor): User {
+        return DB::transaction(function () use ($user, $actor, $method): User {
             $lockedUser = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
 
             if ($lockedUser->phone_number === null) {
@@ -300,6 +398,7 @@ class UserService
                 'auditable_id' => $lockedUser->id,
                 'metadata' => [
                     'phone_number' => $lockedUser->phone_number,
+                    'method' => $method,
                 ],
             ]);
 

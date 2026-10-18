@@ -16,7 +16,7 @@ const props = defineProps<{
     perPage?: number;
 }>();
 
-const TYPES = ['TOP_UP', 'CASH_IN', 'CASH_OUT', 'TRANSFER', 'AGENT_WITHDRAWAL', 'COMMISSION_PAYOUT', 'FLOAT_ISSUE'] as const;
+const TYPES = ['TOP_UP', 'CASH_IN', 'CASH_OUT', 'TRANSFER', 'AGENT_WITHDRAWAL', 'COMMISSION_PAYOUT', 'FLOAT_ISSUE', 'SIGNUP_BONUS'] as const;
 const STATUSES = ['COMPLETED', 'PENDING', 'FAILED', 'REJECTED'] as const;
 
 const filters = reactive({ search: '', type: '', status: '', from: '', to: '' });

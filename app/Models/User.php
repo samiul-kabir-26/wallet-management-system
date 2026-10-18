@@ -6,6 +6,7 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,6 +15,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
 use Modules\Roles\Enums\Permission as PermissionEnum;
 use Modules\Roles\Enums\RolePanel;
@@ -44,6 +46,11 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
 
     /**
+     * Directory on the public disk that holds uploaded avatars.
+     */
+    public const string AVATAR_DIRECTORY = 'avatars';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -55,6 +62,35 @@ class User extends Authenticatable
             'pin' => 'hashed',
             'password_changed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Match a free-text term against name, email or phone number, plus the exact user ID for "#123" or "123".
+     *
+     * The OR conditions are grouped so they never escape the caller's other filters (such as is_deleted).
+     */
+    public function scopeSearch(Builder $query, string $term): void
+    {
+        $like = '%'.addcslashes($term, '%_\\').'%';
+        $userId = ltrim($term, '#');
+
+        $query->where(function (Builder $q) use ($like, $userId): void {
+            $q->where('name', 'like', $like)
+                ->orWhere('email', 'like', $like)
+                ->orWhere('phone_number', 'like', $like);
+
+            if (ctype_digit($userId)) {
+                $q->orWhere('id', (int) $userId);
+            }
+        });
+    }
+
+    /**
+     * Limit to users holding at least one role that belongs to the given panel.
+     */
+    public function scopeInPanel(Builder $query, RolePanel $panel): void
+    {
+        $query->whereHas('roles', fn (Builder $q) => $q->where('panel', $panel->value));
     }
 
     public function roleAssignments(): HasMany
@@ -142,6 +178,34 @@ class User extends Authenticatable
     public function loginActivities(): HasMany
     {
         return $this->hasMany(LoginActivity::class);
+    }
+
+    /**
+     * Route SMS notifications to the account's phone number.
+     */
+    public function routeNotificationForSms(): ?string
+    {
+        return $this->phone_number;
+    }
+
+    /**
+     * Public URL of the uploaded avatar, if any. Only paths written by the avatar upload are served.
+     */
+    public function avatarUrl(): ?string
+    {
+        if (! is_string($this->image) || ! str_starts_with($this->image, self::AVATAR_DIRECTORY.'/')) {
+            return null;
+        }
+
+        return Storage::disk('public')->url($this->image);
+    }
+
+    /**
+     * Whether the account holds a temporary password that must be replaced before anything else.
+     */
+    public function mustChangePassword(): bool
+    {
+        return $this->password !== null && $this->password_changed_at === null;
     }
 
     /**

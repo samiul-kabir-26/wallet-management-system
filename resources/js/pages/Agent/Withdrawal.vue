@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { newIdempotencyKey } from '@/composables/useIdempotencyKey';
 import { onMounted, ref } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { storeToRefs } from 'pinia';
@@ -40,7 +41,7 @@ const submit = async () => {
         const res = await api.post('/transactions/agent/withdrawal', {
             amount: Number(values.amount),
             pin: values.pin,
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: newIdempotencyKey(),
         });
         toast.success(`Withdrawal request of ৳${Number(values.amount).toFixed(2)} submitted (Tx #${res.data.data?.transaction?.id ?? ''}). It will show as PENDING until an admin approves it.`);
         confirmOpen.value = false;

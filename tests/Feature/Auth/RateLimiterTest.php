@@ -74,6 +74,7 @@ test('register route enforces 5 requests per minute per IP, returning 429', func
         $this->postJson('/api/v1/auth/register', [
             'name' => "User {$i}",
             'phone_number' => "0171000000{$i}",
+            'otp_code' => $this->registrationOtpFor("0171000000{$i}"),
             'pin' => '12345',
             'pin_confirmation' => '12345',
             'role' => 'USER',

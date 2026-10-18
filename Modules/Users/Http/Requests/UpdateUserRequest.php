@@ -24,7 +24,7 @@ class UpdateUserRequest extends FormRequest
         return [
             'name' => ['sometimes', 'string', 'min:2', 'max:255'],
             'address' => ['sometimes', 'nullable', 'string'],
-            'image' => ['sometimes', 'nullable', 'string'],
+            'image' => ['prohibited'],
             'email' => ['prohibited'],
             'phone_number' => ['prohibited'],
             'password' => ['prohibited'],
@@ -44,6 +44,7 @@ class UpdateUserRequest extends FormRequest
             'phone_number.prohibited' => 'Phone number cannot be updated through this endpoint.',
             'password.prohibited' => 'Password cannot be updated through this endpoint.',
             'role.prohibited' => 'Role cannot be updated through this endpoint.',
+            'image.prohibited' => 'Upload a profile photo through POST /api/v1/users/me/avatar.',
         ];
     }
 }

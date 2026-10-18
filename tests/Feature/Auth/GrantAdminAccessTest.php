@@ -255,6 +255,7 @@ test('super admin with pending password change is blocked from granting admin ac
             'success' => false,
             'message' => 'You must change your password before proceeding.',
             'errors' => [],
+            'meta' => ['code' => 'PASSWORD_CHANGE_REQUIRED'],
         ]);
 });
 
@@ -357,7 +358,7 @@ test('attack chain blocked: admin grant on verified customer cannot overwrite cu
     $invite = Notification::sent($customer, AdminInviteNotification::class)->first();
     expect($invite)->not->toBeNull();
     $tempPassword = $invite->temporaryPassword;
-    $inviteUrl = $invite->url;
+    $inviteUrl = str_replace('/accept-invite/', '/api/v1/auth/accept-invite/', $invite->url);
 
     // 2. Attacker accepts invite via signed link
     Auth::forgetGuards();
@@ -422,4 +423,23 @@ test('attack chain blocked: admin grant on verified customer cannot overwrite cu
         'pin' => '99999',
     ]);
     $attackerCustomerLogin->assertStatus(401);
+});
+
+test('grant-admin-access cannot elevate a user to SUPER_ADMIN', function () {
+    $superAdmin = User::factory()->create();
+    $superAdmin->roles()->attach(Role::where('name', 'SUPER_ADMIN')->first()->id, ['assigned_at' => now()]);
+
+    $target = User::factory()->withoutPassword()->create();
+
+    Sanctum::actingAs($superAdmin, ['admin']);
+
+    $this->patchJson("/api/v1/users/{$target->id}/grant-admin-access", [
+        'email' => 'elevated@example.com',
+        'role' => 'SUPER_ADMIN',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('role');
+
+    expect($target->fresh()->hasRole('SUPER_ADMIN'))->toBeFalse()
+        ->and($target->fresh()->email)->not->toBe('elevated@example.com');
 });

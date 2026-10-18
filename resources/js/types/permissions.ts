@@ -11,6 +11,7 @@ export const PERMISSIONS = [
     'agents.suspend',
     'agents.issue_float',
     'agents.approve_withdrawal',
+    'agents.update_commission',
     'wallets.view_any',
     'wallets.block',
     'wallets.unblock',

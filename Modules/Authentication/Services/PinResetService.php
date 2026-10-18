@@ -70,7 +70,8 @@ class PinResetService
         $expiryMinutes = (int) config('auth_settings.pin_reset.expiry_minutes', 15);
         $signedUrl = self::makeResetUrl($target, $expiryMinutes);
 
-        $target->notify(new PinResetLinkNotification($signedUrl, $expiryMinutes));
+        // The email opens the web page, which posts the signed query string to the API route
+        $target->notify(new PinResetLinkNotification(self::resetPageUrl($target, $signedUrl), $expiryMinutes));
 
         return $signedUrl;
     }
@@ -87,6 +88,14 @@ class PinResetService
             now()->addMinutes($expiryMinutes),
             ['user' => $user->id, 'fingerprint' => self::pinFingerprint($user)],
         );
+    }
+
+    /**
+     * Browser page for a signed reset link: /reset-pin/{user} carrying the API signature's query string.
+     */
+    public static function resetPageUrl(User $user, string $signedApiUrl): string
+    {
+        return url("/reset-pin/{$user->id}").'?'.parse_url($signedApiUrl, PHP_URL_QUERY);
     }
 
     /**

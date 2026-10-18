@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { newIdempotencyKey } from '@/composables/useIdempotencyKey';
 import { onMounted, ref, watch } from 'vue';
 import { Head } from '@inertiajs/vue3';
 import { storeToRefs } from 'pinia';
@@ -84,7 +85,7 @@ const submit = async () => {
             amount: Number(values.amount),
             pin: values.pin,
             description: values.description || undefined,
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: newIdempotencyKey(),
         });
         toast.success(`Cash-in of ৳${Number(values.amount).toFixed(2)} completed (Tx #${res.data.data?.transaction?.id ?? ''}).`);
         confirmOpen.value = false;

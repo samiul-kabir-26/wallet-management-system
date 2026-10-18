@@ -12,6 +12,7 @@ import Badge from '@/components/Badge.vue';
 import Pagination from '@/components/Pagination.vue';
 import Skeleton from '@/components/Skeleton.vue';
 import ConfirmModal from '@/components/Modals/ConfirmModal.vue';
+import Modal from '@/components/Modal.vue';
 import TransactionLedger from '@/components/Admin/TransactionLedger.vue';
 import type { AuditLogRecord, LoginActivityRecord, Pagination as PaginationType, UserProfile } from '@/types/models';
 
@@ -53,6 +54,116 @@ const canVerifyPhone = computed(
         !!profile.value.phone_number &&
         profile.value.id !== authStore.user?.id,
 );
+
+// Edit profile (users.update). Email and phone are login/recovery identifiers and are not editable here.
+const showEditProfile = ref(false);
+const editName = ref('');
+const editAddress = ref('');
+const editErrors = ref<{ name?: string; address?: string }>({});
+const savingProfile = ref(false);
+
+const canEditProfile = computed(
+    () =>
+        !!profile.value &&
+        authStore.can('users.update') &&
+        profile.value.id !== authStore.user?.id &&
+        (!profile.value.roles.includes('SUPER_ADMIN') || authStore.isSuperAdmin),
+);
+
+const openEditProfile = () => {
+    if (!profile.value) return;
+    editName.value = profile.value.name;
+    editAddress.value = profile.value.address ?? '';
+    editErrors.value = {};
+    showEditProfile.value = true;
+};
+
+const saveProfile = async () => {
+    if (!profile.value) return;
+    const name = editName.value.trim();
+    if (name.length < 2 || name.length > 255) {
+        editErrors.value = { name: 'Name must be between 2 and 255 characters.' };
+        return;
+    }
+
+    const payload: { name?: string; address?: string | null } = {};
+    if (name !== profile.value.name) payload.name = name;
+    const address = editAddress.value.trim() === '' ? null : editAddress.value.trim();
+    if (address !== (profile.value.address ?? null)) payload.address = address;
+
+    if (Object.keys(payload).length === 0) {
+        showEditProfile.value = false;
+        return;
+    }
+
+    savingProfile.value = true;
+    editErrors.value = {};
+    try {
+        const res = await api.patch(`/users/${props.userId}`, payload);
+        profile.value = { ...profile.value, ...res.data.data?.user };
+        toast.success('Profile updated.');
+        showEditProfile.value = false;
+        if (activeTab.value === 'audit') fetchAudits();
+    } catch (err: unknown) {
+        const { message, fieldErrors } = parseApiError(err, 'Failed to update the profile.');
+        editErrors.value = { name: fieldErrors.name, address: fieldErrors.address };
+        toast.error(message);
+    } finally {
+        savingProfile.value = false;
+    }
+};
+
+// Change commission rate (agents.update_commission)
+const showCommissionModal = ref(false);
+const commissionRate = ref('');
+const commissionError = ref<string | null>(null);
+const savingCommission = ref(false);
+
+const canUpdateCommission = computed(
+    () =>
+        !!profile.value?.agent_info &&
+        profile.value.agent_info.status !== 'PENDING' &&
+        authStore.can('agents.update_commission') &&
+        profile.value.id !== authStore.user?.id,
+);
+
+const commissionPercent = computed(() => {
+    const n = Number(commissionRate.value);
+    return commissionRate.value === '' || Number.isNaN(n) ? '-' : `${(n * 100).toFixed(2)}%`;
+});
+
+const openCommissionModal = () => {
+    commissionRate.value = String(Number(profile.value?.agent_info?.commission_rate ?? 0));
+    commissionError.value = null;
+    showCommissionModal.value = true;
+};
+
+const saveCommission = async () => {
+    if (!profile.value?.agent_info) return;
+    const value = commissionRate.value.trim();
+    if (!/^(0(\.\d{1,4})?|1(\.0{1,4})?)$/.test(value)) {
+        commissionError.value = 'Enter a rate between 0 and 1 with at most 4 decimal places (e.g. 0.0125 for 1.25%).';
+        return;
+    }
+
+    savingCommission.value = true;
+    commissionError.value = null;
+    try {
+        const res = await api.patch(`/users/${props.userId}/commission-rate`, { commission_rate: Number(value) });
+        const agent = res.data.data?.agent;
+        if (agent) {
+            profile.value = { ...profile.value, agent_info: { ...profile.value.agent_info, ...agent } };
+        }
+        toast.success('Commission rate updated. It applies to new transactions only.');
+        showCommissionModal.value = false;
+        if (activeTab.value === 'audit') fetchAudits();
+    } catch (err: unknown) {
+        const { message, fieldErrors } = parseApiError(err, 'Failed to update the commission rate.');
+        commissionError.value = fieldErrors.commission_rate ?? message;
+    } finally {
+        savingCommission.value = false;
+    }
+};
 
 const fetchProfile = async () => {
     loading.value = true;
@@ -156,14 +267,24 @@ onMounted(async () => {
                             </Badge>
                         </div>
                     </div>
-                    <button
-                        v-if="canVerifyPhone"
-                        type="button"
-                        class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-emerald-500"
-                        @click="showVerifyConfirm = true"
-                    >
-                        Mark Phone Verified
-                    </button>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            v-if="canEditProfile"
+                            type="button"
+                            class="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                            @click="openEditProfile"
+                        >
+                            Edit Profile
+                        </button>
+                        <button
+                            v-if="canVerifyPhone"
+                            type="button"
+                            class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-emerald-500"
+                            @click="showVerifyConfirm = true"
+                        >
+                            Mark Phone Verified
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Details -->
@@ -212,7 +333,17 @@ onMounted(async () => {
                                 </div>
                                 <div class="flex justify-between gap-4">
                                     <dt class="text-zinc-500">Commission rate</dt>
-                                    <dd>{{ (Number(profile.agent_info.commission_rate) * 100).toFixed(2) }}%</dd>
+                                    <dd class="flex items-center gap-2">
+                                        {{ (Number(profile.agent_info.commission_rate) * 100).toFixed(2) }}%
+                                        <button
+                                            v-if="canUpdateCommission"
+                                            type="button"
+                                            class="text-xs font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+                                            @click="openCommissionModal"
+                                        >
+                                            Change
+                                        </button>
+                                    </dd>
                                 </div>
                                 <div class="flex justify-between gap-4">
                                     <dt class="text-zinc-500">Total commission</dt><dd>{{ money(profile.agent_info.total_commission) }}</dd>
@@ -314,6 +445,98 @@ onMounted(async () => {
                 </div>
             </template>
         </div>
+
+        <Modal :show="showEditProfile" title="Edit Profile" @close="showEditProfile = false">
+            <form class="space-y-4" novalidate @submit.prevent="saveProfile">
+                <div>
+                    <label for="edit-name" class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Full name</label>
+                    <input
+                        id="edit-name"
+                        v-model="editName"
+                        type="text"
+                        maxlength="255"
+                        :aria-invalid="!!editErrors.name"
+                        class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                    <p v-if="editErrors.name" class="mt-1 text-xs text-rose-600 dark:text-rose-400">{{ editErrors.name }}</p>
+                </div>
+                <div>
+                    <label for="edit-address" class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Address</label>
+                    <textarea
+                        id="edit-address"
+                        v-model="editAddress"
+                        rows="3"
+                        :aria-invalid="!!editErrors.address"
+                        class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    ></textarea>
+                    <p v-if="editErrors.address" class="mt-1 text-xs text-rose-600 dark:text-rose-400">{{ editErrors.address }}</p>
+                </div>
+                <p class="text-xs text-zinc-500">
+                    Phone number and email are sign-in and recovery identifiers, so they can't be changed here. Your edit is recorded in this user's audit trail.
+                </p>
+                <div class="flex justify-end gap-2">
+                    <button
+                        type="button"
+                        :disabled="savingProfile"
+                        class="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        @click="showEditProfile = false"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        :disabled="savingProfile"
+                        class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                        {{ savingProfile ? 'Saving...' : 'Save Changes' }}
+                    </button>
+                </div>
+            </form>
+        </Modal>
+
+        <Modal :show="showCommissionModal" title="Change Commission Rate" @close="showCommissionModal = false">
+            <form class="space-y-4" novalidate @submit.prevent="saveCommission">
+                <p class="text-sm text-zinc-600 dark:text-zinc-400">
+                    Current rate for <strong>{{ profile?.name }}</strong>:
+                    {{ (Number(profile?.agent_info?.commission_rate ?? 0) * 100).toFixed(2) }}%. The new rate applies to future transactions only; past transactions keep the rate they were charged at.
+                </p>
+                <div class="flex items-start gap-3">
+                    <div class="w-48">
+                        <label for="commission-rate" class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Rate (decimal, 0-1)</label>
+                        <input
+                            id="commission-rate"
+                            v-model="commissionRate"
+                            type="number"
+                            step="0.0001"
+                            min="0"
+                            max="1"
+                            inputmode="decimal"
+                            :aria-invalid="!!commissionError"
+                            class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                        />
+                    </div>
+                    <span class="pt-7 text-sm font-semibold text-zinc-700 dark:text-zinc-300">= {{ commissionPercent }}</span>
+                </div>
+                <p v-if="commissionError" class="text-xs text-rose-600 dark:text-rose-400">{{ commissionError }}</p>
+                <div class="flex justify-end gap-2">
+                    <button
+                        type="button"
+                        :disabled="savingCommission"
+                        class="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        @click="showCommissionModal = false"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        :disabled="savingCommission"
+                        class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                        {{ savingCommission ? 'Saving...' : 'Update Rate' }}
+                    </button>
+                </div>
+            </form>
+        </Modal>
 
         <ConfirmModal
             :open="showVerifyConfirm"

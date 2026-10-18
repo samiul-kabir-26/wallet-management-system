@@ -34,6 +34,8 @@ class RegisterRequest extends FormRequest
             ],
             'pin' => ['required', 'string', 'digits_between:5,10', 'confirmed'],
             'role' => ['required', 'string', Rule::in(['USER', 'AGENT'])],
+            // Code texted to phone_number by POST /auth/register/request-otp
+            'otp_code' => ['required', 'digits:6'],
         ];
     }
 
@@ -50,6 +52,8 @@ class RegisterRequest extends FormRequest
             'pin.digits_between' => 'The PIN must be between 5 and 10 digits.',
             'pin.confirmed' => 'The PIN confirmation does not match.',
             'role.in' => 'The selected role is invalid. Allowed roles are USER or AGENT.',
+            'otp_code.required' => 'Enter the code we sent to your phone.',
+            'otp_code.digits' => 'The code must be exactly 6 digits.',
         ];
     }
 }

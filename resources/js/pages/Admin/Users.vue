@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { useAuthGuard } from '@/composables/useAuthGuard';
 import { useAuthStore } from '@/stores/auth';
@@ -22,6 +22,22 @@ const pagination = ref<PaginationType | null>(null);
 const loading = ref(true);
 const toast = useToastStore();
 
+// Search & filters
+const search = ref('');
+const panelFilter = ref<'' | 'admin' | 'agent' | 'user'>('');
+const statusFilter = ref<'' | 'ACTIVE' | 'INACTIVE'>('');
+const verifiedFilter = ref<'' | '1' | '0'>('');
+let searchDebounce: ReturnType<typeof setTimeout> | undefined;
+
+const hasActiveFilters = () => search.value.trim() !== '' || panelFilter.value !== '' || statusFilter.value !== '' || verifiedFilter.value !== '';
+
+const clearFilters = () => {
+    search.value = '';
+    panelFilter.value = '';
+    statusFilter.value = '';
+    verifiedFilter.value = '';
+};
+
 // Register Staff modal
 const showRegisterModal = ref(false);
 
@@ -38,7 +54,8 @@ const elevateSuccess = ref(false);
 const fetchAdminRoles = async () => {
     try {
         const res = await api.get('/roles', { params: { panel: 'admin', per_page: 100 } });
-        availableAdminRoles.value = res.data.data?.items ?? [];
+        // SUPER_ADMIN is never granted through these forms; the API rejects it as well
+        availableAdminRoles.value = ((res.data.data?.items ?? []) as RoleModel[]).filter((r) => r.name !== 'SUPER_ADMIN');
         if (availableAdminRoles.value.length > 0 && !availableAdminRoles.value.some((r) => r.name === elevateRole.value)) {
             elevateRole.value = availableAdminRoles.value[0].name;
         }
@@ -50,9 +67,14 @@ const fetchAdminRoles = async () => {
 const fetchUsers = async (page = 1) => {
     loading.value = true;
     try {
-        const res = await api.get('/users/all-users', {
-            params: { page, per_page: 15 },
-        });
+        const params: Record<string, string | number> = { page, per_page: 15 };
+        const term = search.value.trim();
+        if (term !== '') params.search = term;
+        if (panelFilter.value !== '') params.panel = panelFilter.value;
+        if (statusFilter.value !== '') params.is_active = statusFilter.value;
+        if (verifiedFilter.value !== '') params.is_verified = verifiedFilter.value;
+
+        const res = await api.get('/users/all-users', { params });
         users.value = res.data.data?.items ?? [];
         pagination.value = res.data.data?.pagination ?? null;
     } catch (err: unknown) {
@@ -104,10 +126,23 @@ const handleElevateUser = async () => {
     }
 };
 
+// Any filter change restarts from page 1; typing is debounced so each keystroke does not hit the API
+watch(search, () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => fetchUsers(1), 300);
+});
+
+watch([panelFilter, statusFilter, verifiedFilter], () => {
+    clearTimeout(searchDebounce);
+    fetchUsers(1);
+});
+
 onMounted(() => {
     fetchUsers();
     fetchAdminRoles();
 });
+
+onBeforeUnmount(() => clearTimeout(searchDebounce));
 </script>
 
 <template>
@@ -133,9 +168,73 @@ onMounted(() => {
                 </button>
             </div>
 
+            <!-- Search & Filters -->
+            <div class="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-xs sm:flex-row sm:flex-wrap sm:items-end dark:border-zinc-800 dark:bg-zinc-900">
+                <div class="min-w-0 flex-1 sm:min-w-64">
+                    <label for="user-search" class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Search</label>
+                    <input
+                        id="user-search"
+                        v-model="search"
+                        type="search"
+                        placeholder="Name, email, phone or #ID"
+                        maxlength="100"
+                        class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                </div>
+                <div>
+                    <label for="user-panel" class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Type</label>
+                    <select
+                        id="user-panel"
+                        v-model="panelFilter"
+                        class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:w-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    >
+                        <option value="">All accounts</option>
+                        <option value="admin">Staff</option>
+                        <option value="agent">Agents</option>
+                        <option value="user">Customers</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="user-status" class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Status</label>
+                    <select
+                        id="user-status"
+                        v-model="statusFilter"
+                        class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:w-36 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    >
+                        <option value="">Any status</option>
+                        <option value="ACTIVE">Active</option>
+                        <option value="INACTIVE">Inactive</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="user-verified" class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Phone</label>
+                    <select
+                        id="user-verified"
+                        v-model="verifiedFilter"
+                        class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:w-36 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    >
+                        <option value="">Any</option>
+                        <option value="1">Verified</option>
+                        <option value="0">Unverified</option>
+                    </select>
+                </div>
+                <button
+                    v-if="hasActiveFilters()"
+                    type="button"
+                    class="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    @click="clearFilters"
+                >
+                    Clear
+                </button>
+            </div>
+
             <!-- Table Card -->
             <div class="rounded-2xl border border-zinc-200 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
                 <div v-if="loading && users.length === 0" class="p-6"><Skeleton :rows="6" height="h-6" /></div>
+
+                <div v-else-if="users.length === 0" class="p-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                    {{ hasActiveFilters() ? 'No accounts match these filters.' : 'No accounts yet.' }}
+                </div>
 
                 <div v-else class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
