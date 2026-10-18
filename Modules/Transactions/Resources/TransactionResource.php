@@ -63,6 +63,11 @@ class TransactionResource extends JsonResource
             'status' => $this->resource->status,
             'idempotency_key' => $this->resource->idempotency_key,
             'external_reference' => $this->resource->external_reference,
+            'reversed_transaction_id' => $this->resource->reversed_transaction_id,
+            'reversed_by_transaction_id' => $this->when(
+                $this->resource->relationLoaded('reversal'),
+                fn () => $this->resource->reversal?->id,
+            ),
             'sender_wallet_balance_after' => $this->when(
                 $showSender,
                 fn () => $this->resource->sender_wallet_balance_after !== null

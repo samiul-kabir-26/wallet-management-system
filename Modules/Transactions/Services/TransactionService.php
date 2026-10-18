@@ -39,6 +39,7 @@ class TransactionService
         protected CommissionCalculator $commissionCalculator,
         protected CapService $capService,
         protected PinVerifier $pinVerifier,
+        protected TransactionReceiptService $receipts,
     ) {}
 
     /**
@@ -562,7 +563,7 @@ class TransactionService
                 $agentWallet->balance = $newAgentBalance;
                 $agentWallet->save();
 
-                return Transaction::create([
+                $cashIn = Transaction::create([
                     'user_id' => $customer->id,
                     'sender_id' => null,
                     'recipient_id' => $customer->id,
@@ -586,6 +587,10 @@ class TransactionService
                     'agent_wallet_id' => $agentWallet->id,
                     'meta' => null,
                 ]);
+
+                $this->receipts->queueFor($cashIn);
+
+                return $cashIn;
             });
         } catch (UniqueConstraintViolationException|QueryException $e) {
             $existing = $this->findByIdempotencyKey($agent, $idempotencyKey);
@@ -782,6 +787,8 @@ class TransactionService
                     ],
                 ]);
 
+                $this->receipts->queueFor($cashOut);
+
                 return $cashOut;
             });
         } catch (UniqueConstraintViolationException|QueryException $e) {
@@ -911,7 +918,7 @@ class TransactionService
                 $this->capService->increment($lockedCap, $formattedAmount);
 
                 // 7. Write TRANSFER transaction row
-                return Transaction::create([
+                $transfer = Transaction::create([
                     'user_id' => $sender->id,
                     'sender_id' => $sender->id,
                     'recipient_id' => $recipient->id,
@@ -935,6 +942,10 @@ class TransactionService
                     'agent_wallet_id' => null,
                     'meta' => null,
                 ]);
+
+                $this->receipts->queueFor($transfer);
+
+                return $transfer;
             });
         } catch (UniqueConstraintViolationException|QueryException $e) {
             $existing = $this->findByIdempotencyKey($sender, $idempotencyKey);
@@ -956,7 +967,7 @@ class TransactionService
         array $filters = [],
         int $perPage = 15,
     ): LengthAwarePaginator {
-        $query = Transaction::query()->with(['sender', 'recipient', 'agent', 'user']);
+        $query = Transaction::query()->with(['sender', 'recipient', 'agent', 'user', 'reversal:id,reversed_transaction_id']);
 
         if ($wallet !== null) {
             $query->involvingWallet($wallet);
@@ -974,7 +985,7 @@ class TransactionService
      */
     public function listAllTransactions(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
-        $query = Transaction::query()->with(['sender', 'recipient', 'agent', 'user']);
+        $query = Transaction::query()->with(['sender', 'recipient', 'agent', 'user', 'reversal:id,reversed_transaction_id']);
 
         $this->applyFilters($query, $filters);
 

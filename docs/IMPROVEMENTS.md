@@ -1,7 +1,6 @@
 # Improvement Proposals
 
-Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`).
-Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 4 (branch `feat/ledger-integrity-check`).
+Status: proposals. Done: 1 and 2 (branch `feat/sslcommerz-top-up`), 3 (branch `feat/top-up-reconciliation`), 4 (branch `feat/ledger-integrity-check`), 5 (branch `feat/opening-balance-backfill`), 6 (branch `feat/transaction-receipts`), 7 (branch `feat/sms-gateway`), 8 (branch `feat/transaction-reversals`), 9 (branch `feat/maker-checker`), 10 (branch `feat/agent-float-requests`).
 Last reviewed against: `7afe84b` (signup bonus, commission and profile editing, directory search).
 
 Each proposal says what changes, why, which module it belongs to, and what can go wrong. Items marked **Money** move or create balance and need the full treatment: DB transaction, row locks, idempotency, audit entry, and tests for the financial invariants.
@@ -16,12 +15,12 @@ Each proposal says what changes, why, which module it belongs to, and what can g
 | 2 | Remove the PIN from top-up — **done** | Transactions, User panel | High (ships with 1) | S |
 | 3 | Reconcile stuck gateway payments — **done** | Transactions | High (ships with 1) | M |
 | 4 | Ledger integrity check — **done** | Wallets, Transactions | High | S |
-| 5 | Opening-balance backfill for legacy wallets | Wallets | Medium | S |
-| 6 | Transaction receipts (SMS / email) | Transactions, Notifications | Medium | M |
-| 7 | Real SMS gateway | Authentication | Medium | M |
-| 8 | Reversals and refunds | Transactions | Medium | L |
-| 9 | Maker-checker for sensitive admin actions | Roles, SystemSettings | Medium | L |
-| 10 | Agent float requests | Transactions, Agent panel | Medium | M |
+| 5 | Opening-balance backfill for legacy wallets — **done** | Wallets | Medium | S |
+| 6 | Transaction receipts (SMS / email) — **done** | Transactions, Notifications | Medium | M |
+| 7 | Real SMS gateway — **done** (Twilio; free trial texts verified numbers) | Authentication | Medium | M |
+| 8 | Reversals and refunds — **done** (single approver; maker-checker is proposal 9) | Transactions | Medium | L |
+| 9 | Maker-checker for sensitive admin actions — **done** (float, settings, reversals, commission rates) | Roles, SystemSettings | Medium | L |
+| 10 | Agent float requests — **done** | Transactions, Agent panel | Medium | M |
 | 11 | KYC tiers and per-user caps | Users, Caps | Medium | L |
 | 12 | Signup bonus abuse controls | Transactions | Medium | M |
 | 13 | Request money | Transactions, User panel | Low | M |

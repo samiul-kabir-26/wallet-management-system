@@ -11,6 +11,8 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Modules\Approvals\Resources\ApprovalRequestResource;
+use Modules\Approvals\Services\ApprovalService;
 use Modules\Roles\Enums\RolePanel;
 use Modules\Users\Http\Requests\ApproveAgentRequest;
 use Modules\Users\Http\Requests\AssignRoleRequest;
@@ -147,8 +149,14 @@ class UserController extends Controller
     /**
      * Change an agent's commission rate for future transactions.
      */
-    public function updateCommissionRate(UpdateCommissionRateRequest $request, User $user): JsonResponse
+    public function updateCommissionRate(UpdateCommissionRateRequest $request, User $user, ApprovalService $approvals): JsonResponse
     {
+        if ($approvals->isRequired()) {
+            return ApprovalRequestResource::pendingResponse(
+                $approvals->requestCommissionRateUpdate($request->user(), $user, (string) $request->validated('commission_rate'))
+            );
+        }
+
         $updatedUser = $this->userService->updateCommissionRate(
             agentUser: $user,
             commissionRate: (string) $request->validated('commission_rate'),

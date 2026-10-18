@@ -8,17 +8,21 @@ use App\Models\User;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Modules\Approvals\Resources\ApprovalRequestResource;
+use Modules\Approvals\Services\ApprovalService;
 use Modules\Transactions\Http\Requests\AgentCashInRequest;
 use Modules\Transactions\Http\Requests\AgentWithdrawalRequest;
 use Modules\Transactions\Http\Requests\ApproveWithdrawalRequest;
 use Modules\Transactions\Http\Requests\CashOutRequest;
 use Modules\Transactions\Http\Requests\IssueFloatRequest;
 use Modules\Transactions\Http\Requests\RejectWithdrawalRequest;
+use Modules\Transactions\Http\Requests\ReverseTransactionRequest;
 use Modules\Transactions\Http\Requests\TransferRequest;
 use Modules\Transactions\Resources\CapResource;
 use Modules\Transactions\Resources\TransactionResource;
 use Modules\Transactions\Services\CapService;
 use Modules\Transactions\Services\FeeCalculator;
+use Modules\Transactions\Services\ReversalService;
 use Modules\Transactions\Services\TransactionService;
 use Modules\Wallets\Services\WalletService;
 
@@ -176,7 +180,7 @@ class TransactionController extends Controller
     public function history(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE,SIGNUP_BONUS'],
+            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE,SIGNUP_BONUS,REVERSAL'],
             'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,REJECTED'],
             'from_date' => ['sometimes', 'date'],
             'to_date' => ['sometimes', 'date'],
@@ -247,7 +251,7 @@ class TransactionController extends Controller
         $this->authorize('viewAny', Transaction::class);
 
         $validated = $request->validate([
-            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE,SIGNUP_BONUS'],
+            'type' => ['sometimes', 'string', 'in:TOP_UP,CASH_IN,CASH_OUT,TRANSFER,AGENT_WITHDRAWAL,COMMISSION_PAYOUT,FLOAT_ISSUE,SIGNUP_BONUS,REVERSAL'],
             'status' => ['sometimes', 'string', 'in:COMPLETED,PENDING,FAILED,REJECTED'],
             'search' => ['sometimes', 'string', 'max:100'],
             'party_id' => ['sometimes', 'integer', 'exists:users,id'],
@@ -278,7 +282,7 @@ class TransactionController extends Controller
     /**
      * Issue e-money float to an approved agent by an authorized admin.
      */
-    public function adminIssueFloat(IssueFloatRequest $request): JsonResponse
+    public function adminIssueFloat(IssueFloatRequest $request, ApprovalService $approvals): JsonResponse
     {
         $agentId = $request->validated('agent_id');
         if (! $agentId && $request->filled('agent_phone')) {
@@ -289,6 +293,14 @@ class TransactionController extends Controller
             $agent = User::where('id', $agentId)
                 ->where('is_deleted', false)
                 ->firstOrFail();
+        }
+
+        if ($approvals->isRequired()) {
+            return ApprovalRequestResource::pendingResponse($approvals->requestFloatIssue($request->user(), $agent, [
+                'amount' => $request->validated('amount'),
+                'external_reference' => $request->validated('external_reference'),
+                'description' => $request->validated('description'),
+            ]));
         }
 
         $transaction = $this->transactionService->issueFloat(
@@ -348,5 +360,31 @@ class TransactionController extends Controller
                 'transaction' => new TransactionResource($rejected),
             ],
         ]);
+    }
+
+    /**
+     * Reverse a completed transfer, cash-in or cash-out with a new REVERSAL transaction.
+     */
+    public function reverse(ReverseTransactionRequest $request, Transaction $transaction, ReversalService $reversals, ApprovalService $approvals): JsonResponse
+    {
+        if ($approvals->isRequired()) {
+            return ApprovalRequestResource::pendingResponse(
+                $approvals->requestReversal($request->user(), $transaction, $request->validated('reason'))
+            );
+        }
+
+        $reversal = $reversals->reverse(
+            original: $transaction,
+            staff: $request->user(),
+            reason: $request->validated('reason'),
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => "Transaction #{$transaction->id} reversed.",
+            'data' => [
+                'transaction' => new TransactionResource($reversal->load(['sender', 'recipient', 'agent', 'user'])),
+            ],
+        ], 201);
     }
 }

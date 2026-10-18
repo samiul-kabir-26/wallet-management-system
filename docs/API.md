@@ -841,7 +841,7 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 | Method & Route | Body | Notes |
 |---|---|---|
 | `GET /api/v1/users/me` | none | Own profile. |
-| `PATCH /api/v1/users/me` | `name`, `address` | `email`, `phone_number` and `image` are prohibited (422). |
+| `PATCH /api/v1/users/me` | `name`, `address`, `receipt_emails_enabled` | `email`, `phone_number` and `image` are prohibited (422). `receipt_emails_enabled` (boolean, default `true`) turns the email copy of transaction receipts off or on; SMS receipts cannot be turned off (5.13). |
 | `POST /api/v1/users/me/avatar` | multipart `avatar` | JPG/PNG/WebP, max 2 MB, 64–4000 px per side; SVG is refused. Stored on the `public` disk under `avatars/` (needs `php artisan storage:link`); the previous file is deleted. Throttled 10/min. |
 | `DELETE /api/v1/users/me/avatar` | none | Deletes the file and clears `avatar_url`. |
 | `POST /api/v1/users/me/phone` | `phone_number` (`01[3-9]XXXXXXXX`, unique) | For accounts **without** a phone (409 otherwise). Texts a 6-digit code to that number (OTP purpose `ADD_PHONE`, number kept in `otp_tokens.target`). Nothing is saved yet. Limited to 3 per 10 minutes per account **and** per destination number. |
@@ -849,11 +849,16 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 | `POST /api/v1/users/me/phone-verification` | none | Texts a 6-digit code (OTP purpose `PHONE_VERIFICATION`, expires per `auth_settings.otp.expiry_minutes`) and invalidates any earlier code. Limited to 3 per 10 minutes per account (429). 409 if already verified, 422 if the account has no phone. |
 | `POST /api/v1/users/me/phone-verification/confirm` | `otp_code` | Sets `is_verified`, audited as `PHONE_VERIFIED` with `metadata.method = "OTP"` (staff verification in 3.10 records `"STAFF"`). 401 wrong/expired code (attempts are counted and lock the code), 409 already verified. |
 
-**SMS delivery:** no SMS gateway is configured yet. `SmsChannel` writes each message to the log channel named by `SMS_LOG_CHANNEL` (default log), so in development the code appears in `storage/logs/laravel.log` as `SMS message`.
+**SMS delivery:** `SmsChannel` sends through the driver chosen by `SMS_DRIVER` (`config/services.php` → `sms`):
+- `log` (default): writes each message, OTP codes included, to the log channel named by `SMS_LOG_CHANNEL` (default log), so in development the code appears in `storage/logs/laravel.log` as `SMS message`. Never use it in production.
+- `twilio`: sends real texts through Twilio's Messages API with `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` (or `TWILIO_MESSAGING_SERVICE_SID`). Local numbers (`01XXXXXXXXX`) are converted to E.164 with `SMS_DEFAULT_COUNTRY_CODE` (default `880`). A free trial account works for this demo but can only text numbers verified in the Twilio console and prefixes every message. Message bodies are never logged by this driver; the masked number, Twilio message ID and status are.
+- If the provider refuses a message or cannot be reached, endpoints that text a code right away (registration code 2.0, phone verification and add-phone above) return **502** `We could not send the text message. Please try again shortly.` instead of reporting success. Queued receipts retry up to 3 times (after 30 s and 2 min).
+- Check the setup with `php artisan sms:test 01712345678` (exit code 1 and the provider's reason in the log on failure).
 
 ---
 
 ### 3.14 Change Agent Commission Rate
+> **Maker-checker:** when approvals are required (section 8), this endpoint returns **202** with `data.approval_request` instead of applying the change. It is applied when a second staff member approves it.
 - **Method & Route:** `PATCH /api/v1/users/{user}/commission-rate`
 - **Access:** Admin only (`ability:admin`, `password.changed`) **and** `agents.update_commission` (`UserPolicy::updateCommission`). ADMIN holds it by default. Staff cannot change their own rate (403).
 - **Request Body:** `commission_rate` is required, between 0 and 1, at most 4 decimal places (`0.0125` = 1.25%).
@@ -955,10 +960,19 @@ All routes require `ability:admin,agent,user` and `password.changed`. They act o
 `php artisan wallets:verify-ledger` recomputes every wallet balance from the `transactions` table and compares it with `wallets.balance`. It also compares each agent's `agent_info.total_commission` with the commission on their completed cash-outs. It never changes data.
 - **Rules:** see the table in `Modules/Wallets/Services/LedgerIntegrityService.php`. In short: only rows whose status applied the movement count (`COMPLETED`, plus `PENDING` agent withdrawals, whose amount is already held); pending and failed gateway top-ups count as zero; `COMMISSION_PAYOUT` is a memo row because `CASH_OUT` already credits the commission.
 - **Snapshot:** all reads run in one database transaction, so a transaction committing mid-check cannot produce a false mismatch.
-- **Legacy wallets:** wallets opened before the signup bonus became a ledger row got 50.00 from a column default. A difference of exactly `transactions.ledger_check.legacy_opening_balance` on a wallet with no `SIGNUP_BONUS` row is classified `LEGACY_OPENING_BALANCE` and logged as a warning, not a failure (IMPROVEMENTS.md proposal 5 backfills them).
+- **Legacy wallets:** wallets opened before the signup bonus became a ledger row got 50.00 from a column default. A difference of exactly `transactions.ledger_check.legacy_opening_balance` on a wallet with no `SIGNUP_BONUS` row is classified `LEGACY_OPENING_BALANCE` and logged as a warning, not a failure. 4.6 records the missing rows.
 - **Options:** `--wallet=ID` (repeatable) limits the wallet check and skips the commission check; `--json` prints the full report.
 - **Result:** exit code 0 when consistent. Any `UNEXPLAINED` wallet difference or commission difference exits 1 and writes a `critical` log entry with the details.
 - **Schedule:** daily at 02:00 business time (`routes/console.php`).
+
+### 4.6 Opening-Balance Backfill (operations, no endpoint)
+`php artisan wallets:backfill-opening-balances` writes the ledger row that legacy wallets never got for their 50.00 opening balance.
+- **Dry run by default:** without `--apply` it only lists the wallets it would touch. In production `--apply` asks for confirmation unless `--force` is given.
+- **Which wallets:** those the ledger check classifies `LEGACY_OPENING_BALANCE`. Each one is re-checked with the wallet row locked before writing, so a wallet that moved money meanwhile is judged on its current state.
+- **What is written:** a `COMPLETED` `SIGNUP_BONUS` row for the legacy amount with `meta.backfilled = true`, `meta.reason = LEGACY_OPENING_BALANCE` and `meta.effective_at` = the wallet's opening date. It is dated now (not back-dated), and `recipient_wallet_balance_after` is the current balance. **The wallet balance is not changed**: the money was always there, only its record was missing.
+- **One per wallet:** it uses the signup bonus idempotency key (`signup-bonus:{wallet_id}`) and skips wallets that already have a `SIGNUP_BONUS` row, so it can be re-run safely and a wallet can never hold two bonus rows.
+- **Audit:** each row writes `OPENING_BALANCE_BACKFILLED` against the wallet (actor null: run from the CLI) with the ledger balance before.
+- Afterwards `wallets:verify-ledger` reports no legacy gaps.
 
 ---
 
@@ -1223,7 +1237,7 @@ IPNs get lost and customers close the tab, so unfinished top-ups are swept by a 
 ### 5.6 User Transaction History
 - **Method & Route:** `GET /api/v1/transactions/history`
 - **Access:** Authenticated (`ability:admin,agent,user`, `password.changed`)
-- **Query Params:** `type` (`TOP_UP`, `CASH_IN`, `CASH_OUT`, `TRANSFER`, `AGENT_WITHDRAWAL`, `COMMISSION_PAYOUT`, `FLOAT_ISSUE`, `SIGNUP_BONUS`), `status`, `from_date`, `to_date`, `per_page`, `page`
+- **Query Params:** `type` (`TOP_UP`, `CASH_IN`, `CASH_OUT`, `TRANSFER`, `AGENT_WITHDRAWAL`, `COMMISSION_PAYOUT`, `FLOAT_ISSUE`, `SIGNUP_BONUS`, `REVERSAL`), `status`, `from_date`, `to_date`, `per_page`, `page`
 - **Description:** Paginated transactions list scoped directly to the authenticated caller's active wallet panel (determined by token ability: `user` -> USER wallet, `agent` -> AGENT wallet; admins view unscoped history).
 - **Response (200 OK):**
   ```json
@@ -1309,6 +1323,7 @@ IPNs get lost and customers close the tab, so unfinished top-ups are swept by a 
 ---
 
 ### 5.9 Admin Float Issuance
+> **Maker-checker:** when approvals are required (section 8), this endpoint returns **202** with `data.approval_request` instead of applying the change. It is applied when a second staff member approves it.
 - **Method & Route:** `POST /api/v1/transactions/admin/float-issue`
 - **Access:** Admin only (`ability:admin`, `password.changed`) **and** the `agents.issue_float` permission. ADMIN does not hold it by default; SUPER_ADMIN can assign it to a custom role (e.g. FINANCE).
 - **Description:** Credits e-money float to an approved agent's AGENT wallet against a confirmed external bank deposit. Writes a `FLOAT_ISSUE` transaction (`initiated_by` = admin) and a `FLOAT_ISSUED` audit log entry.
@@ -1375,6 +1390,85 @@ There is no endpoint for this. The bonus is credited by `SignupBonusService::cre
 
 ---
 
+### 5.13 Transaction Receipts
+There is no endpoint for this. Every completed `TRANSFER`, `CASH_IN` and `CASH_OUT` sends a receipt to both parties (`TransactionReceiptNotification`).
+- **Who gets what:**
+
+  | Type | Party | Receipt |
+  |---|---|---|
+  | `TRANSFER` | sender | "You sent", fee and total when there is a fee, sender balance |
+  | `TRANSFER` | recipient | "You received", recipient balance |
+  | `CASH_IN` | customer | "Cash in … from agent", customer balance |
+  | `CASH_IN` | agent | "Cash in given", agent float balance |
+  | `CASH_OUT` | customer | "Cash out … at agent", fee and total, customer balance |
+  | `CASH_OUT` | agent | "Cash out received", commission and amount credited, agent balance |
+
+  Each receipt includes the transaction ID and time (business timezone). The counterparty is masked like the recipient lookup: `R***l K***r (017*****678)`.
+- **Channels:** SMS always (it cannot be turned off, so a customer always hears about money leaving their wallet). Email as well when the account has an email and `receipt_emails_enabled` is true (3.13).
+- **Delivery:** queued, and dispatched only after the database transaction commits, so a rolled-back transaction never produces a receipt. An idempotent replay returns the existing row and sends nothing. Run a queue worker (`php artisan queue:work`) for receipts to go out when `QUEUE_CONNECTION` is not `sync`.
+- **SMS:** sent through the configured SMS driver (log by default, Twilio for real texts; see 3.13). Each channel is a separate queued job, so an SMS failure never blocks the email copy, and SMS is retried up to 3 times.
+- Top-ups, signup bonuses, float issuance and withdrawals do not send these receipts.
+
+---
+
+### 5.14 Reverse a Transaction
+> **Maker-checker:** when approvals are required (section 8), this endpoint returns **202** with `data.approval_request` instead of applying the change. It is applied when a second staff member approves it.
+- **Method & Route:** `POST /api/v1/transactions/admin/{transaction}/reverse`
+- **Access:** Admin token **and** `transactions.reverse`. ADMIN does not hold it by default (like `agents.issue_float`, it moves money on staff say-so); SUPER_ADMIN has it and can grant it to a dedicated role. Staff cannot reverse a transaction they took part in, in any role (403). Throttled 30/min.
+- **Request Body:** `{ "reason": "Sent to the wrong number, confirmed with both customers by phone" }` (10–500 characters; shown in both parties' history and in the audit log).
+- **Response (201 Created):** `{ data: { transaction } }`, the new `REVERSAL` row, with `reversed_transaction_id` pointing at the original.
+- **What moves:**
+
+  | Original | Taken back from | Returned to |
+  |---|---|---|
+  | `TRANSFER` | recipient: amount | sender: amount + fee |
+  | `CASH_IN` | customer: amount | agent: amount |
+  | `CASH_OUT` | agent: amount + commission (also deducted from `agent_info.total_commission`) | customer: amount + fee |
+
+  On the `REVERSAL` row the debited wallet is the sender slot and the credited wallet the recipient slot; `system_fee_amount` is the fee refunded and `agent_commission_amount` the commission clawed back.
+- **Rules:**
+  - The original is never edited. Admin ledger items carry `reversed_by_transaction_id` on the original and `reversed_transaction_id` on the reversal.
+  - Only once: `transactions.reversed_transaction_id` is unique, so two staff reversing at the same moment cannot both succeed (409).
+  - The original is locked, then both wallets in id order, then (cash-out) the agent profile, all in one database transaction.
+  - If the party giving money back has already spent it, the reversal fails (422) and nothing changes. Balances never go negative.
+  - Blocked wallets and suspended agents do not stop a reversal: correcting money is what staff do while an account is frozen.
+  - Daily and monthly cap usage is not given back.
+  - Audited as `TRANSACTION_REVERSED` (against the original, with both wallets and amounts). Both parties get a receipt (5.13).
+  - The ledger check (4.5) counts reversals: sender −(amount + commission), recipient +(amount + fee); commission totals subtract clawed-back commission.
+- **Admin panel:** "Reverse" button on eligible rows of the transaction ledger, with a summary of who gives back and who gets back how much.
+- **Error Codes:** 403 (missing permission, non-admin token, or own transaction), 409 (not a completed transfer/cash-in/cash-out, or already reversed), 422 (missing reason, or not enough balance to take back).
+
+---
+
+### 5.15 Agent Float Requests
+Agents ask for e-money float against a bank deposit instead of waiting for staff to push it (5.9).
+
+**Agent** (`ability:agent`, `password.changed`):
+
+| Method & Route | Body / Notes |
+|---|---|
+| `POST /api/v1/transactions/agent/float-requests` | multipart: `amount` (float-issue limits, 2 decimals), `bank_reference` (4–100 chars, letters/numbers/space and `- / _ .`, must not already be a transaction's `external_reference`), `deposited_at` (date, within the last 30 days, not in the future), `slip` (JPG/PNG/WebP/PDF, max 5 MB), `note?`. Approved agents with an unblocked agent wallet only (409 / 403). One pending request per bank reference (422). Throttled 10/min. Returns 201 `{ data: { float_request } }`. |
+| `GET /api/v1/transactions/agent/float-requests` | Own requests, newest first, paginated. |
+| `POST /api/v1/transactions/agent/float-requests/{id}/cancel` | Own `PENDING` request only (403 otherwise); 409 once staff forwarded it for a second approval. |
+| `GET /api/v1/transactions/agent/float-requests/{id}/slip` | Own slip (404 for others). |
+
+**Staff** (admin token **and** `agents.issue_float`, 403 otherwise):
+
+| Method & Route | Body / Notes |
+|---|---|
+| `GET /api/v1/transactions/admin/float-requests?status=` | `PENDING` lists oldest first; other statuses newest first. |
+| `GET /api/v1/transactions/admin/float-requests/{id}/slip` | Streams the slip with its stored content type, `nosniff`, `no-store`. |
+| `POST /api/v1/transactions/admin/float-requests/{id}/approve` | `note?`. Issues the float through 5.9 with the bank reference as `external_reference` (unique, so one deposit is never credited twice) and marks the request `APPROVED` with `transaction_id`. With maker-checker on (section 8) it returns **202** with a `FLOAT_ISSUE` approval request carrying `float_request_id`; the float request shows `awaiting_second_approval: true` and is completed when a second staff member approves. If that approval is rejected or cancelled, the request returns to the queue. |
+| `POST /api/v1/transactions/admin/float-requests/{id}/reject` | `reason` (5–500, required). 409 while awaiting a second approval (reject the approval request instead). |
+
+- Slips live on the private `local` disk under `float-slips/{agent_id}/` and are only served through the two slip endpoints; `slip_path` is never returned.
+- Staff who are also the requesting agent cannot review their own request (403). A request can be reviewed once (409 afterwards).
+- The agent gets an SMS when the request is approved or rejected (with the reason).
+- Audited as `FLOAT_REQUEST_SUBMITTED`, `FLOAT_REQUEST_APPROVED`, `FLOAT_REQUEST_REJECTED`, `FLOAT_REQUEST_CANCELLED` against the agent, plus the usual `FLOAT_ISSUED`.
+- Panels: agent "Request Float" page; admin "Float Requests" page.
+
+---
+
 ## 6. System Settings Endpoints
 
 ### 6.1 View Global System Settings
@@ -1399,6 +1493,7 @@ There is no endpoint for this. The bonus is credited by `SignupBonusService::cre
 ---
 
 ### 6.2 Update Global System Settings
+> **Maker-checker:** when approvals are required (section 8), this endpoint returns **202** with `data.approval_request` instead of applying the change. It is applied when a second staff member approves it.
 - **Method & Route:** `PATCH /api/v1/system-settings`
 - **Access:** Admin only (`ability:admin`) **and** `settings.update`
 - **Request Body:** send at least one of the keys below (422 `settings` otherwise). The legacy aliases `transactionFee` and `agentCommission` are also accepted.
@@ -1449,7 +1544,7 @@ Granular permission catalog and dynamic admin-panel role management. Access requ
 ### 7.1 List Permissions Catalog
 - **Method & Route:** `GET /api/v1/permissions`
 - **Access:** Authenticated admin staff (`roles.view`)
-- **Description:** Returns the complete permission catalog (22 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
+- **Description:** Returns the complete permission catalog (23 permissions, defined in `Modules\Roles\Enums\Permission`) as a flat list and grouped by UI category (`Users`, `Agents`, `Wallets`, `Transactions`, `Settings`, `Auth`, `Roles`). `is_super_admin_only: true` means the permission is implicit for SUPER_ADMIN only and can never be attached to a role.
 - **Response (200 OK):**
   ```json
   {
@@ -1590,4 +1685,27 @@ Granular permission catalog and dynamic admin-panel role management. Access requ
 - **Error Codes:**
   - `403 Forbidden`: Attempting to delete a system role (`is_system = true`) or a role the actor currently holds.
   - `409 Conflict`: Role is currently assigned to one or more users (`users_count > 0`).
+
+---
+
+## 8. Approvals (Maker-Checker)
+
+Float issuance (5.9), fee/commission/signup-bonus setting changes (6.2), transaction reversals (5.14) and agent commission-rate changes (3.14) need a second staff member. The maker's request is validated and stored; nothing changes until someone else approves it.
+
+- **Switch:** `MAKER_CHECKER_ENABLED` (`config/approvals.php`, default `true`). Production always requires approval. Turning it off is meant for the test suite and single-admin demos; the list endpoint reports the effective value as `meta.required`.
+- **Who can approve:** any staff member other than the maker who holds the same permission as the action (`agents.issue_float`, `settings.update`, `transactions.reverse`, `agents.update_commission`). Also refused: approving a change to your own agent account, and approving the reversal of a transaction you took part in.
+- **Applying:** approval runs the normal service (5.9, 6.2, 5.14, 3.14) inside the same database transaction that marks the request `APPROVED`, with the maker as the actor (`initiated_by`, audit actor). If the action fails at that point (for example the agent was suspended meanwhile), nothing changes, the error is returned, and the request stays `PENDING` for the checker to reject.
+- **Duplicates:** one pending reversal per transaction, one pending commission change per agent, one pending float issue per bank reference (409). A settings submission keeps only the keys whose value changes; if none change, no request is created (200).
+- **Audit:** `APPROVAL_REQUESTED`, `APPROVAL_APPROVED`, `APPROVAL_REJECTED`, `APPROVAL_CANCELLED`, recorded against the approval request.
+- **Admin panel:** "Approvals" page with tabs for requests awaiting your review, your own requests, and all requests.
+
+| Method & Route | Body | Notes |
+|---|---|---|
+| `GET /api/v1/approvals` | — | Requests you can review plus your own. Filters: `status` (`PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`), `action` (`FLOAT_ISSUE`, `SETTINGS_UPDATE`, `TRANSACTION_REVERSAL`, `COMMISSION_RATE_UPDATE`), `mine=1`, `reviewable=1` (pending, not yours, actions you hold), `per_page`, `page`. Each item: `id, action, status, summary, payload, subject, requested_by, reviewed_by, reviewed_at, review_note, result, can_review, can_cancel, created_at`. |
+| `GET /api/v1/approvals/{id}` | — | 404 for requests you can neither review nor made. |
+| `POST /api/v1/approvals/{id}/approve` | `note?` (max 500) | Applies the change; `result` holds e.g. `transaction_id`. 403 own request / missing permission, 409 no longer pending. |
+| `POST /api/v1/approvals/{id}/reject` | `note` (5–500, required) | Nothing is applied. |
+| `POST /api/v1/approvals/{id}/cancel` | — | Maker only. |
+
+All routes need an admin token and `password.changed`. Approve and reject are throttled 30/min.
 

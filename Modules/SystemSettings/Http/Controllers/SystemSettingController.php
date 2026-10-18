@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\SystemSetting;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
+use Modules\Approvals\Resources\ApprovalRequestResource;
+use Modules\Approvals\Services\ApprovalService;
 use Modules\SystemSettings\Http\Requests\UpdateSessionTimeoutsRequest;
 use Modules\SystemSettings\Http\Requests\UpdateSystemSettingsRequest;
 use Modules\SystemSettings\Resources\SettingsResource;
@@ -43,8 +45,23 @@ class SystemSettingController extends Controller
     /**
      * Update system settings.
      */
-    public function update(UpdateSystemSettingsRequest $request): JsonResponse
+    public function update(UpdateSystemSettingsRequest $request, ApprovalService $approvals): JsonResponse
     {
+        if ($approvals->isRequired()) {
+            $current = $this->withEffectiveSignupBonus($this->settingService->getSettings());
+            $approval = $approvals->requestSettingsUpdate($request->user(), $request->validated(), $current);
+
+            if ($approval === null) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Nothing to change: the submitted values are already in force.',
+                    'data' => ['settings' => new SettingsResource($current)],
+                ]);
+            }
+
+            return ApprovalRequestResource::pendingResponse($approval);
+        }
+
         $updatedSettings = $this->settingService->updateSettings(
             settings: $request->validated(),
             user: $request->user(),

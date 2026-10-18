@@ -9,6 +9,7 @@ export interface User {
     is_active?: string;
     address?: string | null;
     avatar_url?: string | null;
+    receipt_emails_enabled?: boolean;
     must_change_password?: boolean;
     created_at?: string;
     updated_at?: string;
@@ -67,7 +68,8 @@ export type TransactionType =
     | 'AGENT_WITHDRAWAL'
     | 'COMMISSION_PAYOUT'
     | 'FLOAT_ISSUE'
-    | 'SIGNUP_BONUS';
+    | 'SIGNUP_BONUS'
+    | 'REVERSAL';
 
 export type TransactionStatus = 'COMPLETED' | 'PENDING' | 'FAILED' | 'REJECTED';
 
@@ -100,6 +102,8 @@ export interface Transaction {
     description: string | null;
     idempotency_key?: string;
     external_reference?: string | null;
+    reversed_transaction_id?: number | null;
+    reversed_by_transaction_id?: number | null;
     meta?: Record<string, unknown> | null;
     parties?: {
         sender: TransactionParty | null;
@@ -167,5 +171,23 @@ export interface AuditLogRecord {
     auditable_type: string | null;
     auditable_id: number | null;
     metadata: Record<string, unknown> | null;
+    created_at: string;
+}
+
+export interface FloatRequest {
+    id: number;
+    agent: { id: number; name: string; phone_number: string | null } | null;
+    amount: number | string;
+    bank_reference: string;
+    deposited_at: string;
+    note: string | null;
+    slip: { name: string; mime_type: string };
+    status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+    awaiting_second_approval: boolean;
+    approval_request_id: number | null;
+    transaction_id: number | null;
+    reviewed_by: { id: number; name: string } | null;
+    reviewed_at: string | null;
+    review_note: string | null;
     created_at: string;
 }
